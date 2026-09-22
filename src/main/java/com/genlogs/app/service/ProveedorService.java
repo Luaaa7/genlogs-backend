@@ -12,9 +12,11 @@ import com.genlogs.app.repository.TerceroRepository;
 import com.genlogs.app.repository.TipoDocumentoRepository;
 import com.genlogs.app.repository.UbigeoRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -51,7 +53,7 @@ public class ProveedorService {
                 .tercero(tercero)
                 .situacion("ACTIVO")
                 .build();
-        proveedor.setUserCreate("SISTEMA");
+        proveedor.setUserCreate(usuarioActual());
         proveedor.setProcessCreate("ALTA_PROVEEDOR");
 
         return proveedorRepository.save(proveedor);
@@ -73,6 +75,9 @@ public class ProveedorService {
         Proveedor proveedor = buscarPorId(idProveedor);
         proveedor.setSituacion("INACTIVO");
         proveedor.setStatus("I");
+        proveedor.setUserUpdate(usuarioActual());
+        proveedor.setProcessUpdate("BAJA_PROVEEDOR");
+        proveedor.setDateUpdate(LocalDateTime.now());
         proveedorRepository.save(proveedor);
     }
 
@@ -91,7 +96,7 @@ public class ProveedorService {
                 .telefono(request.getTelefono())
                 .correo(request.getCorreo())
                 .build();
-        tercero.setUserCreate("SISTEMA");
+        tercero.setUserCreate(usuarioActual());
         tercero.setProcessCreate("ALTA_PROVEEDOR");
 
         return terceroRepository.save(tercero);
@@ -107,5 +112,10 @@ public class ProveedorService {
             throw new BusinessException(
                     "El documento " + tipoDocumento.getCodigoTipo() + " debe ser numérico");
         }
+    }
+
+    /** Toma el usuario autenticado del JWT (mismo patrón que usa Mell en SectorEconomicoService). */
+    private String usuarioActual() {
+        return SecurityContextHolder.getContext().getAuthentication().getName();
     }
 }
