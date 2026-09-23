@@ -2,27 +2,26 @@ package com.genlogs.app.service;
 
 import com.genlogs.app.dto.ClienteRequest;
 import com.genlogs.app.dto.ClienteResponse;
-// ⚠️ Estas dos excepciones las crea Luana en com.genlogs.app.exception
-//    (núcleo). Si aún no existen, avísale para no bloquearte al compilar.
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
 import com.genlogs.app.model.Cliente;
 import com.genlogs.app.model.Distrito;
-import com.genlogs.app.model.SectorEconomico; // la crea Mell
+import com.genlogs.app.model.SectorEconomico;
 import com.genlogs.app.model.Tercero;
 import com.genlogs.app.model.TipoDocumento;
 import com.genlogs.app.repository.ClienteRepository;
 import com.genlogs.app.repository.ProveedorRepository;
-import com.genlogs.app.repository.SectorEconomicoRepository; // la crea Mell
+import com.genlogs.app.repository.SectorEconomicoRepository;
 import com.genlogs.app.repository.TerceroRepository;
 import com.genlogs.app.repository.TipoDocumentoRepository;
 import com.genlogs.app.repository.UbigeoRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -33,7 +32,7 @@ public class ClienteService {
     private final TerceroRepository terceroRepository;
     private final TipoDocumentoRepository tipoDocumentoRepository;
     private final UbigeoRepository.DistritoRepository distritoRepository;
-    private final SectorEconomicoRepository sectorEconomicoRepository; // repo de Mell
+    private final SectorEconomicoRepository sectorEconomicoRepository;
 
     /**
      * Da de alta un cliente. Si ya existe un Tercero con el mismo
@@ -64,7 +63,7 @@ public class ClienteService {
                 .sectorEconomico(sector)
                 .situacion("ACTIVO")
                 .build();
-        cliente.setUserCreate("SISTEMA");     // el filtro/interceptor de auditoría debería sobrescribir esto
+        cliente.setUserCreate(usuarioActual());
         cliente.setProcessCreate("ALTA_CLIENTE");
 
         cliente = clienteRepository.save(cliente);
@@ -96,6 +95,9 @@ public class ClienteService {
                 .orElseThrow(() -> new ResourceNotFoundException("Cliente no encontrado"));
         cliente.setSituacion("INACTIVO");
         cliente.setStatus("I");
+        cliente.setUserUpdate(usuarioActual());
+        cliente.setProcessUpdate("BAJA_CLIENTE");
+        cliente.setDateUpdate(LocalDateTime.now());
         clienteRepository.save(cliente);
     }
 
@@ -114,7 +116,7 @@ public class ClienteService {
                 .telefono(request.getTelefono())
                 .correo(request.getCorreo())
                 .build();
-        tercero.setUserCreate("SISTEMA");
+        tercero.setUserCreate(usuarioActual());
         tercero.setProcessCreate("ALTA_CLIENTE");
 
         return terceroRepository.save(tercero);
@@ -153,5 +155,10 @@ public class ClienteService {
                 .situacion(cliente.getSituacion())
                 .esTambienProveedor(tambienProveedor)
                 .build();
+    }
+
+    /** Toma el usuario autenticado del JWT (mismo patrón que usa Mell en SectorEconomicoService). */
+    private String usuarioActual() {
+        return SecurityContextHolder.getContext().getAuthentication().getName();
     }
 }
