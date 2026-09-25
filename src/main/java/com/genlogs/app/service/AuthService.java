@@ -26,29 +26,18 @@ public class AuthService {
 
     @Transactional
     public LoginResponse login(LoginRequest request) {
-        System.out.println("=== 1. Intentando buscar usuario: " + request.getNombreUsuario() + " ===");
-        
         Usuario usuario = usuarioRepository.findByNombreUsuario(request.getNombreUsuario())
-                .orElseThrow(() -> {
-                    System.out.println("=== ❌ ERROR: El usuario NO existe en la base de datos ===");
-                    return new BusinessException("Usuario o contraseña incorrectos");
-                });
-
-        System.out.println("=== 2. ¡Usuario encontrado! ID: " + usuario.getIdUsuario() + ", Rol: " + usuario.getRol().getNombreRol() + " ===");
+                .orElseThrow(() -> new BusinessException("Usuario o contraseña incorrectos"));
 
         if (Boolean.TRUE.equals(usuario.getBloqueado())) {
-            System.out.println("=== ❌ ERROR: El usuario está bloqueado ===");
             throw new BusinessException("El usuario está bloqueado. Contacta al administrador.");
         }
 
         try {
-            System.out.println("=== 3. Autenticando credenciales con AuthenticationManager... ===");
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(request.getNombreUsuario(), request.getPassword())
             );
-            System.out.println("=== 4. ¡Autenticación exitosa! ===");
         } catch (BadCredentialsException ex) {
-            System.out.println("=== ❌ ERROR: Contraseña incorrecta (BadCredentialsException) ===");
             registrarIntentoFallido(usuario);
             throw new BusinessException("Usuario o contraseña incorrectos");
         }
