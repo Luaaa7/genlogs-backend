@@ -60,6 +60,10 @@ public class PasswordResetService {
 
         // Si pide otro, el enlace anterior deja de servir.
         resetTokenRepository.deleteByUsuario_IdUsuario(usuario.getIdUsuario());
+        // Sin este flush, Hibernate agenda el DELETE pero por su orden de flush
+        // por defecto (INSERT antes que DELETE) el INSERT del nuevo token se
+        // ejecuta primero y choca con la unique constraint (id_usuario).
+        resetTokenRepository.flush();
 
         PasswordResetToken resetToken = new PasswordResetToken();
         resetToken.setUsuario(usuario);
