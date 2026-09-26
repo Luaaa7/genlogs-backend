@@ -14,4 +14,6 @@ public interface ServicioRepository extends JpaRepository<Servicio, Long> {
     List<Servicio> findByCategoriaServicio_IdCategoriaServicio(Integer idCategoriaServicio);
 
     boolean existsByCodigoServicioIgnoreCase(String codigoServicio);
+
+    List<Servicio> findByDateCreateBetween(java.time.LocalDateTime inicio, java.time.LocalDateTime fin);
 }

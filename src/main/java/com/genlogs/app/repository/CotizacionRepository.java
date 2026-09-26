@@ -14,4 +14,5 @@ public interface CotizacionRepository extends JpaRepository<Cotizacion, Long> {
     
     @Query("SELECT c FROM Cotizacion c WHERE c.cliente.idCliente = :idCliente AND c.status = 'A' ORDER BY c.fechaCotizacion DESC")
     List<Cotizacion> findByCliente(@Param("idCliente") Long idCliente);
+        List<Cotizacion> findByDateCreateBetween(java.time.LocalDateTime inicio, java.time.LocalDateTime fin);
 }
