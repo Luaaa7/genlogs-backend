@@ -70,6 +70,13 @@ public class PasswordResetService {
         resetToken.setTokenHash(sha256(tokenPlano));
         resetToken.setCreatedAt(ahora);
         resetToken.setExpiresAt(ahora.plus(DURACION_TOKEN));
+        // Auditoría: la solicitud la hace un visitante sin sesión (endpoint
+        // público /api/auth/forgot-password), por eso no hay un usuario
+        // autenticado del que tomar el nombre.
+        resetToken.setStatus("A");
+        resetToken.setUserCreate("PUBLICO");
+        resetToken.setProcessCreate("SOLICITAR_RESET_PASSWORD");
+        resetToken.setDateCreate(LocalDateTime.now());
         resetTokenRepository.save(resetToken);
 
         try {
