@@ -17,7 +17,9 @@ import com.genlogs.app.model.Distrito;
 import com.genlogs.app.model.Pais;
 import com.genlogs.app.model.Provincia;
 import com.genlogs.app.repository.PaisRepository;
-import com.genlogs.app.repository.UbigeoRepository;
+import com.genlogs.app.repository.DepartamentoRepository;
+import com.genlogs.app.repository.ProvinciaRepository;
+import com.genlogs.app.repository.DistritoRepository;
 
 import lombok.RequiredArgsConstructor;
 
@@ -27,9 +29,9 @@ import lombok.RequiredArgsConstructor;
 public class UbigeoController {
 
     private final PaisRepository paisRepository;
-    private final UbigeoRepository.DepartamentoRepository departamentoRepository;
-    private final UbigeoRepository.ProvinciaRepository provinciaRepository;
-    private final UbigeoRepository.DistritoRepository distritoRepository;
+    private final DepartamentoRepository departamentoRepository;
+    private final ProvinciaRepository provinciaRepository;
+    private final DistritoRepository distritoRepository;
 
     @GetMapping("/paises")
     public ResponseEntity<List<PaisResponse>> listarPaises() {

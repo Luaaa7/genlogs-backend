@@ -10,7 +10,7 @@ import com.genlogs.app.model.TipoDocumento;
 import com.genlogs.app.repository.ProveedorRepository;
 import com.genlogs.app.repository.TerceroRepository;
 import com.genlogs.app.repository.TipoDocumentoRepository;
-import com.genlogs.app.repository.UbigeoRepository;
+import com.genlogs.app.repository.DistritoRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -26,7 +26,7 @@ public class ProveedorService {
     private final ProveedorRepository proveedorRepository;
     private final TerceroRepository terceroRepository;
     private final TipoDocumentoRepository tipoDocumentoRepository;
-    private final UbigeoRepository.DistritoRepository distritoRepository;
+    private final DistritoRepository distritoRepository;
 
     /**
      * Da de alta un proveedor. Si ya existe un Tercero con el mismo
