@@ -1,6 +1,5 @@
 package com.genlogs.app.model;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 
 import jakarta.persistence.Column;
@@ -24,50 +23,55 @@ import lombok.Setter;
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 @EqualsAndHashCode(callSuper = false)
 public class Cotizacion extends Auditable {
-    
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id_cotizacion")
     private Long idCotizacion;
-    
+
     @Column(name = "codigo_cotizacion", nullable = false, unique = true, length = 50)
     private String codigoCotizacion;
-    
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "id_cliente", nullable = false)
     private Cliente cliente;
-    
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "id_contacto", nullable = false)
+
+    // DB: id_contacto es NULLABLE ("NULL = cotización aún sin contacto asignado")
+    @ManyToOne(fetch = FetchType.LAZY, optional = true)
+    @JoinColumn(name = "id_contacto")
     private ContactoTercero contacto;
-    
+
     @Column(name = "fecha_cotizacion", nullable = false)
     private LocalDate fechaCotizacion;
-    
+
     @Column(name = "fecha_validez", nullable = false)
     private LocalDate fechaValidez;
-    
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "id_usuario_vendedor", nullable = false)
     private Usuario usuarioVendedor;
-    
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "id_estado_cotizacion", nullable = false)
     private EstadoCotizacion estadoCotizacion;
-    
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "id_moneda", nullable = false)
     private Moneda moneda;
-    
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "id_condicion_pago", nullable = false)
     private CondicionPago condicionPago;
-    
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "id_sector_economico", nullable = false)
     private SectorEconomico sectorEconomico;
-    
-    @Column(name = "total", nullable = false, precision = 16, scale = 2)
-    @Builder.Default
-    private BigDecimal total = BigDecimal.ZERO;
+
+    // [ALINEADO A BD V8] La tabla "cotizacion" NO tiene columna "total":
+    // los totales (subtotal, IGV 18%, total) se calculan en la vista
+    // vw_cotizacion_totales a partir de cotizacion_detalle.importe_linea.
+    // Ver CotizacionRepository.findTotalesByCotizacion(...).
+
+    @Column(name = "observaciones", columnDefinition = "TEXT")
+    private String observaciones;
 }
