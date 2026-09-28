@@ -18,18 +18,23 @@ import lombok.Setter;
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 @EqualsAndHashCode(callSuper = false)
 public class EstadoCotizacion extends Auditable {
-    
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id_estado_cotizacion")
     private Integer idEstadoCotizacion;
-    
+
     @Column(name = "codigo_estado", nullable = false, unique = true, length = 20)
     private String codigoEstado;
-    
+
     @Column(name = "nombre_estado", nullable = false, length = 60)
     private String nombreEstado;
-    
+
+    // DB: SMALLINT NOT NULL. Define el orden del flujo de estados
+    // (BORRADOR=1, ENVIADA=2, EN_NEGOCIACION=3, APROBADA=4, ...).
+    @Column(name = "orden_flujo", nullable = false)
+    private Short ordenFlujo;
+
     @Column(name = "es_final", nullable = false)
     @Builder.Default
     private Boolean esFinal = false;

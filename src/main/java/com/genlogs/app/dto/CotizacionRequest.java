@@ -15,7 +15,7 @@ public class CotizacionRequest {
     @NotNull(message = "Debe indicar el cliente")
     private Long idCliente;
 
-    @NotNull(message = "Debe indicar el contacto")
+    // DB: id_contacto es nullable ("cotización aún sin contacto asignado")
     private Long idContacto;
 
     @NotNull(message = "Debe indicar la moneda")
@@ -25,6 +25,8 @@ public class CotizacionRequest {
     private Integer idCondicionPago;
 
     private Integer idSectorEconomico;
+
+    private String observaciones;
 
     @NotEmpty(message = "La cotización debe tener al menos una línea")
     @Valid

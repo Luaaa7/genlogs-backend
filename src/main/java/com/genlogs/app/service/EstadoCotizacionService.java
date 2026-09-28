@@ -23,6 +23,7 @@ public class EstadoCotizacionService {
                         .idEstadoCotizacion(e.getIdEstadoCotizacion())
                         .codigoEstado(e.getCodigoEstado())
                         .nombreEstado(e.getNombreEstado())
+                        .ordenFlujo(e.getOrdenFlujo() != null ? e.getOrdenFlujo().intValue() : null)
                         .esFinal(e.getEsFinal())
                         .build())
                 .toList();

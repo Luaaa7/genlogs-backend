@@ -38,6 +38,7 @@ import com.genlogs.app.repository.CondicionPagoRepository;
 import com.genlogs.app.repository.ContactoTerceroRepository;
 import com.genlogs.app.repository.CotizacionDetalleRepository;
 import com.genlogs.app.repository.CotizacionRepository;
+import com.genlogs.app.repository.CotizacionRepository.TotalesCotizacionProjection;
 import com.genlogs.app.repository.EstadoCotizacionRepository;
 import com.genlogs.app.repository.MonedaRepository;
 import com.genlogs.app.repository.ProductoRepository;
@@ -124,11 +125,14 @@ public class CotizacionService {
         Cliente cliente = clienteRepository.findById(request.getIdCliente())
                 .orElseThrow(() -> new ResourceNotFoundException("Cliente no encontrado"));
 
-        ContactoTercero contacto = contactoTerceroRepository.findById(request.getIdContacto())
-                .orElseThrow(() -> new ResourceNotFoundException("Contacto no encontrado"));
+        ContactoTercero contacto = null;
+        if (request.getIdContacto() != null) {
+            contacto = contactoTerceroRepository.findById(request.getIdContacto())
+                    .orElseThrow(() -> new ResourceNotFoundException("Contacto no encontrado"));
 
-        if (!contacto.getTercero().getIdTercero().equals(cliente.getTercero().getIdTercero())) {
-            throw new BusinessException("El contacto no pertenece a este cliente");
+            if (!contacto.getTercero().getIdTercero().equals(cliente.getTercero().getIdTercero())) {
+                throw new BusinessException("El contacto no pertenece a este cliente");
+            }
         }
 
         Moneda moneda = monedaRepository.findById(request.getIdMoneda())
@@ -157,7 +161,7 @@ public class CotizacionService {
                 .sectorEconomico(sector)
                 .fechaCotizacion(LocalDate.now())
                 .fechaValidez(LocalDate.now().plusDays(15))
-                .total(BigDecimal.ZERO)
+                .observaciones(request.getObservaciones())
                 .build();
         cotizacion.setUserCreate(vendedor.getNombreUsuario());
         cotizacion.setProcessCreate("ALTA_COTIZACION");
@@ -165,18 +169,14 @@ public class CotizacionService {
 
         cotizacion = cotizacionRepository.save(cotizacion);
 
-        BigDecimal total = BigDecimal.ZERO;
         for (CotizacionDetalleRequest lineaReq : request.getLineas()) {
             CotizacionDetalle linea = construirLinea(cotizacion, lineaReq, vendedor.getNombreUsuario());
             cotizacionDetalleRepository.save(linea);
-            BigDecimal importe = lineaReq.getCantidad()
-                    .multiply(lineaReq.getPrecioUnitario().subtract(
-                            lineaReq.getDescuentoUnitario() != null ? lineaReq.getDescuentoUnitario() : BigDecimal.ZERO));
-            total = total.add(importe);
         }
-
-        cotizacion.setTotal(total);
-        cotizacion = cotizacionRepository.save(cotizacion);
+        // La tabla "cotizacion" no guarda el total (se calcula en
+        // vw_cotizacion_totales); se hace flush para que la vista ya vea
+        // las líneas recién insertadas al armar la respuesta.
+        cotizacionDetalleRepository.flush();
 
         registrarSeguimiento(cotizacion, estadoBorrador, vendedor, "Cotización creada");
 
@@ -300,6 +300,10 @@ public class CotizacionService {
     }
 
     private CotizacionResponse toResponse(Cotizacion c) {
+        TotalesCotizacionProjection totales = cotizacionRepository
+                .findTotalesByCotizacion(c.getIdCotizacion())
+                .orElse(null);
+
         return CotizacionResponse.builder()
                 .idCotizacion(c.getIdCotizacion())
                 .codigoCotizacion(c.getCodigoCotizacion())
@@ -307,8 +311,11 @@ public class CotizacionService {
                 .fechaCotizacion(c.getFechaCotizacion())
                 .fechaValidez(c.getFechaValidez())
                 .estado(c.getEstadoCotizacion().getNombreEstado())
-                .total(c.getTotal())
+                .subtotal(totales != null ? totales.getSubtotal() : BigDecimal.ZERO)
+                .igv(totales != null ? totales.getIgv() : BigDecimal.ZERO)
+                .total(totales != null ? totales.getTotal() : BigDecimal.ZERO)
                 .moneda(c.getMoneda().getSimbolo())
+                .observaciones(c.getObservaciones())
                 .build();
     }
 
