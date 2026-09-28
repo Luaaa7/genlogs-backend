@@ -39,5 +39,6 @@ public class EmpresaMineraMineral extends Auditable {
 
     /** Si es el mineral principal de esa operación. DB: DEFAULT FALSE. */
     @Column(name = "es_principal", nullable = false)
-    private Boolean esPrincipal;
+    @Builder.Default
+    private Boolean esPrincipal = false;
 }
