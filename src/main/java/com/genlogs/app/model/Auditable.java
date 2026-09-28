@@ -34,7 +34,7 @@ public abstract class Auditable {
     private LocalDateTime dateUpdate;
 
     /** 'A' = Activo, 'I' = Inactivo (eliminación lógica) */
-    @Column(name = "status", length = 1, nullable = false)
+    @Column(name = "status", columnDefinition = "CHAR(1)", nullable = false)
     private String status = "A";
 }
 
