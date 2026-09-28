@@ -2,6 +2,8 @@ package com.genlogs.app.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "distrito")
@@ -22,7 +24,8 @@ public class Distrito extends Auditable {
     @JoinColumn(name = "id_provincia", nullable = false)
     private Provincia provincia;
 
-    @Column(name = "ubigeo", nullable = false, unique = true, length = 6)
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "ubigeo", columnDefinition = "CHAR(6)", nullable = false, unique = true)
     private String ubigeo;
 
     @Column(name = "nombre_distrito", nullable = false, length = 100)

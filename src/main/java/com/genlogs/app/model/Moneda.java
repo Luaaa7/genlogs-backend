@@ -12,6 +12,8 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "moneda")
@@ -29,7 +31,8 @@ public class Moneda extends Auditable {
     private Integer idMoneda;
 
     /** Ej: PEN, USD, EUR. La BD valida formato ^[A-Z]{3}$ con un CHECK. */
-    @Column(name = "codigo_moneda", length = 3, nullable = false, unique = true)
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "codigo_moneda", columnDefinition = "CHAR(3)", nullable = false, unique = true)
     private String codigoMoneda;
 
     @Column(name = "nombre_moneda", length = 60, nullable = false, unique = true)
