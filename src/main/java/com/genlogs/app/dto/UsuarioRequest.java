@@ -1,9 +1,6 @@
 package com.genlogs.app.dto;
 
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.*;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -11,14 +8,14 @@ import lombok.Setter;
 @Setter
 public class UsuarioRequest {
 
-    @NotNull(message = "Debe indicar el rol")
+    @NotNull(message = "Debe indicar el rol del usuario")
     private Integer idRol;
 
     @NotBlank(message = "El nombre de usuario es obligatorio")
     @Size(max = 50)
     private String nombreUsuario;
 
-    @NotBlank(message = "El nombre completo es obligatorio")
+    @NotBlank(message = "Los nombres son obligatorios")
     @Size(max = 150)
     private String nombres;
 

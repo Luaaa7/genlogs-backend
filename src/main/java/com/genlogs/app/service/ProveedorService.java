@@ -1,5 +1,12 @@
 package com.genlogs.app.service;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.genlogs.app.dto.ProveedorRequest;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
@@ -7,17 +14,12 @@ import com.genlogs.app.model.Distrito;
 import com.genlogs.app.model.Proveedor;
 import com.genlogs.app.model.Tercero;
 import com.genlogs.app.model.TipoDocumento;
+import com.genlogs.app.repository.DistritoRepository;
 import com.genlogs.app.repository.ProveedorRepository;
 import com.genlogs.app.repository.TerceroRepository;
 import com.genlogs.app.repository.TipoDocumentoRepository;
-import com.genlogs.app.repository.UbigeoRepository;
-import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
-import java.util.List;
+import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
@@ -26,7 +28,7 @@ public class ProveedorService {
     private final ProveedorRepository proveedorRepository;
     private final TerceroRepository terceroRepository;
     private final TipoDocumentoRepository tipoDocumentoRepository;
-    private final UbigeoRepository.DistritoRepository distritoRepository;
+    private final DistritoRepository distritoRepository;
 
     /**
      * Da de alta un proveedor. Si ya existe un Tercero con el mismo

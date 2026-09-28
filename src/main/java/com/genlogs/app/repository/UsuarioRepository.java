@@ -11,11 +11,11 @@ public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
 
     Optional<Usuario> findByNombreUsuario(String nombreUsuario);
 
+    Optional<Usuario> findByCorreoIgnoreCaseAndStatus(String correo, String status);
+
     boolean existsByNombreUsuario(String nombreUsuario);
 
     boolean existsByCorreo(String correo);
-
-    Optional<Usuario> findByCorreo(String correo);
 
     List<Usuario> findByStatus(String status);
 }
