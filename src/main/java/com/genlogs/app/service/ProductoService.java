@@ -39,6 +39,7 @@ import com.genlogs.app.repository.ProveedorRepository;
 import com.genlogs.app.repository.SectorEconomicoRepository; // la crea Mell
 import com.genlogs.app.repository.UnidadMedidaRepository; // [PENDIENTE], igual que UnidadMedida
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -88,7 +89,7 @@ public class ProductoService {
                 .visibleWeb(request.getVisibleWeb())
                 .descripcion(request.getDescripcion())
                 .build();
-        producto.setUserCreate("SISTEMA");        // el interceptor de auditoría de Luana debería sobrescribir esto
+        producto.setUserCreate(usuarioActual());
         producto.setProcessCreate("ALTA_PRODUCTO");
 
         producto = productoRepository.save(producto);
@@ -113,7 +114,7 @@ public class ProductoService {
         producto.setProcedencia(request.getProcedencia());
         producto.setVisibleWeb(request.getVisibleWeb());
         producto.setDescripcion(request.getDescripcion());
-        producto.setUserUpdate("SISTEMA");
+        producto.setUserUpdate(usuarioActual());
         producto.setProcessUpdate("ACTUALIZA_PRODUCTO");
 
         return toResponse(productoRepository.save(producto));
@@ -150,7 +151,7 @@ public class ProductoService {
     public void desactivar(Long idProducto) {
         Producto producto = buscarProductoActivo(idProducto);
         producto.setStatus("I");
-        producto.setUserUpdate("SISTEMA");
+        producto.setUserUpdate(usuarioActual());
         producto.setProcessUpdate("BAJA_PRODUCTO");
         productoRepository.save(producto);
     }
@@ -176,10 +177,10 @@ public class ProductoService {
         pc.setValorCaracteristica(request.getValorCaracteristica());
         pc.setStatus("A"); // reactiva la fila si la característica se había quitado antes
         if (pc.getUserCreate() == null) {
-            pc.setUserCreate("SISTEMA");
+            pc.setUserCreate(usuarioActual());
             pc.setProcessCreate("FICHA_TECNICA");
         } else {
-            pc.setUserUpdate("SISTEMA");
+            pc.setUserUpdate(usuarioActual());
             pc.setProcessUpdate("FICHA_TECNICA");
         }
 
@@ -218,7 +219,7 @@ public class ProductoService {
                 .urlImagen(url)
                 .esPrincipal(esPrincipal)
                 .build();
-        imagen.setUserCreate("SISTEMA");
+        imagen.setUserCreate(usuarioActual());
         imagen.setProcessCreate("SUBIR_IMAGEN_PRODUCTO");
         productoImagenRepository.save(imagen);
     }
@@ -247,7 +248,7 @@ public class ProductoService {
                 .nombreDocumento(nombreDocumento)
                 .urlDocumento(url)
                 .build();
-        documento.setUserCreate("SISTEMA");
+        documento.setUserCreate(usuarioActual());
         documento.setProcessCreate("SUBIR_DOCUMENTO_PRODUCTO");
         documentoProductoRepository.save(documento);
     }
@@ -279,11 +280,11 @@ public class ProductoService {
                     .producto(producto)
                     .sectorEconomico(sector)
                     .build();
-            ps.setUserCreate("SISTEMA");
+            ps.setUserCreate(usuarioActual());
             ps.setProcessCreate("ASOCIAR_SECTOR_PRODUCTO");
         } else if ("I".equals(ps.getStatus())) {
             ps.setStatus("A"); // reactiva la asociación que se había quitado antes
-            ps.setUserUpdate("SISTEMA");
+            ps.setUserUpdate(usuarioActual());
             ps.setProcessUpdate("ASOCIAR_SECTOR_PRODUCTO");
         } else {
             return; // ya estaba asociado
@@ -337,10 +338,10 @@ public class ProductoService {
         pp.setProveedorPreferido(Boolean.TRUE.equals(request.getProveedorPreferido()));
         pp.setStatus("A");
         if (pp.getUserCreate() == null) {
-            pp.setUserCreate("SISTEMA");
+            pp.setUserCreate(usuarioActual());
             pp.setProcessCreate("ASOCIAR_PROVEEDOR_PRODUCTO");
         } else {
-            pp.setUserUpdate("SISTEMA");
+            pp.setUserUpdate(usuarioActual());
             pp.setProcessUpdate("ASOCIAR_PROVEEDOR_PRODUCTO");
         }
 
@@ -404,5 +405,9 @@ public class ProductoService {
                 .imagenPrincipal(imagenPrincipal)
                 .caracteristicas(caracteristicas)
                 .build();
+    }
+
+    private String usuarioActual() {
+        return SecurityContextHolder.getContext().getAuthentication().getName();
     }
 }
