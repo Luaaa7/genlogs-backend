@@ -1,0 +1,15 @@
+package com.genlogs.app.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import lombok.Getter;
+import lombok.Setter;
+
+@Getter
+@Setter
+public class CambiarEstadoCotizacionRequest {
+
+    @NotBlank(message = "Debe indicar el código del nuevo estado")
+    private String codigoEstado;
+
+    private String comentario;
+}
