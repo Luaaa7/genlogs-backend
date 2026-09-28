@@ -53,7 +53,8 @@ public class Servicio extends Auditable {
 
     /** Si el servicio se muestra en la web publica. Default TRUE en la BD. */
     @Column(name = "visible_web", nullable = false)
-    private Boolean visibleWeb;
+    @Builder.Default
+    private Boolean visibleWeb = true;
 
     @Column(name = "descripcion", columnDefinition = "TEXT")
     private String descripcion;
