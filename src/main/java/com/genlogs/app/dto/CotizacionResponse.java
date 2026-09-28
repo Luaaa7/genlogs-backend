@@ -16,6 +16,10 @@ public class CotizacionResponse {
     private LocalDate fechaCotizacion;
     private LocalDate fechaValidez;
     private String estado;
+    // Calculados desde vw_cotizacion_totales (la tabla no guarda el total)
+    private BigDecimal subtotal;
+    private BigDecimal igv;
     private BigDecimal total;
     private String moneda;
+    private String observaciones;
 }

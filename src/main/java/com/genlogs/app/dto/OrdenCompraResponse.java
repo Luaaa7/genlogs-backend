@@ -10,9 +10,13 @@ import lombok.NoArgsConstructor;
 @Getter @Builder @NoArgsConstructor @AllArgsConstructor
 public class OrdenCompraResponse {
     private Long idOrdenCompra;
+    private Long idCotizacion;
+    private String codigoCotizacion;
     private String numeroOrdenCompra;
     private String clienteRazonSocial;
     private LocalDate fechaEmisionCliente;
     private LocalDate fechaRecepcion;
     private String estado;
+    private String urlArchivo;
+    private String observaciones;
 }

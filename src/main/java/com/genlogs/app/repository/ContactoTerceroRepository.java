@@ -1,10 +1,11 @@
 package com.genlogs.app.repository;
 
-import com.genlogs.app.model.ContactoTercero;
-import org.springframework.data.jpa.repository.JpaRepository;
-
 import java.util.List;
 import java.util.Optional;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import com.genlogs.app.model.ContactoTercero;
 
 public interface ContactoTerceroRepository extends JpaRepository<ContactoTercero, Long> {
 
@@ -12,4 +13,6 @@ public interface ContactoTerceroRepository extends JpaRepository<ContactoTercero
 
     Optional<ContactoTercero> findByTercero_IdTerceroAndEsPrincipalTrueAndStatus(
             Long idTercero, String status);
+
+    List<ContactoTercero> findByTercero_IdTercero(Long idTercero);
 }

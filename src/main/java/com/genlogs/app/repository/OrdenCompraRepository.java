@@ -11,7 +11,9 @@ import com.genlogs.app.model.OrdenCompra;
 
 public interface OrdenCompraRepository extends JpaRepository<OrdenCompra, Long> {
     Optional<OrdenCompra> findByNumeroOrdenCompra(String numeroOrdenCompra);
-    
+
+    boolean existsByCotizacion_IdCotizacionAndStatus(Long idCotizacion, String status);
+
     @Query("SELECT oc FROM OrdenCompra oc WHERE oc.cotizacion.cliente.idCliente = :idCliente AND oc.status = 'A' ORDER BY oc.fechaRecepcion DESC")
     List<OrdenCompra> findByCliente(@Param("idCliente") Long idCliente);
         List<OrdenCompra> findByDateCreateBetween(java.time.LocalDateTime inicio, java.time.LocalDateTime fin);

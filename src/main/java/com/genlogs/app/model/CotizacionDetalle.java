@@ -1,8 +1,22 @@
 package com.genlogs.app.model;
 
-import jakarta.persistence.*;
-import lombok.*;
 import java.math.BigDecimal;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 @Entity
 @Table(name = "cotizacion_detalle")
@@ -44,6 +58,6 @@ public class CotizacionDetalle extends Auditable {
     @Builder.Default
     private BigDecimal descuentoUnitario = BigDecimal.ZERO;
     
-    @Column(name = "importe_linea", nullable = false, precision = 16, scale = 2, columnDefinition = "NUMERIC(16,2) GENERATED ALWAYS AS (ROUND(cantidad * (precio_unitario - descuento_unitario), 2)) STORED")
+    @Column(name = "importe_linea", insertable = false, updatable = false)
     private BigDecimal importeLinea;
 }

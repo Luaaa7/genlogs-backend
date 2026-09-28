@@ -40,5 +40,6 @@ public class ServicioImagen extends Auditable {
     private String urlImagen;
 
     @Column(name = "es_principal", nullable = false)
-    private Boolean esPrincipal;
+    @Builder.Default
+    private Boolean esPrincipal = false;
 }
