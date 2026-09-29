@@ -33,4 +33,19 @@ public interface CotizacionRepository extends JpaRepository<Cotizacion, Long> {
     @Query(value = "SELECT descuento_total AS descuentoTotal, subtotal, igv, total " +
             "FROM vw_cotizacion_totales WHERE id_cotizacion = :idCotizacion", nativeQuery = true)
     Optional<TotalesCotizacionProjection> findTotalesByCotizacion(@Param("idCotizacion") Long idCotizacion);
+
+    // --- Soporte para DashboardController ---
+
+    @Query("SELECT COUNT(c) FROM Cotizacion c WHERE c.status = 'A' AND c.estadoCotizacion.esFinal = false")
+    long countPendientes();
+
+    public interface EstadoCantidadProjection {
+        String getEstado();
+        Long getCantidad();
+    }
+
+    @Query("SELECT c.estadoCotizacion.nombreEstado AS estado, COUNT(c) AS cantidad " +
+            "FROM Cotizacion c WHERE c.status = 'A' " +
+            "GROUP BY c.estadoCotizacion.nombreEstado")
+    List<EstadoCantidadProjection> countAgrupadoPorEstado();
 }
