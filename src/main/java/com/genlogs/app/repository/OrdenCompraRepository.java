@@ -16,4 +16,9 @@ public interface OrdenCompraRepository extends JpaRepository<OrdenCompra, Long> 
 
     @Query("SELECT oc FROM OrdenCompra oc WHERE oc.cotizacion.cliente.idCliente = :idCliente AND oc.status = 'A' ORDER BY oc.fechaRecepcion DESC")
     List<OrdenCompra> findByCliente(@Param("idCliente") Long idCliente);
+
+    // --- Soporte para DashboardController ---
+
+    @Query("SELECT COUNT(oc) FROM OrdenCompra oc WHERE oc.status = 'A' AND oc.estadoOrdenCompra.esFinal = false")
+    long countEnProceso();
 }

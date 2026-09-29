@@ -13,6 +13,9 @@ public interface ClienteRepository extends JpaRepository<Cliente, Long> {
 
     List<Cliente> findBySituacionAndStatus(String situacion, String status);
 
+    // --- Soporte para DashboardController ---
+    long countBySituacionAndStatus(String situacion, String status);
+
     @Query("""
            SELECT c FROM Cliente c
            WHERE c.tercero.numeroDocumento = :numeroDocumento
