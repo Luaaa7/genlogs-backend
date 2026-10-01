@@ -4,7 +4,6 @@ import java.io.IOException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -31,9 +30,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(
-            @NonNull HttpServletRequest request,
-            @NonNull HttpServletResponse response,
-            @NonNull FilterChain filterChain
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain filterChain
     ) throws ServletException, IOException {
 
         String authHeader = request.getHeader("Authorization");
@@ -46,12 +45,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String token = authHeader.substring(7);
 
         // Un token corrupto, con firma inválida o vencido no debe tumbar la
-        // petición con un 500: antes esto no se capturaba y la excepción de
-        // JJWT se propagaba sin control, dejando a Spring Security en un
-        // estado inconsistente (terminaba respondiendo 403 sin pista alguna
-        // de la causa real). Ahora simplemente no autenticamos y seguimos;
-        // el resto de la cadena de seguridad se encarga de rechazar
-        // (403/401) la ruta protegida como corresponde.
+        // petición con un 500: simplemente no autenticamos y seguimos; el
+        // resto de la cadena de seguridad rechaza la ruta protegida.
         try {
             String username = jwtUtil.extraerUsername(token);
 

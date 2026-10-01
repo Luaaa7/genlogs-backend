@@ -1,6 +1,10 @@
 package com.genlogs.app.security;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Date;
+import java.util.HexFormat;
 import java.util.function.Function;
 
 import javax.crypto.SecretKey;
@@ -10,11 +14,17 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 
 @Component
 public class JwtUtil {
+
+    private static final String CLAIM_PURPOSE = "purpose";
+    private static final String CLAIM_HUELLA = "ph";
+    private static final String PURPOSE_RESET = "reset";
+    private static final long RESET_EXPIRATION_MS = 30L * 60 * 1000; // 30 minutos
 
     @Value("${jwt.secret}")
     private String secret;
@@ -40,20 +50,65 @@ public class JwtUtil {
     }
 
     public boolean esTokenValido(String token, UserDetails userDetails) {
-        String username = extraerUsername(token);
-        return username.equals(userDetails.getUsername()) && !estaExpirado(token);
+        Claims claims = parsear(token);
+        // Un token de recuperación de contraseña NUNCA sirve para iniciar sesión.
+        if (PURPOSE_RESET.equals(claims.get(CLAIM_PURPOSE, String.class))) {
+            return false;
+        }
+        return claims.getSubject().equals(userDetails.getUsername())
+                && !claims.getExpiration().before(new Date());
     }
 
-    private boolean estaExpirado(String token) {
-        return extraerClaim(token, Claims::getExpiration).before(new Date());
+    // ----- Recuperación de contraseña (sin tablas nuevas en la BD) -----
+
+    /**
+     * Token de un solo uso lógico: lleva una "huella" del hash de contraseña actual.
+     * Apenas la contraseña cambia, la huella ya no coincide y el enlace deja de servir.
+     */
+    public String generarTokenReset(String username, String passwordHashActual) {
+        return Jwts.builder()
+                .subject(username)
+                .claim(CLAIM_PURPOSE, PURPOSE_RESET)
+                .claim(CLAIM_HUELLA, huella(passwordHashActual))
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + RESET_EXPIRATION_MS))
+                .signWith(getSigningKey())
+                .compact();
     }
 
-    private <T> T extraerClaim(String token, Function<Claims, T> resolver) {
-        Claims claims = Jwts.parser()
+    /** Lanza JwtException si el token es inválido, venció o no es de recuperación. */
+    public Claims leerClaimsReset(String token) {
+        Claims claims = parsear(token);
+        if (!PURPOSE_RESET.equals(claims.get(CLAIM_PURPOSE, String.class))) {
+            throw new JwtException("El token no es de recuperación de contraseña");
+        }
+        return claims;
+    }
+
+    public boolean huellaCoincide(Claims claims, String passwordHashActual) {
+        String enToken = claims.get(CLAIM_HUELLA, String.class);
+        return enToken != null && enToken.equals(huella(passwordHashActual));
+    }
+
+    private String huella(String passwordHash) {
+        try {
+            MessageDigest sha = MessageDigest.getInstance("SHA-256");
+            byte[] digest = sha.digest(passwordHash.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest).substring(0, 16);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private Claims parsear(String token) {
+        return Jwts.parser()
                 .verifyWith(getSigningKey())
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
-        return resolver.apply(claims);
+    }
+
+    private <T> T extraerClaim(String token, Function<Claims, T> resolver) {
+        return resolver.apply(parsear(token));
     }
 }
