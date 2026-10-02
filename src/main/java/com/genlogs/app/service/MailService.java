@@ -14,22 +14,25 @@ import org.springframework.stereotype.Service;
 import com.genlogs.app.security.JwtUtil;
 
 /**
- * Envío de correos por la API HTTPS de Resend (https://resend.com).
+ * Envío de correos por la API HTTPS de Brevo (https://www.brevo.com).
  * Se usa HTTP en vez de SMTP porque Render bloquea los puertos SMTP en el plan gratuito.
  *
- * Si RESEND_API_KEY no está configurada, el enlace se escribe en los logs
- * (útil para probar sin correo real).
+ * Si BREVO_API_KEY o MAIL_FROM_EMAIL no están configuradas, el enlace se escribe
+ * en los logs (útil para probar sin correo real).
  */
 @Service
 public class MailService {
 
     private static final Logger log = LoggerFactory.getLogger(MailService.class);
 
-    @Value("${app.mail.resend-api-key:}")
+    @Value("${app.mail.brevo-api-key:}")
     private String apiKey;
 
-    @Value("${app.mail.from}")
-    private String from;
+    @Value("${app.mail.from-email:}")
+    private String fromEmail;
+
+    @Value("${app.mail.from-name:GenLogs}")
+    private String fromName;
 
     private final HttpClient client = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
@@ -38,24 +41,26 @@ public class MailService {
     public void enviarRecuperacion(String destino, String nombres, String nombreUsuario, String link) {
         int minutos = JwtUtil.RESET_EXPIRATION_MINUTES;
 
-        if (apiKey == null || apiKey.isBlank()) {
-            log.warn("RESEND_API_KEY no configurada. Enlace de recuperación (válido {} min): {}", minutos, link);
+        if (apiKey == null || apiKey.isBlank() || fromEmail == null || fromEmail.isBlank()) {
+            log.warn("BREVO_API_KEY o MAIL_FROM_EMAIL no configuradas. Enlace de recuperación (válido {} min): {}",
+                    minutos, link);
             return;
         }
 
         String json = "{"
-                + "\"from\":" + jsonString(from) + ","
-                + "\"to\":[" + jsonString(destino) + "],"
+                + "\"sender\":{\"name\":" + jsonString(fromName) + ",\"email\":" + jsonString(fromEmail) + "},"
+                + "\"to\":[{\"email\":" + jsonString(destino) + ",\"name\":" + jsonString(nombres) + "}],"
                 + "\"subject\":" + jsonString("Restablece tu contraseña de GenLogs") + ","
-                + "\"html\":" + jsonString(construirHtml(nombres, nombreUsuario, link, minutos)) + ","
-                + "\"text\":" + jsonString(construirTexto(nombres, nombreUsuario, link, minutos))
+                + "\"htmlContent\":" + jsonString(construirHtml(nombres, nombreUsuario, link, minutos)) + ","
+                + "\"textContent\":" + jsonString(construirTexto(nombres, nombreUsuario, link, minutos))
                 + "}";
 
         try {
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("https://api.resend.com/emails"))
+                    .uri(URI.create("https://api.brevo.com/v3/smtp/email"))
                     .timeout(Duration.ofSeconds(15))
-                    .header("Authorization", "Bearer " + apiKey)
+                    .header("api-key", apiKey)
+                    .header("accept", "application/json")
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .build();
@@ -63,7 +68,7 @@ public class MailService {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() >= 300) {
-                log.error("Resend respondió {}: {}", response.statusCode(), response.body());
+                log.error("Brevo respondió {}: {}", response.statusCode(), response.body());
             } else {
                 log.info("Correo de recuperación enviado");
             }
