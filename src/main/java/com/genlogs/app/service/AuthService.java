@@ -2,6 +2,7 @@ package com.genlogs.app.service;
 
 import com.genlogs.app.dto.LoginRequest;
 import com.genlogs.app.dto.LoginResponse;
+import com.genlogs.app.dto.TokenResetInfoResponse;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.UsuarioRepository;
@@ -24,6 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Date;
 
 @Service
 @RequiredArgsConstructor
@@ -93,11 +95,36 @@ public class AuthService {
             String link = base + "/reset-password?token=" + token;
 
             try {
-                mailService.enviarRecuperacion(usuario.getCorreo(), usuario.getNombres(), link);
+                mailService.enviarRecuperacion(usuario.getCorreo(), usuario.getNombres(), usuario.getNombreUsuario(), link);
             } catch (Exception e) {
                 log.error("Falló el envío del correo de recuperación", e);
             }
         }, () -> log.info("Recuperación solicitada para un correo no registrado"));
+    }
+
+    /** Comprueba que el enlace sea auténtico, no haya vencido y no se haya usado ya. */
+    @Transactional(readOnly = true)
+    public TokenResetInfoResponse validarTokenReset(String token) {
+        Claims claims = leerClaimsOError(token);
+        Usuario usuario = usuarioRepository.findByNombreUsuario(claims.getSubject())
+                .orElseThrow(() -> new BusinessException(MSG_ENLACE_INVALIDO));
+
+        if (!jwtUtil.huellaCoincide(claims, usuario.getPasswordHash())
+                || !"A".equals(usuario.getStatus())
+                || Boolean.TRUE.equals(usuario.getBloqueado())) {
+            throw new BusinessException(MSG_ENLACE_INVALIDO);
+        }
+
+        long segundos = Math.max(0, (claims.getExpiration().getTime() - new Date().getTime()) / 1000);
+        return new TokenResetInfoResponse(usuario.getNombreUsuario(), segundos);
+    }
+
+    private Claims leerClaimsOError(String token) {
+        try {
+            return jwtUtil.leerClaimsReset(token);
+        } catch (JwtException | IllegalArgumentException e) {
+            throw new BusinessException(MSG_ENLACE_INVALIDO);
+        }
     }
 
     @Transactional
@@ -115,6 +142,10 @@ public class AuthService {
         // Si la contraseña ya cambió desde que se emitió el enlace, el enlace deja de servir.
         if (!jwtUtil.huellaCoincide(claims, usuario.getPasswordHash())) {
             throw new BusinessException(MSG_ENLACE_INVALIDO);
+        }
+
+        if (passwordEncoder.matches(nuevaPassword, usuario.getPasswordHash())) {
+            throw new BusinessException("La nueva contraseña debe ser distinta a la anterior.");
         }
 
         usuario.setPasswordHash(passwordEncoder.encode(nuevaPassword));

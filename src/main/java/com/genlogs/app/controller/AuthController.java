@@ -4,11 +4,15 @@ import com.genlogs.app.dto.ForgotPasswordRequest;
 import com.genlogs.app.dto.LoginRequest;
 import com.genlogs.app.dto.LoginResponse;
 import com.genlogs.app.dto.ResetPasswordRequest;
+import com.genlogs.app.dto.TokenResetInfoResponse;
+import com.genlogs.app.dto.ValidarTokenResetRequest;
 import com.genlogs.app.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -23,20 +27,23 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * Solicita el enlace de recuperación. Siempre responde 200 (exista o no el correo)
-     * para no revelar qué correos están registrados.
-     */
     @PostMapping("/forgot-password")
-    public ResponseEntity<Void> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+    public ResponseEntity<Map<String, String>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
         authService.solicitarRecuperacion(request.getCorreo());
-        return ResponseEntity.ok().build();
+        // Respuesta siempre igual, exista o no el correo (no revelar qué correos están registrados).
+        return ResponseEntity.ok(Map.of("message",
+                "Si el correo está registrado, recibirás un enlace para cambiar tu contraseña."));
     }
 
-    /** Cambia la contraseña usando el token recibido por correo. */
+    /** La pantalla de "nueva contraseña" lo consulta al abrirse: indica si el enlace sigue vigente. */
+    @PostMapping("/validate-reset-token")
+    public ResponseEntity<TokenResetInfoResponse> validarTokenReset(@Valid @RequestBody ValidarTokenResetRequest request) {
+        return ResponseEntity.ok(authService.validarTokenReset(request.getToken()));
+    }
+
     @PostMapping("/reset-password")
-    public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+    public ResponseEntity<Map<String, String>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
         authService.restablecerPassword(request.getToken(), request.getNuevaPassword());
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(Map.of("message", "Contraseña actualizada correctamente."));
     }
 }

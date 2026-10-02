@@ -24,7 +24,9 @@ public class JwtUtil {
     private static final String CLAIM_PURPOSE = "purpose";
     private static final String CLAIM_HUELLA = "ph";
     private static final String PURPOSE_RESET = "reset";
-    private static final long RESET_EXPIRATION_MS = 30L * 60 * 1000; // 30 minutos
+    /** Minutos de vida del enlace de recuperación (también se muestra en el correo y en la pantalla). */
+    public static final int RESET_EXPIRATION_MINUTES = 15;
+    private static final long RESET_EXPIRATION_MS = RESET_EXPIRATION_MINUTES * 60L * 1000;
 
     @Value("${jwt.secret}")
     private String secret;
