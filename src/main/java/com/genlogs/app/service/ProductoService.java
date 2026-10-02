@@ -1,11 +1,12 @@
 package com.genlogs.app.service;
 
+import com.genlogs.app.dto.DocumentoAdjuntoRequest;
+import com.genlogs.app.dto.ImagenAdjuntaRequest;
+import com.genlogs.app.dto.PageResponseDto;
 import com.genlogs.app.dto.ProductoCaracteristicaRequest;
 import com.genlogs.app.dto.ProductoProveedorRequest;
 import com.genlogs.app.dto.ProductoRequest;
 import com.genlogs.app.dto.ProductoResponse;
-// ⚠️ Estas dos excepciones las crea Luana en com.genlogs.app.exception
-//    (núcleo). Si aún no existen al compilar, avísale para no bloquearte.
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
 import com.genlogs.app.model.CategoriaProducto;
@@ -39,6 +40,10 @@ import com.genlogs.app.repository.ProveedorRepository;
 import com.genlogs.app.repository.SectorEconomicoRepository; // la crea Mell
 import com.genlogs.app.repository.UnidadMedidaRepository; // [PENDIENTE], igual que UnidadMedida
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -140,6 +145,44 @@ public class ProductoService {
                 .collect(Collectors.toList());
     }
 
+    /** Listado del panel interno: productos activos, con filtros opcionales y paginación (page base 0). */
+    @Transactional(readOnly = true)
+    public PageResponseDto<ProductoResponse> listarPaginado(String nombre, String codigo,
+                                                            Integer idCategoria, Integer idMarca,
+                                                            int page, int size) {
+        Specification<Producto> spec = (root, query, cb) -> cb.equal(root.get("status"), "A");
+
+        if (nombre != null && !nombre.isBlank()) {
+            String patron = "%" + nombre.trim().toLowerCase() + "%";
+            spec = spec.and((root, query, cb) -> cb.like(cb.lower(root.get("nombreProducto")), patron));
+        }
+        if (codigo != null && !codigo.isBlank()) {
+            String patron = "%" + codigo.trim().toLowerCase() + "%";
+            spec = spec.and((root, query, cb) -> cb.like(cb.lower(root.get("codigoProducto")), patron));
+        }
+        if (idCategoria != null) {
+            spec = spec.and((root, query, cb) ->
+                    cb.equal(root.get("categoriaProducto").get("idCategoriaProducto"), idCategoria));
+        }
+        if (idMarca != null) {
+            spec = spec.and((root, query, cb) ->
+                    cb.equal(root.get("marca").get("idMarca"), idMarca));
+        }
+
+        int paginaSegura = Math.max(page, 0);
+        int tamanioSeguro = Math.min(Math.max(size, 1), 100);
+
+        Page<Producto> resultado = productoRepository.findAll(
+                spec, PageRequest.of(paginaSegura, tamanioSeguro, Sort.by("nombreProducto")));
+
+        List<ProductoResponse> contenido = resultado.getContent().stream()
+                .map(this::toResponse)
+                .collect(Collectors.toList());
+
+        return new PageResponseDto<>(contenido, resultado.getTotalElements(),
+                resultado.getTotalPages(), paginaSegura, tamanioSeguro);
+    }
+
     @Transactional(readOnly = true)
     public List<ProductoResponse> buscarPorNombre(String texto) {
         return productoRepository.buscarPorNombre(texto).stream()
@@ -204,6 +247,19 @@ public class ProductoService {
     public void subirImagen(Long idProducto, MultipartFile archivo, boolean esPrincipal) {
         Producto producto = buscarProductoActivo(idProducto);
         String url = cloudinaryService.subirImagen(archivo, CARPETA_IMAGENES);
+        guardarImagen(producto, url, esPrincipal, "SUBIR_IMAGEN_PRODUCTO");
+    }
+
+    /** El archivo ya está en Cloudinary (lo subió /api/archivos/upload): solo se guarda la URL. */
+    @Transactional
+    public void agregarImagenPorUrl(Long idProducto, ImagenAdjuntaRequest request) {
+        Producto producto = buscarProductoActivo(idProducto);
+        guardarImagen(producto, request.getUrlImagen(), Boolean.TRUE.equals(request.getEsPrincipal()),
+                "ASOCIAR_IMAGEN_PRODUCTO");
+    }
+
+    private void guardarImagen(Producto producto, String url, boolean esPrincipal, String proceso) {
+        Long idProducto = producto.getIdProducto();
 
         if (esPrincipal) {
             productoImagenRepository
@@ -220,7 +276,7 @@ public class ProductoService {
                 .esPrincipal(esPrincipal)
                 .build();
         imagen.setUserCreate(usuarioActual());
-        imagen.setProcessCreate("SUBIR_IMAGEN_PRODUCTO");
+        imagen.setProcessCreate(proceso);
         productoImagenRepository.save(imagen);
     }
 
@@ -250,6 +306,22 @@ public class ProductoService {
                 .build();
         documento.setUserCreate(usuarioActual());
         documento.setProcessCreate("SUBIR_DOCUMENTO_PRODUCTO");
+        documentoProductoRepository.save(documento);
+    }
+
+    /** El archivo ya está en Cloudinary (lo subió /api/archivos/upload): solo se guarda la URL. */
+    @Transactional
+    public void agregarDocumentoPorUrl(Long idProducto, DocumentoAdjuntoRequest request) {
+        Producto producto = buscarProductoActivo(idProducto);
+
+        DocumentoProducto documento = DocumentoProducto.builder()
+                .producto(producto)
+                .tipoDocumento(request.getTipoDocumento())
+                .nombreDocumento(request.getNombreDocumento())
+                .urlDocumento(request.getUrlDocumento())
+                .build();
+        documento.setUserCreate(usuarioActual());
+        documento.setProcessCreate("ASOCIAR_DOCUMENTO_PRODUCTO");
         documentoProductoRepository.save(documento);
     }
 
@@ -377,33 +449,68 @@ public class ProductoService {
     }
 
     private ProductoResponse toResponse(Producto producto) {
+        Long idProducto = producto.getIdProducto();
+
         List<ProductoResponse.CaracteristicaValorResponse> caracteristicas =
-                productoCaracteristicaRepository.findByProducto_IdProductoAndStatus(producto.getIdProducto(), "A")
+                productoCaracteristicaRepository.findByProducto_IdProductoAndStatus(idProducto, "A")
                         .stream()
                         .map(pc -> ProductoResponse.CaracteristicaValorResponse.builder()
+                                .idCaracteristica(pc.getCaracteristica().getIdCaracteristica())
                                 .nombreCaracteristica(pc.getCaracteristica().getNombreCaracteristica())
                                 .unidadCaracteristica(pc.getCaracteristica().getUnidadCaracteristica())
                                 .valor(pc.getValorCaracteristica())
+                                .valorCaracteristica(pc.getValorCaracteristica())
                                 .build())
                         .collect(Collectors.toList());
 
-        String imagenPrincipal = productoImagenRepository
-                .findByProducto_IdProductoAndEsPrincipalTrueAndStatus(producto.getIdProducto(), "A")
+        List<ProductoImagen> imagenesActivas =
+                productoImagenRepository.findByProducto_IdProductoAndStatus(idProducto, "A");
+
+        List<ProductoResponse.ImagenResponse> imagenes = imagenesActivas.stream()
+                .map(i -> ProductoResponse.ImagenResponse.builder()
+                        .idProductoImagen(i.getIdProductoImagen())
+                        .urlImagen(i.getUrlImagen())
+                        .esPrincipal(i.getEsPrincipal())
+                        .build())
+                .collect(Collectors.toList());
+
+        String imagenPrincipal = imagenesActivas.stream()
+                .filter(i -> Boolean.TRUE.equals(i.getEsPrincipal()))
                 .map(ProductoImagen::getUrlImagen)
+                .findFirst()
                 .orElse(null);
 
+        List<ProductoResponse.DocumentoResponse> documentos =
+                documentoProductoRepository.findByProducto_IdProductoAndStatus(idProducto, "A")
+                        .stream()
+                        .map(d -> ProductoResponse.DocumentoResponse.builder()
+                                .idDocumento(d.getIdDocumento())
+                                .tipoDocumento(d.getTipoDocumento().name())
+                                .nombreDocumento(d.getNombreDocumento())
+                                .urlDocumento(d.getUrlDocumento())
+                                .build())
+                        .collect(Collectors.toList());
+
         return ProductoResponse.builder()
-                .idProducto(producto.getIdProducto())
+                .idProducto(idProducto)
                 .codigoProducto(producto.getCodigoProducto())
                 .nombreProducto(producto.getNombreProducto())
                 .procedencia(producto.getProcedencia())
                 .descripcion(producto.getDescripcion())
                 .visibleWeb(producto.getVisibleWeb())
+                .status(producto.getStatus())
                 .categoria(producto.getCategoriaProducto().getNombreCategoria())
                 .marca(producto.getMarca() != null ? producto.getMarca().getNombreMarca() : null)
                 .unidadMedida(producto.getUnidadMedida().getCodigoUnidad())
                 .imagenPrincipal(imagenPrincipal)
+                .idCategoriaProducto(producto.getCategoriaProducto().getIdCategoriaProducto())
+                .categoriaNombre(producto.getCategoriaProducto().getNombreCategoria())
+                .idMarca(producto.getMarca() != null ? producto.getMarca().getIdMarca() : null)
+                .marcaNombre(producto.getMarca() != null ? producto.getMarca().getNombreMarca() : null)
+                .idUnidadMedida(producto.getUnidadMedida().getIdUnidadMedida())
                 .caracteristicas(caracteristicas)
+                .imagenes(imagenes)
+                .documentos(documentos)
                 .build();
     }
 
