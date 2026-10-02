@@ -14,6 +14,8 @@ public class OrdenCompraResponse {
     private String codigoCotizacion;
     private String numeroOrdenCompra;
     private String clienteRazonSocial;
+    private String cliente;
+    private String estadoCodigo;
     private LocalDate fechaEmisionCliente;
     private LocalDate fechaRecepcion;
     private String estado;

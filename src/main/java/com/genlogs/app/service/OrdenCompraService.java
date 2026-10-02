@@ -4,6 +4,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,6 +13,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.genlogs.app.dto.CambiarEstadoOrdenCompraRequest;
 import com.genlogs.app.dto.OrdenCompraRequest;
+import com.genlogs.app.dto.PaginaResponse;
 import com.genlogs.app.dto.OrdenCompraResponse;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
@@ -37,6 +40,17 @@ public class OrdenCompraService {
     private final CondicionPagoRepository condicionPagoRepository;
     private final UsuarioRepository usuarioRepository;
     private final CloudinaryService cloudinaryService;
+
+    @Transactional(readOnly = true)
+    public PaginaResponse<OrdenCompraResponse> listar(String estadoCodigo, Long idCotizacion, int page, int size) {
+        int p = Math.max(page, 0);
+        int s = Math.min(Math.max(size, 1), 200);
+        Page<OrdenCompra> resultado = ordenCompraRepository.buscar(
+                estadoCodigo == null ? "" : estadoCodigo.trim(),
+                idCotizacion == null ? 0L : idCotizacion,
+                PageRequest.of(p, s));
+        return PaginaResponse.of(resultado.map(this::toResponse));
+    }
 
     @Transactional(readOnly = true)
     public OrdenCompraResponse buscarPorId(Long idOrdenCompra) {
@@ -158,6 +172,8 @@ public class OrdenCompraService {
                 .codigoCotizacion(oc.getCotizacion().getCodigoCotizacion())
                 .numeroOrdenCompra(oc.getNumeroOrdenCompra())
                 .clienteRazonSocial(oc.getCotizacion().getCliente().getTercero().getRazonSocial())
+                .cliente(oc.getCotizacion().getCliente().getTercero().getRazonSocial())
+                .estadoCodigo(oc.getEstadoOrdenCompra().getCodigoEstado())
                 .fechaEmisionCliente(oc.getFechaEmisionCliente())
                 .fechaRecepcion(oc.getFechaRecepcion())
                 .estado(oc.getEstadoOrdenCompra().getNombreEstado())

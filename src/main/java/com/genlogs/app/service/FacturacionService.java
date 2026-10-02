@@ -7,6 +7,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,6 +18,7 @@ import com.genlogs.app.dto.DetalleFacturacionRequest;
 import com.genlogs.app.dto.DetalleFacturacionResponse;
 import com.genlogs.app.dto.FacturacionRequest;
 import com.genlogs.app.dto.FacturacionResponse;
+import com.genlogs.app.dto.PaginaResponse;
 import com.genlogs.app.dto.RegistrarPagoRequest;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
@@ -54,6 +57,19 @@ public class FacturacionService {
     private final ProductoRepository productoRepository;
     private final ServicioRepository servicioRepository;
     private final UsuarioRepository usuarioRepository;
+
+    @Transactional(readOnly = true)
+    public PaginaResponse<FacturacionResponse> listar(String estadoCodigo, String tipoCodigo, Long idOrdenCompra,
+                                                      int page, int size) {
+        int p = Math.max(page, 0);
+        int s = Math.min(Math.max(size, 1), 200);
+        Page<Facturacion> resultado = facturacionRepository.buscar(
+                estadoCodigo == null ? "" : estadoCodigo.trim(),
+                tipoCodigo == null ? "" : tipoCodigo.trim(),
+                idOrdenCompra == null ? 0L : idOrdenCompra,
+                PageRequest.of(p, s));
+        return PaginaResponse.of(resultado.map(this::toResponse));
+    }
 
     @Transactional(readOnly = true)
     public FacturacionResponse buscarPorId(Long idFacturacion) {
@@ -250,6 +266,9 @@ public class FacturacionService {
                 .idOrdenCompra(f.getOrdenCompra().getIdOrdenCompra())
                 .numeroOrdenCompra(f.getOrdenCompra().getNumeroOrdenCompra())
                 .numeroComprobante(f.getSerieComprobante() + "-" + f.getNumeroComprobante())
+                .codigoComprobante(f.getSerieComprobante() + "-" + f.getNumeroComprobante())
+                .cliente(f.getOrdenCompra().getCotizacion().getCliente().getTercero().getRazonSocial())
+                .estadoCodigo(f.getEstadoFacturacion().getCodigoEstado())
                 .tipoComprobante(f.getTipoComprobante().getNombreTipo())
                 .clienteRazonSocial(f.getOrdenCompra().getCotizacion().getCliente().getTercero().getRazonSocial())
                 .fechaEmision(f.getFechaEmision())

@@ -14,6 +14,9 @@ public class FacturacionResponse {
     private Long idOrdenCompra;
     private String numeroOrdenCompra;
     private String numeroComprobante;
+    private String codigoComprobante;
+    private String cliente;
+    private String estadoCodigo;
     private String tipoComprobante;
     private String clienteRazonSocial;
     private LocalDate fechaEmision;

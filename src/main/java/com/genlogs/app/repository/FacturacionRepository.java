@@ -5,6 +5,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -16,6 +18,21 @@ public interface FacturacionRepository extends JpaRepository<Facturacion, Long> 
 
     @Query("SELECT f FROM Facturacion f WHERE f.ordenCompra.cotizacion.cliente.idCliente = :idCliente AND f.status = 'A' ORDER BY f.fechaEmision DESC")
     List<Facturacion> findByCliente(@Param("idCliente") Long idCliente);
+
+    // Listado paginado con filtros opcionales ('' y 0 significan "sin filtro").
+    @Query(value = "SELECT f FROM Facturacion f WHERE f.status = 'A' "
+            + "AND (:codigoEstado = '' OR f.estadoFacturacion.codigoEstado = :codigoEstado) "
+            + "AND (:codigoTipo = '' OR f.tipoComprobante.codigoTipo = :codigoTipo) "
+            + "AND (:idOrdenCompra = 0L OR f.ordenCompra.idOrdenCompra = :idOrdenCompra) "
+            + "ORDER BY f.fechaEmision DESC, f.idFacturacion DESC",
+            countQuery = "SELECT COUNT(f) FROM Facturacion f WHERE f.status = 'A' "
+            + "AND (:codigoEstado = '' OR f.estadoFacturacion.codigoEstado = :codigoEstado) "
+            + "AND (:codigoTipo = '' OR f.tipoComprobante.codigoTipo = :codigoTipo) "
+            + "AND (:idOrdenCompra = 0L OR f.ordenCompra.idOrdenCompra = :idOrdenCompra)")
+    Page<Facturacion> buscar(@Param("codigoEstado") String codigoEstado,
+                             @Param("codigoTipo") String codigoTipo,
+                             @Param("idOrdenCompra") long idOrdenCompra,
+                             Pageable pageable);
 
     // --- Soporte para DashboardController ---
     // La tabla "facturacion" no guarda el total: se calcula en la vista
