@@ -6,6 +6,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +19,7 @@ import com.genlogs.app.dto.CotizacionDetalleRequest;
 import com.genlogs.app.dto.CotizacionDetalleResponse;
 import com.genlogs.app.dto.CotizacionRequest;
 import com.genlogs.app.dto.CotizacionResponse;
+import com.genlogs.app.dto.PaginaResponse;
 import com.genlogs.app.dto.SeguimientoCotizacionResponse;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
@@ -80,6 +83,15 @@ public class CotizacionService {
         Cotizacion c = cotizacionRepository.findByCodigoCotizacion(codigoCotizacion)
                 .orElseThrow(() -> new ResourceNotFoundException("Cotización no encontrada"));
         return toResponse(c);
+    }
+
+    /**
+     * Listado paginado con filtros opcionales, para CotizacionesListPage.tsx.
+     */
+    @Transactional(readOnly = true)
+    public PaginaResponse<CotizacionResponse> listar(String codigoEstado, Long idCliente, String codigoMoneda, Pageable pageable) {
+        Page<Cotizacion> pagina = cotizacionRepository.buscarPaginado(codigoEstado, idCliente, codigoMoneda, pageable);
+        return PaginaResponse.of(pagina.map(this::toResponse));
     }
 
     @Transactional(readOnly = true)
