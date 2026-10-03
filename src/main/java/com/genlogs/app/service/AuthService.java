@@ -95,7 +95,7 @@ public class AuthService {
             String link = base + "/reset-password?token=" + token;
 
             try {
-                mailService.enviarRecuperacion(usuario.getCorreo(), usuario.getNombres(), usuario.getNombreUsuario(), link);
+                mailService.enviarRecuperacion(usuario.getCorreo(), usuario.getNombres(), link);
             } catch (Exception e) {
                 log.error("Falló el envío del correo de recuperación", e);
             }
@@ -109,38 +109,38 @@ public class AuthService {
         Usuario usuario = usuarioRepository.findByNombreUsuario(claims.getSubject())
                 .orElseThrow(() -> new BusinessException(MSG_ENLACE_INVALIDO));
 
-        if (!jwtUtil.huellaCoincide(claims, usuario.getPasswordHash())
-                || !"A".equals(usuario.getStatus())
-                || Boolean.TRUE.equals(usuario.getBloqueado())) {
+        if (!jwtUtil.huellaCoincide(claims, usuario.getPasswordHash())) {
+            log.warn("Enlace de recuperación rechazado: ya fue usado (la contraseña cambió desde que se emitió)");
+            throw new BusinessException(MSG_ENLACE_INVALIDO);
+        }
+        if (!"A".equals(usuario.getStatus()) || Boolean.TRUE.equals(usuario.getBloqueado())) {
+            log.warn("Enlace de recuperación rechazado: usuario inactivo o bloqueado");
             throw new BusinessException(MSG_ENLACE_INVALIDO);
         }
 
         long segundos = Math.max(0, (claims.getExpiration().getTime() - new Date().getTime()) / 1000);
-        return new TokenResetInfoResponse(usuario.getNombreUsuario(), segundos);
+        return new TokenResetInfoResponse(segundos);
     }
 
     private Claims leerClaimsOError(String token) {
         try {
             return jwtUtil.leerClaimsReset(token);
         } catch (JwtException | IllegalArgumentException e) {
+            log.warn("Enlace de recuperación rechazado ({}): {}", e.getClass().getSimpleName(), e.getMessage());
             throw new BusinessException(MSG_ENLACE_INVALIDO);
         }
     }
 
     @Transactional
     public void restablecerPassword(String token, String nuevaPassword) {
-        Claims claims;
-        try {
-            claims = jwtUtil.leerClaimsReset(token);
-        } catch (JwtException | IllegalArgumentException e) {
-            throw new BusinessException(MSG_ENLACE_INVALIDO);
-        }
+        Claims claims = leerClaimsOError(token);
 
         Usuario usuario = usuarioRepository.findByNombreUsuario(claims.getSubject())
                 .orElseThrow(() -> new BusinessException(MSG_ENLACE_INVALIDO));
 
         // Si la contraseña ya cambió desde que se emitió el enlace, el enlace deja de servir.
         if (!jwtUtil.huellaCoincide(claims, usuario.getPasswordHash())) {
+            log.warn("Enlace de recuperación rechazado: ya fue usado (la contraseña cambió desde que se emitió)");
             throw new BusinessException(MSG_ENLACE_INVALIDO);
         }
 

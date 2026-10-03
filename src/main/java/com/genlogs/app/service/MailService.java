@@ -38,7 +38,7 @@ public class MailService {
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 
-    public void enviarRecuperacion(String destino, String nombres, String nombreUsuario, String link) {
+    public void enviarRecuperacion(String destino, String nombres, String link) {
         int minutos = JwtUtil.RESET_EXPIRATION_MINUTES;
 
         if (apiKey == null || apiKey.isBlank() || fromEmail == null || fromEmail.isBlank()) {
@@ -51,8 +51,8 @@ public class MailService {
                 + "\"sender\":{\"name\":" + jsonString(fromName) + ",\"email\":" + jsonString(fromEmail) + "},"
                 + "\"to\":[{\"email\":" + jsonString(destino) + ",\"name\":" + jsonString(nombres) + "}],"
                 + "\"subject\":" + jsonString("Restablece tu contraseña de GenLogs") + ","
-                + "\"htmlContent\":" + jsonString(construirHtml(nombres, nombreUsuario, link, minutos)) + ","
-                + "\"textContent\":" + jsonString(construirTexto(nombres, nombreUsuario, link, minutos))
+                + "\"htmlContent\":" + jsonString(construirHtml(nombres, link, minutos)) + ","
+                + "\"textContent\":" + jsonString(construirTexto(nombres, link, minutos))
                 + "}";
 
         try {
@@ -84,19 +84,17 @@ public class MailService {
     // Plantillas
     // ------------------------------------------------------------------
 
-    private String construirTexto(String nombres, String usuario, String link, int minutos) {
+    private String construirTexto(String nombres, String link, int minutos) {
         return "Hola " + nombres + ",\n\n"
                 + "Recibimos una solicitud para restablecer la contraseña de tu cuenta de GenLogs.\n\n"
-                + "Tu usuario: " + usuario + "\n\n"
                 + "Para elegir una nueva contraseña abre este enlace (vence en " + minutos + " minutos y solo se puede usar una vez):\n"
                 + link + "\n\n"
                 + "Si no solicitaste este cambio, ignora este mensaje: tu contraseña seguirá siendo la misma.\n\n"
                 + "GenLogs S.A.C. - General Logistic Solutions";
     }
 
-    private String construirHtml(String nombres, String usuario, String link, int minutos) {
+    private String construirHtml(String nombres, String link, int minutos) {
         String n = escaparHtml(nombres);
-        String u = escaparHtml(usuario);
         String l = escaparHtml(link);
 
         return """
@@ -133,14 +131,7 @@ Usa este enlace para elegir una nueva contraseña. Vence en __MIN__ minutos.
         Recibimos una solicitud para cambiar la contraseña de tu cuenta de GenLogs.
         Pulsa el botón para elegir una nueva.
       </p>
-
-      <!-- Usuario -->
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 26px 0;">
-      <tr><td bgcolor="#F1F5F9" style="background-color:#F1F5F9;border-left:4px solid #2B6CB0;border-radius:6px;padding:12px 16px;">
-        <div style="font-size:12px;color:#64748B;text-transform:uppercase;letter-spacing:1px;">Tu usuario</div>
-        <div style="font-size:17px;font-weight:bold;color:#1E3A5F;margin-top:2px;">__USUARIO__</div>
-      </td></tr>
-      </table>
+      <div style="height:6px;line-height:6px;font-size:6px;">&nbsp;</div>
 
       <!-- Botón -->
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 24px auto;">
@@ -188,7 +179,6 @@ Usa este enlace para elegir una nueva contraseña. Vence en __MIN__ minutos.
 </html>
 """
                 .replace("__NOMBRES__", n)
-                .replace("__USUARIO__", u)
                 .replace("__LINK__", l)
                 .replace("__MIN__", String.valueOf(minutos));
     }
