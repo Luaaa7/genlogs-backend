@@ -58,6 +58,12 @@
 			<optional>true</optional>
 		</dependency>
 
+		<!-- Jackson (parseo de JSON de APIs externas, p.ej. Factiliza) -->
+		<dependency>
+			<groupId>com.fasterxml.jackson.core</groupId>
+			<artifactId>jackson-databind</artifactId>
+		</dependency>
+
 		<!-- JWT (login / tokens de sesión) -->
 		<dependency>
 			<groupId>io.jsonwebtoken</groupId>
