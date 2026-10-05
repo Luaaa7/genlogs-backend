@@ -1,18 +1,22 @@
 package com.genlogs.app.service;
 
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.DisabledException;
+import org.springframework.security.authentication.LockedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.genlogs.app.dto.LoginRequest;
 import com.genlogs.app.dto.LoginResponse;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.UsuarioRepository;
 import com.genlogs.app.security.JwtUtil;
+
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -30,7 +34,7 @@ public class AuthService {
                 .orElseThrow(() -> new BusinessException("Usuario o contraseña incorrectos"));
 
         if (Boolean.TRUE.equals(usuario.getBloqueado())) {
-            throw new BusinessException("El usuario está bloqueado. Contacta al administrador.");
+            throw new BusinessException("Usuario o contraseña incorrectos");
         }
 
         try {
@@ -39,6 +43,9 @@ public class AuthService {
             );
         } catch (BadCredentialsException ex) {
             registrarIntentoFallido(usuario);
+            throw new BusinessException("Usuario o contraseña incorrectos");
+        } catch (DisabledException | LockedException ex) {
+            // Misma respuesta que credenciales inválidas para no revelar el estado de la cuenta
             throw new BusinessException("Usuario o contraseña incorrectos");
         }
 

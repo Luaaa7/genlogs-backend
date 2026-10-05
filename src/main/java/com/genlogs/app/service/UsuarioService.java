@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.genlogs.app.dto.UsuarioRequest;
 import com.genlogs.app.dto.UsuarioResponse;
+import com.genlogs.app.dto.UsuarioUpdateRequest; // Asegúrate de tener este DTO importado si lo requiere
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
 import com.genlogs.app.model.Rol;
@@ -77,6 +78,51 @@ public class UsuarioService {
 
         usuario = usuarioRepository.save(usuario);
         return toResponse(usuario);
+    }
+
+    // --- MÉTODOS NUEVOS AGREGADOS ---
+
+    @Transactional(readOnly = true)
+    public UsuarioResponse buscarPorId(Long idUsuario) {
+        return toResponse(obtenerActivo(idUsuario));
+    }
+
+    @Transactional
+    public UsuarioResponse actualizar(Long idUsuario, UsuarioUpdateRequest request) {
+        Usuario usuario = obtenerActivo(idUsuario);
+
+        if (usuarioRepository.existsByCorreoIgnoreCaseAndIdUsuarioNot(request.getCorreo(), idUsuario)) {
+            throw new BusinessException("Ya existe un usuario con ese correo");
+        }
+        Rol rol = rolRepository.findById(request.getIdRol())
+                .orElseThrow(() -> new ResourceNotFoundException("El rol indicado no existe"));
+
+        usuario.setRol(rol);
+        usuario.setNombres(request.getNombres());
+        usuario.setCorreo(request.getCorreo());
+        usuario.setIniciales(request.getIniciales());
+        usuario.setUserUpdate(usuarioActual());
+        usuario.setProcessUpdate("EDICION_USUARIO");
+        usuario.setDateUpdate(LocalDateTime.now());
+        return toResponse(usuarioRepository.save(usuario));
+    }
+
+    @Transactional
+    public void desactivar(Long idUsuario) {
+        Usuario usuario = obtenerActivo(idUsuario);
+        if (usuario.getNombreUsuario().equals(usuarioActual())) {
+            throw new BusinessException("No puedes desactivar tu propio usuario");
+        }
+        usuario.setStatus("I");
+        usuario.setUserUpdate(usuarioActual());
+        usuario.setProcessUpdate("BAJA_USUARIO");
+        usuario.setDateUpdate(LocalDateTime.now());
+        usuarioRepository.save(usuario);
+    }
+
+    private Usuario obtenerActivo(Long idUsuario) {
+        return usuarioRepository.findByIdUsuarioAndStatus(idUsuario, "A")
+                .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado"));
     }
 
     // ------------------------------------------------------------------

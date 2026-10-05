@@ -1,5 +1,6 @@
 package com.genlogs.app.security;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.function.Function;
 
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Component;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 
 @Component
 public class JwtUtil {
@@ -22,8 +24,15 @@ public class JwtUtil {
     @Value("${jwt.expiration}")
     private long expirationMs;
 
+    @PostConstruct
+    void validarSecreto() {
+        if (secret == null || secret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException("jwt.secret debe tener al menos 32 caracteres (256 bits)");
+        }
+    }
+
     private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(secret.getBytes());
+        return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
     public String generarToken(UserDetails userDetails) {
@@ -41,7 +50,10 @@ public class JwtUtil {
 
     public boolean esTokenValido(String token, UserDetails userDetails) {
         String username = extraerUsername(token);
-        return username.equals(userDetails.getUsername()) && !estaExpirado(token);
+        return username.equals(userDetails.getUsername()) 
+                && !estaExpirado(token)
+                && userDetails.isEnabled()
+                && userDetails.isAccountNonLocked();
     }
 
     private boolean estaExpirado(String token) {
