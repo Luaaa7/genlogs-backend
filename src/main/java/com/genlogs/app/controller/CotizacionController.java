@@ -5,7 +5,9 @@ import java.util.List;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,6 +25,9 @@ import com.genlogs.app.dto.CambiarEstadoCotizacionRequest;
 import com.genlogs.app.dto.CotizacionDetalleResponse;
 import com.genlogs.app.dto.CotizacionRequest;
 import com.genlogs.app.dto.CotizacionResponse;
+import com.genlogs.app.dto.EnviarCotizacionRequest;
+import com.genlogs.app.dto.EnviarCotizacionResponse;
+import com.genlogs.app.dto.EstadisticasCotizacionResponse;
 import com.genlogs.app.dto.PaginaResponse;
 import com.genlogs.app.dto.SeguimientoCotizacionResponse;
 import com.genlogs.app.service.CotizacionService;
@@ -87,6 +92,18 @@ public class CotizacionController {
         return ResponseEntity.ok(cotizacionService.listarAdjuntos(id));
     }
 
+    /**
+     * Estadísticas agregadas para CotizacionesListPage.tsx
+     * (cotizacionesApi.obtenerEstadisticas). Nota: se declara antes de
+     * "/{id}" solo por orden de lectura — Spring ya prioriza el segmento
+     * literal "estadisticas" sobre la variable {id}, así que no hay riesgo
+     * de que "estadisticas" se intente parsear como Long.
+     */
+    @GetMapping("/estadisticas")
+    public ResponseEntity<EstadisticasCotizacionResponse> obtenerEstadisticas() {
+        return ResponseEntity.ok(cotizacionService.obtenerEstadisticas());
+    }
+
     @PostMapping
     public ResponseEntity<CotizacionResponse> crear(@Valid @RequestBody CotizacionRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(cotizacionService.crear(request));
@@ -108,5 +125,25 @@ public class CotizacionController {
     public ResponseEntity<Void> eliminarAdjunto(@PathVariable Long idCotizacion, @PathVariable Long idAdjunto) {
         cotizacionService.eliminarAdjunto(idAdjunto);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/enviar")
+    public ResponseEntity<EnviarCotizacionResponse> enviar(
+            @PathVariable Long id, @Valid @RequestBody EnviarCotizacionRequest request) {
+        return ResponseEntity.ok(cotizacionService.enviar(id, request));
+    }
+
+    @GetMapping("/{id}/descargar-pdf")
+    public ResponseEntity<byte[]> descargarPdf(@PathVariable Long id) {
+        byte[] pdf = cotizacionService.descargarPdf(id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"cotizacion-" + id + ".pdf\"")
+                .body(pdf);
+    }
+
+    @PostMapping("/{id}/duplicar")
+    public ResponseEntity<CotizacionResponse> duplicar(@PathVariable Long id) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(cotizacionService.duplicar(id));
     }
 }

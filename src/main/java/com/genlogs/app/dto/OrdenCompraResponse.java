@@ -1,5 +1,6 @@
 package com.genlogs.app.dto;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 import lombok.AllArgsConstructor;
@@ -21,4 +22,8 @@ public class OrdenCompraResponse {
     private String estado;
     private String urlArchivo;
     private String observaciones;
+    // Tomados de la cotización origen: vw_cotizacion_totales no cubre
+    // órdenes de compra, así que se calculan vía CotizacionRepository.
+    private BigDecimal total;
+    private String moneda;
 }

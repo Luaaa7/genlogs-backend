@@ -1,5 +1,6 @@
 package com.genlogs.app.service;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -166,9 +167,16 @@ public class OrdenCompraService {
     }
 
     private OrdenCompraResponse toResponse(OrdenCompra oc) {
+        Long idCotizacion = oc.getCotizacion().getIdCotizacion();
+        // El total no vive en la orden de compra: se toma de la cotización
+        // origen vía la misma vista (vw_cotizacion_totales) que usa CotizacionService.
+        BigDecimal total = cotizacionRepository.findTotalesByCotizacion(idCotizacion)
+                .map(t -> t.getTotal())
+                .orElse(BigDecimal.ZERO);
+
         return OrdenCompraResponse.builder()
                 .idOrdenCompra(oc.getIdOrdenCompra())
-                .idCotizacion(oc.getCotizacion().getIdCotizacion())
+                .idCotizacion(idCotizacion)
                 .codigoCotizacion(oc.getCotizacion().getCodigoCotizacion())
                 .numeroOrdenCompra(oc.getNumeroOrdenCompra())
                 .clienteRazonSocial(oc.getCotizacion().getCliente().getTercero().getRazonSocial())
@@ -179,6 +187,8 @@ public class OrdenCompraService {
                 .estado(oc.getEstadoOrdenCompra().getNombreEstado())
                 .urlArchivo(oc.getUrlArchivo())
                 .observaciones(oc.getObservaciones())
+                .total(total)
+                .moneda(oc.getCotizacion().getMoneda().getSimbolo())
                 .build();
     }
 }

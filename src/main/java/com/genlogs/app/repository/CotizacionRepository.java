@@ -63,4 +63,23 @@ public interface CotizacionRepository extends JpaRepository<Cotizacion, Long> {
             "FROM Cotizacion c WHERE c.status = 'A' " +
             "GROUP BY c.estadoCotizacion.nombreEstado")
     List<EstadoCantidadProjection> countAgrupadoPorEstado();
+
+    // --- Soporte para GET /api/cotizaciones/estadisticas ---
+
+    @Query("SELECT COUNT(c) FROM Cotizacion c WHERE c.status = 'A'")
+    long countActivas();
+
+    @Query("SELECT COUNT(c) FROM Cotizacion c WHERE c.status = 'A' AND c.estadoCotizacion.codigoEstado = 'APROBADA'")
+    long countAprobadas();
+
+    /**
+     * Suma el total (vw_cotizacion_totales) de las cotizaciones activas que
+     * todavía no llegaron a un estado final (pendientes de cerrar).
+     */
+    @Query(value = "SELECT COALESCE(SUM(v.total), 0) " +
+            "FROM cotizacion c " +
+            "JOIN estado_cotizacion e ON e.id_estado_cotizacion = c.id_estado_cotizacion " +
+            "JOIN vw_cotizacion_totales v ON v.id_cotizacion = c.id_cotizacion " +
+            "WHERE c.status = 'A' AND e.es_final = false", nativeQuery = true)
+    BigDecimal sumTotalPendiente();
 }

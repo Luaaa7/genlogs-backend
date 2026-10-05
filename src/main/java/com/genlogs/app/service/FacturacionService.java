@@ -1,12 +1,22 @@
 package com.genlogs.app.service;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.font.PDType1Font;
+import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -193,6 +203,137 @@ public class FacturacionService {
         facturacion = facturacionRepository.save(facturacion);
         return toResponse(facturacion);
     }
+
+    /**
+     * GET /{id}/pdf — antes 404 garantizado: facturacionApi.descargarPdf()
+     * del frontend llama a esta ruta y el controller no tenía nada mapeado.
+     * Mismo patrón PDFBox que CotizacionService.descargarPdf / ReporteService.
+     */
+    @Transactional(readOnly = true)
+    public byte[] generarPdf(Long idFacturacion) {
+        Facturacion f = obtenerOLanzar(idFacturacion);
+        List<DetalleFacturacion> lineas = detalleFacturacionRepository.findByFacturacion(idFacturacion);
+        BigDecimal subtotal = calcularSubtotal(idFacturacion);
+        BigDecimal total = calcularTotal(idFacturacion);
+        BigDecimal igv = total.subtract(subtotal);
+        String simbolo = f.getMoneda().getSimbolo();
+
+        String[] encabezados = { "Descripción", "Cant.", "P. Unit.", "Importe" };
+        String[][] datos = new String[lineas.size()][];
+        for (int i = 0; i < lineas.size(); i++) {
+            DetalleFacturacion d = lineas.get(i);
+            String descripcion = d.getProducto() != null ? d.getProducto().getNombreProducto()
+                    : d.getServicio() != null ? d.getServicio().getNombreServicio()
+                    : d.getDescripcionPersonalizada() != null ? d.getDescripcionPersonalizada() : "—";
+            BigDecimal importe = d.getCantidad().multiply(d.getPrecioUnitario().subtract(d.getDescuentoUnitario()))
+                    .setScale(2, RoundingMode.HALF_UP);
+            datos[i] = new String[] {
+                    descripcion,
+                    d.getCantidad().toPlainString(),
+                    d.getPrecioUnitario().toPlainString(),
+                    importe.toPlainString(),
+            };
+        }
+
+        try (PDDocument documento = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            PDType1Font fuenteTitulo = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
+            PDType1Font fuenteTexto = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
+
+            float margenIzq = 40;
+            float anchoUtil = PDRectangle.A4.getWidth() - 2 * margenIzq;
+            float anchoColumna = anchoUtil / encabezados.length;
+            float alturaLinea = 16;
+            float yInicio = PDRectangle.A4.getHeight() - 50;
+
+            PDPage pagina = new PDPage(PDRectangle.A4);
+            documento.addPage(pagina);
+            PDPageContentStream cs = new PDPageContentStream(documento, pagina);
+            float y = yInicio;
+
+            String numeroComprobante = f.getSerieComprobante() + "-" + f.getNumeroComprobante();
+
+            cs.setFont(fuenteTitulo, 14);
+            cs.beginText();
+            cs.newLineAtOffset(margenIzq, y);
+            cs.showText(f.getTipoComprobante().getNombreTipo() + " " + numeroComprobante);
+            cs.endText();
+            y -= alturaLinea * 1.4f;
+
+            cs.setFont(fuenteTexto, 10);
+            cs.beginText();
+            cs.newLineAtOffset(margenIzq, y);
+            cs.showText("Cliente: " + f.getOrdenCompra().getCotizacion().getCliente().getTercero().getRazonSocial());
+            cs.endText();
+            y -= alturaLinea;
+
+            cs.beginText();
+            cs.newLineAtOffset(margenIzq, y);
+            cs.showText("Emisión: " + f.getFechaEmision().format(FMT_FECHA)
+                    + "   Vencimiento: " + f.getFechaVencimiento().format(FMT_FECHA));
+            cs.endText();
+            y -= alturaLinea * 1.8f;
+
+            y = escribirFilaPdf(cs, fuenteTitulo, encabezados, margenIzq, y, anchoColumna, alturaLinea);
+
+            for (String[] fila : datos) {
+                if (y < 100) {
+                    cs.close();
+                    pagina = new PDPage(PDRectangle.A4);
+                    documento.addPage(pagina);
+                    cs = new PDPageContentStream(documento, pagina);
+                    y = yInicio;
+                }
+                y = escribirFilaPdf(cs, fuenteTexto, fila, margenIzq, y, anchoColumna, alturaLinea);
+            }
+
+            y -= alturaLinea;
+            cs.setFont(fuenteTexto, 10);
+            for (String linea : List.of(
+                    "Subtotal: " + simbolo + " " + subtotal.toPlainString(),
+                    "IGV (18%): " + simbolo + " " + igv.toPlainString(),
+                    "Pagado: " + simbolo + " " + f.getMontoPagado().toPlainString())) {
+                if (y < 50) {
+                    cs.close();
+                    pagina = new PDPage(PDRectangle.A4);
+                    documento.addPage(pagina);
+                    cs = new PDPageContentStream(documento, pagina);
+                    y = yInicio;
+                }
+                cs.beginText();
+                cs.newLineAtOffset(PDRectangle.A4.getWidth() - margenIzq - 220, y);
+                cs.showText(linea);
+                cs.endText();
+                y -= alturaLinea;
+            }
+            cs.setFont(fuenteTitulo, 11);
+            cs.beginText();
+            cs.newLineAtOffset(PDRectangle.A4.getWidth() - margenIzq - 220, y);
+            cs.showText("Total: " + simbolo + " " + total.toPlainString());
+            cs.endText();
+
+            cs.close();
+            documento.save(out);
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new UncheckedIOException("No se pudo generar el PDF de la facturación", e);
+        }
+    }
+
+    private float escribirFilaPdf(PDPageContentStream cs, PDType1Font fuente, String[] valores,
+            float margenIzq, float y, float anchoColumna, float alturaLinea) throws IOException {
+        cs.setFont(fuente, 9);
+        float x = margenIzq;
+        for (String valor : valores) {
+            cs.beginText();
+            cs.newLineAtOffset(x, y);
+            cs.showText(valor == null ? "" : valor);
+            cs.endText();
+            x += anchoColumna;
+        }
+        return y - alturaLinea;
+    }
+
+    private static final DateTimeFormatter FMT_FECHA = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     // ------------------------------------------------------------------
 

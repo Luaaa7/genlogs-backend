@@ -2,7 +2,9 @@ package com.genlogs.app.controller;
 
 import java.util.List;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -76,5 +78,14 @@ public class FacturacionController {
     public ResponseEntity<FacturacionResponse> registrarPago(
             @PathVariable Long id, @Valid @RequestBody RegistrarPagoRequest request) {
         return ResponseEntity.ok(facturacionService.registrarPago(id, request));
+    }
+
+    @GetMapping("/{id}/pdf")
+    public ResponseEntity<byte[]> descargarPdf(@PathVariable Long id) {
+        byte[] pdf = facturacionService.generarPdf(id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"facturacion-" + id + ".pdf\"")
+                .body(pdf);
     }
 }

@@ -80,6 +80,54 @@ public class MailService {
         }
     }
 
+    /**
+     * Envío genérico (p. ej. cotizaciones). A diferencia de
+     * {@link #enviarRecuperacion}, devuelve si el correo salió o no, para que
+     * el llamador pueda informarle al usuario en la respuesta HTTP en vez de
+     * solo loguearlo.
+     */
+    public boolean enviarCorreo(String destino, String nombreDestino, String asunto, String htmlContent, String textContent) {
+        if (apiKey == null || apiKey.isBlank() || fromEmail == null || fromEmail.isBlank()) {
+            log.warn("BREVO_API_KEY o MAIL_FROM_EMAIL no configuradas. No se envió el correo '{}' a {}.", asunto, destino);
+            return false;
+        }
+
+        String json = "{"
+                + "\"sender\":{\"name\":" + jsonString(fromName) + ",\"email\":" + jsonString(fromEmail) + "},"
+                + "\"to\":[{\"email\":" + jsonString(destino) + ",\"name\":" + jsonString(nombreDestino) + "}],"
+                + "\"subject\":" + jsonString(asunto) + ","
+                + "\"htmlContent\":" + jsonString(htmlContent) + ","
+                + "\"textContent\":" + jsonString(textContent)
+                + "}";
+
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.brevo.com/v3/smtp/email"))
+                    .timeout(Duration.ofSeconds(15))
+                    .header("api-key", apiKey)
+                    .header("accept", "application/json")
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(json))
+                    .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() >= 300) {
+                log.error("Brevo respondió {}: {}", response.statusCode(), response.body());
+                return false;
+            }
+            log.info("Correo '{}' enviado a {}", asunto, destino);
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("Envío de correo interrumpido", e);
+            return false;
+        } catch (Exception e) {
+            log.error("No se pudo enviar el correo '{}'", asunto, e);
+            return false;
+        }
+    }
+
     // ------------------------------------------------------------------
     // Plantillas
     // ------------------------------------------------------------------
