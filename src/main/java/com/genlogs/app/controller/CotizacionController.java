@@ -123,7 +123,7 @@ public class CotizacionController {
 
     @DeleteMapping("/{idCotizacion}/adjuntos/{idAdjunto}")
     public ResponseEntity<Void> eliminarAdjunto(@PathVariable Long idCotizacion, @PathVariable Long idAdjunto) {
-        cotizacionService.eliminarAdjunto(idAdjunto);
+        cotizacionService.eliminarAdjunto(idCotizacion, idAdjunto);
         return ResponseEntity.noContent().build();
     }
 
@@ -133,7 +133,8 @@ public class CotizacionController {
         return ResponseEntity.ok(cotizacionService.enviar(id, request));
     }
 
-    @GetMapping("/{id}/descargar-pdf")
+    // Alias /pdf para compatibilidad total con frontend
+    @GetMapping(value = {"/{id}/descargar-pdf", "/{id}/pdf"})
     public ResponseEntity<byte[]> descargarPdf(@PathVariable Long id) {
         byte[] pdf = cotizacionService.descargarPdf(id);
         return ResponseEntity.ok()

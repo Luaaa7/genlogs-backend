@@ -11,8 +11,8 @@
 	<groupId>com.genlogs</groupId>
 	<artifactId>app</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name/>
-	<description/>
+	<name>genlogs-backend</name>
+	<description>Backend API de GenLogs S.A.C. - Sistema de Gestión Logística</description>
 	<url/>
 	<licenses>
 		<license/>

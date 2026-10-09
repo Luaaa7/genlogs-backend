@@ -92,9 +92,18 @@ public class MailService {
             return false;
         }
 
+        // Valida y recorta email para evitar error 400 Brevo
+        if (destino == null || destino.isBlank()) {
+            log.warn("Destinatario vacío. No se envió el correo '{}'.", asunto);
+            return false;
+        }
+
+        String destinoLimpio = destino.trim();
+        String nombreLimpio = (nombreDestino != null && !nombreDestino.isBlank()) ? nombreDestino.trim() : destinoLimpio;
+
         String json = "{"
                 + "\"sender\":{\"name\":" + jsonString(fromName) + ",\"email\":" + jsonString(fromEmail) + "},"
-                + "\"to\":[{\"email\":" + jsonString(destino) + ",\"name\":" + jsonString(nombreDestino) + "}],"
+                + "\"to\":[{\"email\":" + jsonString(destinoLimpio) + ",\"name\":" + jsonString(nombreLimpio) + "}],"
                 + "\"subject\":" + jsonString(asunto) + ","
                 + "\"htmlContent\":" + jsonString(htmlContent) + ","
                 + "\"textContent\":" + jsonString(textContent)
@@ -236,6 +245,10 @@ Usa este enlace para elegir una nueva contraseña. Vence en __MIN__ minutos.
     // ------------------------------------------------------------------
 
     private static String jsonString(String s) {
+        // Retorna comillas vacías si es null evitando NPE
+        if (s == null) {
+            return "\"\"";
+        }
         StringBuilder sb = new StringBuilder("\"");
         for (char c : s.toCharArray()) {
             switch (c) {

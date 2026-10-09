@@ -216,7 +216,8 @@ public class FacturacionService {
         BigDecimal subtotal = calcularSubtotal(idFacturacion);
         BigDecimal total = calcularTotal(idFacturacion);
         BigDecimal igv = total.subtract(subtotal);
-        String simbolo = f.getMoneda().getSimbolo();
+        BigDecimal pagado = f.getMontoPagado() != null ? f.getMontoPagado() : BigDecimal.ZERO;
+        String simbolo = f.getMoneda() != null ? f.getMoneda().getSimbolo() : "S/";
 
         String[] encabezados = { "Descripción", "Cant.", "P. Unit.", "Importe" };
         String[][] datos = new String[lineas.size()][];
@@ -224,13 +225,16 @@ public class FacturacionService {
             DetalleFacturacion d = lineas.get(i);
             String descripcion = d.getProducto() != null ? d.getProducto().getNombreProducto()
                     : d.getServicio() != null ? d.getServicio().getNombreServicio()
-                    : d.getDescripcionPersonalizada() != null ? d.getDescripcionPersonalizada() : "—";
-            BigDecimal importe = d.getCantidad().multiply(d.getPrecioUnitario().subtract(d.getDescuentoUnitario()))
-                    .setScale(2, RoundingMode.HALF_UP);
+                    : d.getDescripcionPersonalizada() != null ? d.getDescripcionPersonalizada() : "-";
+            // Previene NPE si valores monetarios vienen nulos
+            BigDecimal cant = d.getCantidad() != null ? d.getCantidad() : BigDecimal.ZERO;
+            BigDecimal precio = d.getPrecioUnitario() != null ? d.getPrecioUnitario() : BigDecimal.ZERO;
+            BigDecimal desc = d.getDescuentoUnitario() != null ? d.getDescuentoUnitario() : BigDecimal.ZERO;
+            BigDecimal importe = cant.multiply(precio.subtract(desc)).setScale(2, RoundingMode.HALF_UP);
             datos[i] = new String[] {
                     descripcion,
-                    d.getCantidad().toPlainString(),
-                    d.getPrecioUnitario().toPlainString(),
+                    cant.toPlainString(),
+                    precio.toPlainString(),
                     importe.toPlainString(),
             };
         }
@@ -241,7 +245,13 @@ public class FacturacionService {
 
             float margenIzq = 40;
             float anchoUtil = PDRectangle.A4.getWidth() - 2 * margenIzq;
-            float anchoColumna = anchoUtil / encabezados.length;
+            // Anchos proporcionales para evitar solapamiento de columnas
+            float[] anchosColumnas = {
+                    anchoUtil * 0.52f,
+                    anchoUtil * 0.14f,
+                    anchoUtil * 0.17f,
+                    anchoUtil * 0.17f
+            };
             float alturaLinea = 16;
             float yInicio = PDRectangle.A4.getHeight() - 50;
 
@@ -250,30 +260,35 @@ public class FacturacionService {
             PDPageContentStream cs = new PDPageContentStream(documento, pagina);
             float y = yInicio;
 
-            String numeroComprobante = f.getSerieComprobante() + "-" + f.getNumeroComprobante();
+            String numeroComprobante = (f.getSerieComprobante() != null ? f.getSerieComprobante() : "")
+                    + "-" + (f.getNumeroComprobante() != null ? f.getNumeroComprobante() : "");
+            String tipoComprobante = f.getTipoComprobante() != null ? f.getTipoComprobante().getNombreTipo() : "Comprobante";
 
             cs.setFont(fuenteTitulo, 14);
             cs.beginText();
             cs.newLineAtOffset(margenIzq, y);
-            cs.showText(f.getTipoComprobante().getNombreTipo() + " " + numeroComprobante);
+            cs.showText(ajustarTexto(tipoComprobante + " " + numeroComprobante, fuenteTitulo, 14, anchoUtil));
             cs.endText();
             y -= alturaLinea * 1.4f;
 
+            String nombreCliente = obtenerNombreCliente(f);
             cs.setFont(fuenteTexto, 10);
             cs.beginText();
             cs.newLineAtOffset(margenIzq, y);
-            cs.showText("Cliente: " + f.getOrdenCompra().getCotizacion().getCliente().getTercero().getRazonSocial());
+            cs.showText(ajustarTexto("Cliente: " + nombreCliente, fuenteTexto, 10, anchoUtil));
             cs.endText();
             y -= alturaLinea;
 
+            String fechaEmisionStr = f.getFechaEmision() != null ? f.getFechaEmision().format(FMT_FECHA) : "-";
+            String fechaVencimientoStr = f.getFechaVencimiento() != null ? f.getFechaVencimiento().format(FMT_FECHA) : "-";
+
             cs.beginText();
             cs.newLineAtOffset(margenIzq, y);
-            cs.showText("Emisión: " + f.getFechaEmision().format(FMT_FECHA)
-                    + "   Vencimiento: " + f.getFechaVencimiento().format(FMT_FECHA));
+            cs.showText("Emisión: " + fechaEmisionStr + "   Vencimiento: " + fechaVencimientoStr);
             cs.endText();
             y -= alturaLinea * 1.8f;
 
-            y = escribirFilaPdf(cs, fuenteTitulo, encabezados, margenIzq, y, anchoColumna, alturaLinea);
+            y = escribirFilaPdf(cs, fuenteTitulo, encabezados, margenIzq, y, anchosColumnas, alturaLinea);
 
             for (String[] fila : datos) {
                 if (y < 100) {
@@ -283,7 +298,7 @@ public class FacturacionService {
                     cs = new PDPageContentStream(documento, pagina);
                     y = yInicio;
                 }
-                y = escribirFilaPdf(cs, fuenteTexto, fila, margenIzq, y, anchoColumna, alturaLinea);
+                y = escribirFilaPdf(cs, fuenteTexto, fila, margenIzq, y, anchosColumnas, alturaLinea);
             }
 
             y -= alturaLinea;
@@ -291,7 +306,7 @@ public class FacturacionService {
             for (String linea : List.of(
                     "Subtotal: " + simbolo + " " + subtotal.toPlainString(),
                     "IGV (18%): " + simbolo + " " + igv.toPlainString(),
-                    "Pagado: " + simbolo + " " + f.getMontoPagado().toPlainString())) {
+                    "Pagado: " + simbolo + " " + pagado.toPlainString())) {
                 if (y < 50) {
                     cs.close();
                     pagina = new PDPage(PDRectangle.A4);
@@ -320,17 +335,78 @@ public class FacturacionService {
     }
 
     private float escribirFilaPdf(PDPageContentStream cs, PDType1Font fuente, String[] valores,
-            float margenIzq, float y, float anchoColumna, float alturaLinea) throws IOException {
+            float margenIzq, float y, float[] anchosColumnas, float alturaLinea) throws IOException {
         cs.setFont(fuente, 9);
         float x = margenIzq;
-        for (String valor : valores) {
+        for (int col = 0; col < valores.length; col++) {
+            float anchoCol = anchosColumnas[col];
+            String texto = ajustarTexto(valores[col], fuente, 9, anchoCol - 4);
             cs.beginText();
             cs.newLineAtOffset(x, y);
-            cs.showText(valor == null ? "" : valor);
+            cs.showText(texto);
             cs.endText();
-            x += anchoColumna;
+            x += anchoCol;
         }
         return y - alturaLinea;
+    }
+
+    // Sanea caracteres y saltos de línea para PDFBox
+    private static String sanitizarTextoPdf(String texto) {
+        if (texto == null) {
+            return "";
+        }
+        return texto.replace('\r', ' ')
+                .replace('\n', ' ')
+                .replace('\t', ' ')
+                .replace('\u2014', '-')
+                .replace('\u2013', '-')
+                .replace('\u2022', '*')
+                .replace('\u201c', '"')
+                .replace('\u201d', '"')
+                .replace('\u2018', '\'')
+                .replace('\u2019', '\'')
+                .replaceAll("[^\\x20-\\x7E\\xA0-\\xFF]", " ")
+                .trim();
+    }
+
+    // Trunca texto largo con elipsis evitando desbordes
+    private static String ajustarTexto(String texto, PDType1Font fuente, float fontSize, float anchoMaximo) {
+        if (texto == null || texto.isBlank()) {
+            return "";
+        }
+        String limpio = sanitizarTextoPdf(texto);
+        try {
+            float ancho = (fuente.getStringWidth(limpio) / 1000f) * fontSize;
+            if (ancho <= anchoMaximo) {
+                return limpio;
+            }
+            while (limpio.length() > 3 && (fuente.getStringWidth(limpio + "...") / 1000f) * fontSize > anchoMaximo) {
+                limpio = limpio.substring(0, limpio.length() - 1);
+            }
+            return limpio + "...";
+        } catch (Exception e) {
+            return limpio.length() > 35 ? limpio.substring(0, 32) + "..." : limpio;
+        }
+    }
+
+    // Obtiene razón social o documento con fallback seguro
+    private String obtenerNombreCliente(Facturacion f) {
+        try {
+            if (f.getOrdenCompra() != null && f.getOrdenCompra().getCotizacion() != null
+                    && f.getOrdenCompra().getCotizacion().getCliente() != null
+                    && f.getOrdenCompra().getCotizacion().getCliente().getTercero() != null) {
+                String rs = f.getOrdenCompra().getCotizacion().getCliente().getTercero().getRazonSocial();
+                if (rs != null && !rs.isBlank()) {
+                    return rs;
+                }
+                String doc = f.getOrdenCompra().getCotizacion().getCliente().getTercero().getNumeroDocumento();
+                if (doc != null && !doc.isBlank()) {
+                    return doc;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return "—";
     }
 
     private static final DateTimeFormatter FMT_FECHA = DateTimeFormatter.ofPattern("dd/MM/yyyy");
@@ -368,9 +444,13 @@ public class FacturacionService {
     /** Suma cada línea con la misma fórmula del GENERATED de la BD (sin IGV). */
     private BigDecimal calcularSubtotal(Long idFacturacion) {
         return detalleFacturacionRepository.findByFacturacion(idFacturacion).stream()
-                .map(d -> d.getCantidad()
-                        .multiply(d.getPrecioUnitario().subtract(d.getDescuentoUnitario()))
-                        .setScale(2, RoundingMode.HALF_UP))
+                .map(d -> {
+                    // Evita NPE al calcular con valores nulos
+                    BigDecimal cant = d.getCantidad() != null ? d.getCantidad() : BigDecimal.ZERO;
+                    BigDecimal precio = d.getPrecioUnitario() != null ? d.getPrecioUnitario() : BigDecimal.ZERO;
+                    BigDecimal desc = d.getDescuentoUnitario() != null ? d.getDescuentoUnitario() : BigDecimal.ZERO;
+                    return cant.multiply(precio.subtract(desc)).setScale(2, RoundingMode.HALF_UP);
+                })
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
@@ -402,27 +482,33 @@ public class FacturacionService {
 
     private FacturacionResponse toResponse(Facturacion f) {
         BigDecimal total = calcularTotal(f.getIdFacturacion());
+        BigDecimal pagado = f.getMontoPagado() != null ? f.getMontoPagado() : BigDecimal.ZERO;
+        String clienteNombre = obtenerNombreCliente(f);
         return FacturacionResponse.builder()
                 .idFacturacion(f.getIdFacturacion())
-                .idOrdenCompra(f.getOrdenCompra().getIdOrdenCompra())
-                .numeroOrdenCompra(f.getOrdenCompra().getNumeroOrdenCompra())
+                .idOrdenCompra(f.getOrdenCompra() != null ? f.getOrdenCompra().getIdOrdenCompra() : null)
+                .numeroOrdenCompra(f.getOrdenCompra() != null ? f.getOrdenCompra().getNumeroOrdenCompra() : null)
                 .numeroComprobante(f.getSerieComprobante() + "-" + f.getNumeroComprobante())
                 .codigoComprobante(f.getSerieComprobante() + "-" + f.getNumeroComprobante())
-                .cliente(f.getOrdenCompra().getCotizacion().getCliente().getTercero().getRazonSocial())
-                .estadoCodigo(f.getEstadoFacturacion().getCodigoEstado())
-                .tipoComprobante(f.getTipoComprobante().getNombreTipo())
-                .clienteRazonSocial(f.getOrdenCompra().getCotizacion().getCliente().getTercero().getRazonSocial())
+                .cliente(clienteNombre)
+                .estadoCodigo(f.getEstadoFacturacion() != null ? f.getEstadoFacturacion().getCodigoEstado() : null)
+                .tipoComprobante(f.getTipoComprobante() != null ? f.getTipoComprobante().getNombreTipo() : null)
+                .clienteRazonSocial(clienteNombre)
                 .fechaEmision(f.getFechaEmision())
                 .fechaVencimiento(f.getFechaVencimiento())
                 .total(total)
-                .montoPagado(f.getMontoPagado())
-                .saldoPendiente(total.subtract(f.getMontoPagado()))
-                .moneda(f.getMoneda().getSimbolo())
-                .estado(f.getEstadoFacturacion().getNombreEstado())
+                .montoPagado(pagado)
+                .saldoPendiente(total.subtract(pagado))
+                .moneda(f.getMoneda() != null ? f.getMoneda().getSimbolo() : "S/")
+                .estado(f.getEstadoFacturacion() != null ? f.getEstadoFacturacion().getNombreEstado() : null)
                 .build();
     }
 
     private DetalleFacturacionResponse toDetalleResponse(DetalleFacturacion d) {
+        BigDecimal cant = d.getCantidad() != null ? d.getCantidad() : BigDecimal.ZERO;
+        BigDecimal precio = d.getPrecioUnitario() != null ? d.getPrecioUnitario() : BigDecimal.ZERO;
+        BigDecimal desc = d.getDescuentoUnitario() != null ? d.getDescuentoUnitario() : BigDecimal.ZERO;
+        BigDecimal importe = cant.multiply(precio.subtract(desc)).setScale(2, RoundingMode.HALF_UP);
         return DetalleFacturacionResponse.builder()
                 .idDetalleFacturacion(d.getIdDetalleFacturacion())
                 .idProducto(d.getProducto() != null ? d.getProducto().getIdProducto() : null)
@@ -430,11 +516,10 @@ public class FacturacionService {
                 .idServicio(d.getServicio() != null ? d.getServicio().getIdServicio() : null)
                 .servicioNombre(d.getServicio() != null ? d.getServicio().getNombreServicio() : null)
                 .descripcionPersonalizada(d.getDescripcionPersonalizada())
-                .cantidad(d.getCantidad())
-                .precioUnitario(d.getPrecioUnitario())
-                .descuentoUnitario(d.getDescuentoUnitario())
-                .importeLinea(d.getCantidad().multiply(d.getPrecioUnitario().subtract(d.getDescuentoUnitario()))
-                        .setScale(2, RoundingMode.HALF_UP))
+                .cantidad(cant)
+                .precioUnitario(precio)
+                .descuentoUnitario(desc)
+                .importeLinea(importe)
                 .build();
     }
 }

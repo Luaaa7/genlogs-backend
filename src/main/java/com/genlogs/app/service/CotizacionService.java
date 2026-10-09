@@ -262,9 +262,13 @@ public class CotizacionService {
     }
 
     @Transactional
-    public void eliminarAdjunto(Long idAdjunto) {
+    public void eliminarAdjunto(Long idCotizacion, Long idAdjunto) {
         AdjuntoCotizacion adjunto = adjuntoCotizacionRepository.findById(idAdjunto)
                 .orElseThrow(() -> new ResourceNotFoundException("Adjunto no encontrado"));
+
+        if (!adjunto.getCotizacion().getIdCotizacion().equals(idCotizacion)) {
+            throw new BusinessException("El adjunto no pertenece a la cotización indicada");
+        }
 
         cloudinaryService.eliminarPorUrl(adjunto.getUrlArchivo(), CloudinaryService.TIPO_DOCUMENTO);
 
@@ -275,6 +279,13 @@ public class CotizacionService {
         adjuntoCotizacionRepository.save(adjunto);
     }
 
+    @Transactional
+    public void eliminarAdjunto(Long idAdjunto) {
+        AdjuntoCotizacion adjunto = adjuntoCotizacionRepository.findById(idAdjunto)
+                .orElseThrow(() -> new ResourceNotFoundException("Adjunto no encontrado"));
+        eliminarAdjunto(adjunto.getCotizacion().getIdCotizacion(), idAdjunto);
+    }
+
     /**
      * POST /{id}/enviar — antes 404 garantizado: el frontend llama a este
      * endpoint desde CotizacionDetallePage pero el backend no tenía nada
@@ -282,19 +293,44 @@ public class CotizacionService {
      * MailService.enviarRecuperacion) y, si estaba en BORRADOR, la pasa a
      * ENVIADA registrando el seguimiento correspondiente.
      */
-    @Transactional
     public EnviarCotizacionResponse enviar(Long idCotizacion, EnviarCotizacionRequest request) {
+        // Valida correo obligatorio antes de procesar envío
+        if (request == null || request.getCorreoDestinatario() == null || request.getCorreoDestinatario().isBlank()) {
+            return EnviarCotizacionResponse.builder()
+                    .success(false)
+                    .mensaje("El correo destinatario es obligatorio.")
+                    .build();
+        }
+
         Cotizacion cotizacion = obtenerOLanzar(idCotizacion);
         Usuario usuario = usuarioActual();
 
-        String nombreCliente = cotizacion.getCliente().getTercero().getRazonSocial();
+        String nombreCliente = obtenerNombreCliente(cotizacion);
         String cuerpoTexto = construirCuerpoCorreo(cotizacion, request, false);
         String cuerpoHtml = construirCuerpoCorreo(cotizacion, request, true);
 
-        boolean enviado = mailService.enviarCorreo(
-                request.getCorreoDestinatario(), nombreCliente, request.getAsunto(), cuerpoHtml, cuerpoTexto);
+        String destinatarioLimpio = request.getCorreoDestinatario().trim();
 
-        if (enviado && "BORRADOR".equals(cotizacion.getEstadoCotizacion().getCodigoEstado())) {
+        // Envío HTTP de correo fuera de la transacción de base de datos para no retener conexiones de HikariCP
+        boolean enviado = mailService.enviarCorreo(
+                destinatarioLimpio, nombreCliente, request.getAsunto(), cuerpoHtml, cuerpoTexto);
+
+        if (enviado) {
+            marcarComoEnviadaSiBorrador(idCotizacion, usuario, destinatarioLimpio);
+        }
+
+        return EnviarCotizacionResponse.builder()
+                .success(enviado)
+                .mensaje(enviado
+                        ? "Cotización enviada a " + destinatarioLimpio
+                        : "No se pudo enviar el correo. Intenta de nuevo o revisa la configuración de correo.")
+                .build();
+    }
+
+    @Transactional
+    public void marcarComoEnviadaSiBorrador(Long idCotizacion, Usuario usuario, String destinatario) {
+        Cotizacion cotizacion = obtenerOLanzar(idCotizacion);
+        if ("BORRADOR".equals(cotizacion.getEstadoCotizacion().getCodigoEstado())) {
             EstadoCotizacion estadoEnviada = estadoCotizacionRepository.findByCodigoEstado("ENVIADA")
                     .orElse(null);
             if (estadoEnviada != null) {
@@ -304,16 +340,9 @@ public class CotizacionService {
                 cotizacion.setDateUpdate(LocalDateTime.now());
                 cotizacionRepository.save(cotizacion);
                 registrarSeguimiento(cotizacion, estadoEnviada,
-                        usuario, "Cotización enviada a " + request.getCorreoDestinatario());
+                        usuario, "Cotización enviada a " + destinatario);
             }
         }
-
-        return EnviarCotizacionResponse.builder()
-                .success(enviado)
-                .mensaje(enviado
-                        ? "Cotización enviada a " + request.getCorreoDestinatario()
-                        : "No se pudo enviar el correo. Intenta de nuevo o revisa la configuración de correo.")
-                .build();
     }
 
     /**
@@ -476,39 +505,47 @@ public class CotizacionService {
                 .findTotalesByCotizacion(c.getIdCotizacion())
                 .orElse(null);
 
+        // Fallback a cero si proyecciones vienen nulas
+        BigDecimal subtotal = (totales != null && totales.getSubtotal() != null) ? totales.getSubtotal() : BigDecimal.ZERO;
+        BigDecimal igv = (totales != null && totales.getIgv() != null) ? totales.getIgv() : BigDecimal.ZERO;
+        BigDecimal total = (totales != null && totales.getTotal() != null) ? totales.getTotal() : BigDecimal.ZERO;
+
         return CotizacionResponse.builder()
                 .idCotizacion(c.getIdCotizacion())
                 .codigoCotizacion(c.getCodigoCotizacion())
-                .clienteRazonSocial(c.getCliente().getTercero().getRazonSocial())
+                .clienteRazonSocial(obtenerNombreCliente(c))
                 .fechaCotizacion(c.getFechaCotizacion())
                 .fechaValidez(c.getFechaValidez())
-                .estado(c.getEstadoCotizacion().getNombreEstado())
-                .subtotal(totales != null ? totales.getSubtotal() : BigDecimal.ZERO)
-                .igv(totales != null ? totales.getIgv() : BigDecimal.ZERO)
-                .total(totales != null ? totales.getTotal() : BigDecimal.ZERO)
-                .moneda(c.getMoneda().getSimbolo())
+                .estado(c.getEstadoCotizacion() != null ? c.getEstadoCotizacion().getNombreEstado() : null)
+                .subtotal(subtotal)
+                .igv(igv)
+                .total(total)
+                .moneda(c.getMoneda() != null ? c.getMoneda().getSimbolo() : "S/")
                 .observaciones(c.getObservaciones())
                 .build();
     }
 
     private String construirCuerpoCorreo(Cotizacion c, EnviarCotizacionRequest request, boolean html) {
         TotalesCotizacionProjection totales = cotizacionRepository.findTotalesByCotizacion(c.getIdCotizacion()).orElse(null);
-        String totalStr = (totales != null ? totales.getTotal() : BigDecimal.ZERO).toPlainString();
-        String simbolo = c.getMoneda().getSimbolo();
+        BigDecimal total = (totales != null && totales.getTotal() != null) ? totales.getTotal() : BigDecimal.ZERO;
+        String totalStr = total.toPlainString();
+        String simbolo = c.getMoneda() != null ? c.getMoneda().getSimbolo() : "S/";
 
         StringBuilder sb = new StringBuilder();
         if (request.getMensaje() != null && !request.getMensaje().isBlank()) {
             sb.append(request.getMensaje()).append(html ? "<br><br>" : "\n\n");
         }
         sb.append("Cotización ").append(c.getCodigoCotizacion())
-                .append(" — ").append(c.getCliente().getTercero().getRazonSocial());
+                .append(" — ").append(obtenerNombreCliente(c));
         if (html) {
             sb.append("<br>");
         } else {
             sb.append("\n");
         }
-        sb.append("Fecha: ").append(c.getFechaCotizacion().format(FMT_FECHA))
-                .append(" · Válida hasta: ").append(c.getFechaValidez().format(FMT_FECHA));
+        String fechaCot = c.getFechaCotizacion() != null ? c.getFechaCotizacion().format(FMT_FECHA) : "-";
+        String fechaVal = c.getFechaValidez() != null ? c.getFechaValidez().format(FMT_FECHA) : "-";
+        sb.append("Fecha: ").append(fechaCot)
+                .append(" · Válida hasta: ").append(fechaVal);
 
         if (request.isIncluirDetalles()) {
             sb.append(html ? "<br>" : "\n").append("Total: ").append(simbolo).append(" ").append(totalStr);
@@ -522,19 +559,27 @@ public class CotizacionService {
      * adaptado para un único documento en vez de un listado tabular plano.
      */
     private byte[] generarPdfCotizacion(Cotizacion c, List<CotizacionDetalle> lineas, TotalesCotizacionProjection totales) {
-        String simbolo = c.getMoneda().getSimbolo();
+        String simbolo = c.getMoneda() != null ? c.getMoneda().getSimbolo() : "S/";
         String[] encabezados = { "Descripción", "Cant.", "P. Unit.", "Importe" };
         String[][] datos = new String[lineas.size()][];
         for (int i = 0; i < lineas.size(); i++) {
             CotizacionDetalle d = lineas.get(i);
             String descripcion = d.getProducto() != null ? d.getProducto().getNombreProducto()
                     : d.getServicio() != null ? d.getServicio().getNombreServicio()
-                    : d.getDescripcionPersonalizada() != null ? d.getDescripcionPersonalizada() : "—";
+                    : d.getDescripcionPersonalizada() != null ? d.getDescripcionPersonalizada() : "-";
+            // Calcula importe si línea aún no tiene generado
+            BigDecimal cant = d.getCantidad() != null ? d.getCantidad() : BigDecimal.ZERO;
+            BigDecimal precio = d.getPrecioUnitario() != null ? d.getPrecioUnitario() : BigDecimal.ZERO;
+            BigDecimal desc = d.getDescuentoUnitario() != null ? d.getDescuentoUnitario() : BigDecimal.ZERO;
+            BigDecimal importe = d.getImporteLinea() != null
+                    ? d.getImporteLinea()
+                    : cant.multiply(precio.subtract(desc)).setScale(2, RoundingMode.HALF_UP);
+
             datos[i] = new String[] {
                     descripcion,
-                    d.getCantidad().toPlainString(),
-                    d.getPrecioUnitario().toPlainString(),
-                    d.getImporteLinea() != null ? d.getImporteLinea().toPlainString() : "—",
+                    cant.toPlainString(),
+                    precio.toPlainString(),
+                    importe.toPlainString(),
             };
         }
 
@@ -544,7 +589,13 @@ public class CotizacionService {
 
             float margenIzq = 40;
             float anchoUtil = PDRectangle.A4.getWidth() - 2 * margenIzq;
-            float anchoColumna = anchoUtil / encabezados.length;
+            // Anchos proporcionales para evitar solapamiento de columnas
+            float[] anchosColumnas = {
+                    anchoUtil * 0.52f,
+                    anchoUtil * 0.14f,
+                    anchoUtil * 0.17f,
+                    anchoUtil * 0.17f
+            };
             float alturaLinea = 16;
             float yInicio = PDRectangle.A4.getHeight() - 50;
 
@@ -553,28 +604,33 @@ public class CotizacionService {
             PDPageContentStream cs = new PDPageContentStream(documento, pagina);
             float y = yInicio;
 
+            String codigo = c.getCodigoCotizacion() != null ? c.getCodigoCotizacion() : "Borrador";
+
             cs.setFont(fuenteTitulo, 14);
             cs.beginText();
             cs.newLineAtOffset(margenIzq, y);
-            cs.showText("Cotización " + c.getCodigoCotizacion());
+            cs.showText(ajustarTexto("Cotización " + codigo, fuenteTitulo, 14, anchoUtil));
             cs.endText();
             y -= alturaLinea * 1.4f;
 
+            String cliente = obtenerNombreCliente(c);
             cs.setFont(fuenteTexto, 10);
             cs.beginText();
             cs.newLineAtOffset(margenIzq, y);
-            cs.showText("Cliente: " + c.getCliente().getTercero().getRazonSocial());
+            cs.showText(ajustarTexto("Cliente: " + cliente, fuenteTexto, 10, anchoUtil));
             cs.endText();
             y -= alturaLinea;
 
+            String fechaCotStr = c.getFechaCotizacion() != null ? c.getFechaCotizacion().format(FMT_FECHA) : "-";
+            String fechaValStr = c.getFechaValidez() != null ? c.getFechaValidez().format(FMT_FECHA) : "-";
+
             cs.beginText();
             cs.newLineAtOffset(margenIzq, y);
-            cs.showText("Fecha: " + c.getFechaCotizacion().format(FMT_FECHA)
-                    + "   Válida hasta: " + c.getFechaValidez().format(FMT_FECHA));
+            cs.showText("Fecha: " + fechaCotStr + "   Válida hasta: " + fechaValStr);
             cs.endText();
             y -= alturaLinea * 1.8f;
 
-            y = escribirFilaPdf(cs, fuenteTitulo, encabezados, margenIzq, y, anchoColumna, alturaLinea);
+            y = escribirFilaPdf(cs, fuenteTitulo, encabezados, margenIzq, y, anchosColumnas, alturaLinea);
 
             for (String[] fila : datos) {
                 if (y < 100) {
@@ -584,18 +640,18 @@ public class CotizacionService {
                     cs = new PDPageContentStream(documento, pagina);
                     y = yInicio;
                 }
-                y = escribirFilaPdf(cs, fuenteTexto, fila, margenIzq, y, anchoColumna, alturaLinea);
+                y = escribirFilaPdf(cs, fuenteTexto, fila, margenIzq, y, anchosColumnas, alturaLinea);
             }
 
             y -= alturaLinea;
-            String subtotal = (totales != null ? totales.getSubtotal() : BigDecimal.ZERO).toPlainString();
-            String igv = (totales != null ? totales.getIgv() : BigDecimal.ZERO).toPlainString();
-            String total = (totales != null ? totales.getTotal() : BigDecimal.ZERO).toPlainString();
+            BigDecimal subtotalBd = (totales != null && totales.getSubtotal() != null) ? totales.getSubtotal() : BigDecimal.ZERO;
+            BigDecimal igvBd = (totales != null && totales.getIgv() != null) ? totales.getIgv() : BigDecimal.ZERO;
+            BigDecimal totalBd = (totales != null && totales.getTotal() != null) ? totales.getTotal() : BigDecimal.ZERO;
 
             cs.setFont(fuenteTexto, 10);
             for (String linea : List.of(
-                    "Subtotal: " + simbolo + " " + subtotal,
-                    "IGV (18%): " + simbolo + " " + igv)) {
+                    "Subtotal: " + simbolo + " " + subtotalBd.toPlainString(),
+                    "IGV (18%): " + simbolo + " " + igvBd.toPlainString())) {
                 if (y < 50) {
                     cs.close();
                     pagina = new PDPage(PDRectangle.A4);
@@ -612,7 +668,7 @@ public class CotizacionService {
             cs.setFont(fuenteTitulo, 11);
             cs.beginText();
             cs.newLineAtOffset(PDRectangle.A4.getWidth() - margenIzq - 220, y);
-            cs.showText("Total: " + simbolo + " " + total);
+            cs.showText("Total: " + simbolo + " " + totalBd.toPlainString());
             cs.endText();
 
             cs.close();
@@ -624,17 +680,76 @@ public class CotizacionService {
     }
 
     private float escribirFilaPdf(PDPageContentStream cs, PDType1Font fuente, String[] valores,
-            float margenIzq, float y, float anchoColumna, float alturaLinea) throws IOException {
+            float margenIzq, float y, float[] anchosColumnas, float alturaLinea) throws IOException {
         cs.setFont(fuente, 9);
         float x = margenIzq;
-        for (String valor : valores) {
+        for (int col = 0; col < valores.length; col++) {
+            float anchoCol = anchosColumnas[col];
+            String texto = ajustarTexto(valores[col], fuente, 9, anchoCol - 4);
             cs.beginText();
             cs.newLineAtOffset(x, y);
-            cs.showText(valor == null ? "" : valor);
+            cs.showText(texto);
             cs.endText();
-            x += anchoColumna;
+            x += anchoCol;
         }
         return y - alturaLinea;
+    }
+
+    // Sanea caracteres y saltos de línea para PDFBox
+    private static String sanitizarTextoPdf(String texto) {
+        if (texto == null) {
+            return "";
+        }
+        return texto.replace('\r', ' ')
+                .replace('\n', ' ')
+                .replace('\t', ' ')
+                .replace('\u2014', '-')
+                .replace('\u2013', '-')
+                .replace('\u2022', '*')
+                .replace('\u201c', '"')
+                .replace('\u201d', '"')
+                .replace('\u2018', '\'')
+                .replace('\u2019', '\'')
+                .replaceAll("[^\\x20-\\x7E\\xA0-\\xFF]", " ")
+                .trim();
+    }
+
+    // Trunca texto largo con elipsis evitando desbordes
+    private static String ajustarTexto(String texto, PDType1Font fuente, float fontSize, float anchoMaximo) {
+        if (texto == null || texto.isBlank()) {
+            return "";
+        }
+        String limpio = sanitizarTextoPdf(texto);
+        try {
+            float ancho = (fuente.getStringWidth(limpio) / 1000f) * fontSize;
+            if (ancho <= anchoMaximo) {
+                return limpio;
+            }
+            while (limpio.length() > 3 && (fuente.getStringWidth(limpio + "...") / 1000f) * fontSize > anchoMaximo) {
+                limpio = limpio.substring(0, limpio.length() - 1);
+            }
+            return limpio + "...";
+        } catch (Exception e) {
+            return limpio.length() > 35 ? limpio.substring(0, 32) + "..." : limpio;
+        }
+    }
+
+    // Obtiene razón social o documento con fallback seguro
+    private String obtenerNombreCliente(Cotizacion c) {
+        try {
+            if (c.getCliente() != null && c.getCliente().getTercero() != null) {
+                String rs = c.getCliente().getTercero().getRazonSocial();
+                if (rs != null && !rs.isBlank()) {
+                    return rs;
+                }
+                String doc = c.getCliente().getTercero().getNumeroDocumento();
+                if (doc != null && !doc.isBlank()) {
+                    return doc;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return "Cliente";
     }
 
     private CotizacionDetalleResponse toLineaResponse(CotizacionDetalle d) {

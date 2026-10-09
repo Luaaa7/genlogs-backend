@@ -137,11 +137,27 @@ public class OrdenCompraService {
         return toResponse(ordenCompra);
     }
 
-    @Transactional
     public OrdenCompraResponse agregarArchivo(Long idOrdenCompra, MultipartFile archivo) {
         OrdenCompra ordenCompra = obtenerOLanzar(idOrdenCompra);
+        String urlAnterior = ordenCompra.getUrlArchivo();
 
-        String url = cloudinaryService.subirDocumento(archivo, "genlogs/ordenes-compra");
+        // Subida HTTP fuera de la transacción de BD
+        String urlNueva = cloudinaryService.subirDocumento(archivo, "genlogs/ordenes-compra");
+
+        // Persistencia en BD
+        OrdenCompraResponse response = guardarArchivoOrdenCompra(idOrdenCompra, urlNueva);
+
+        // Limpieza de archivo anterior si existía para evitar huérfanos
+        if (urlAnterior != null && !urlAnterior.isBlank()) {
+            cloudinaryService.eliminarPorUrl(urlAnterior, CloudinaryService.TIPO_DOCUMENTO);
+        }
+
+        return response;
+    }
+
+    @Transactional
+    public OrdenCompraResponse guardarArchivoOrdenCompra(Long idOrdenCompra, String url) {
+        OrdenCompra ordenCompra = obtenerOLanzar(idOrdenCompra);
         ordenCompra.setUrlArchivo(url);
 
         Usuario usuario = usuarioActual();
