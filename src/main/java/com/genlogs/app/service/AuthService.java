@@ -1,15 +1,5 @@
 package com.genlogs.app.service;
 
-import com.genlogs.app.dto.LoginRequest;
-import com.genlogs.app.dto.LoginResponse;
-import com.genlogs.app.dto.TokenResetInfoResponse;
-import com.genlogs.app.exception.BusinessException;
-import com.genlogs.app.model.Usuario;
-import com.genlogs.app.repository.UsuarioRepository;
-import com.genlogs.app.security.JwtUtil;
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.JwtException;
-import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,29 +10,29 @@ import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
-import java.util.Date;
+import com.genlogs.app.dto.LoginRequest;
+import com.genlogs.app.dto.LoginResponse;
+import com.genlogs.app.exception.BusinessException;
+import com.genlogs.app.model.Usuario;
+import com.genlogs.app.repository.UsuarioRepository;
+import com.genlogs.app.security.JwtUtil;
 
+import lombok.RequiredArgsConstructor;
+
+/**
+ * Login. La recuperación de contraseña vive en {@link PasswordResetService}.
+ */
 @Service
 @RequiredArgsConstructor
 public class AuthService {
 
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
-    private static final String MSG_ENLACE_INVALIDO =
-            "El enlace venció o no es válido. Solicita uno nuevo desde el login.";
 
     private final AuthenticationManager authenticationManager;
     private final UsuarioRepository usuarioRepository;
     private final JwtUtil jwtUtil;
-    private final PasswordEncoder passwordEncoder;
-    private final MailService mailService;
-
-    @Value("${app.frontend-url}")
-    private String frontendUrl;
 
     /** A la quinta contraseña incorrecta seguida, el usuario queda bloqueado (RF-28). */
     @Value("${app.security.max-intentos-fallidos:5}")
@@ -114,85 +104,6 @@ public class AuthService {
                     usuario.getNombreUsuario(), intentos);
         }
 
-        usuarioRepository.save(usuario);
-    }
-
-    /**
-     * Genera el enlace de recuperación y lo envía por correo.
-     * No lanza error si el correo no existe (para no revelar qué correos están registrados).
-     */
-    public void solicitarRecuperacion(String correo) {
-        String correoLimpio = correo == null ? "" : correo.trim();
-
-        usuarioRepository.findByCorreo(correoLimpio).ifPresentOrElse(usuario -> {
-            if (!"A".equals(usuario.getStatus()) || Boolean.TRUE.equals(usuario.getBloqueado())) {
-                log.info("Recuperación ignorada: usuario inactivo o bloqueado");
-                return;
-            }
-
-            String token = jwtUtil.generarTokenReset(usuario.getNombreUsuario(), usuario.getPasswordHash());
-            String base = frontendUrl.replaceAll("/+$", "");
-            String link = base + "/reset-password?token=" + token;
-
-            try {
-                mailService.enviarRecuperacion(usuario.getCorreo(), usuario.getNombres(), link);
-            } catch (Exception e) {
-                log.error("Falló el envío del correo de recuperación", e);
-            }
-        }, () -> log.info("Recuperación solicitada para un correo no registrado"));
-    }
-
-    /** Comprueba que el enlace sea auténtico, no haya vencido y no se haya usado ya. */
-    @Transactional(readOnly = true)
-    public TokenResetInfoResponse validarTokenReset(String token) {
-        Claims claims = leerClaimsOError(token);
-        Usuario usuario = usuarioRepository.findByNombreUsuario(claims.getSubject())
-                .orElseThrow(() -> new BusinessException(MSG_ENLACE_INVALIDO));
-
-        if (!jwtUtil.huellaCoincide(claims, usuario.getPasswordHash())) {
-            log.warn("Enlace de recuperación rechazado: ya fue usado (la contraseña cambió desde que se emitió)");
-            throw new BusinessException(MSG_ENLACE_INVALIDO);
-        }
-        if (!"A".equals(usuario.getStatus()) || Boolean.TRUE.equals(usuario.getBloqueado())) {
-            log.warn("Enlace de recuperación rechazado: usuario inactivo o bloqueado");
-            throw new BusinessException(MSG_ENLACE_INVALIDO);
-        }
-
-        long segundos = Math.max(0, (claims.getExpiration().getTime() - new Date().getTime()) / 1000);
-        return new TokenResetInfoResponse(segundos);
-    }
-
-    private Claims leerClaimsOError(String token) {
-        try {
-            return jwtUtil.leerClaimsReset(token);
-        } catch (JwtException | IllegalArgumentException e) {
-            log.warn("Enlace de recuperación rechazado ({}): {}", e.getClass().getSimpleName(), e.getMessage());
-            throw new BusinessException(MSG_ENLACE_INVALIDO);
-        }
-    }
-
-    @Transactional
-    public void restablecerPassword(String token, String nuevaPassword) {
-        Claims claims = leerClaimsOError(token);
-
-        Usuario usuario = usuarioRepository.findByNombreUsuario(claims.getSubject())
-                .orElseThrow(() -> new BusinessException(MSG_ENLACE_INVALIDO));
-
-        // Si la contraseña ya cambió desde que se emitió el enlace, el enlace deja de servir.
-        if (!jwtUtil.huellaCoincide(claims, usuario.getPasswordHash())) {
-            log.warn("Enlace de recuperación rechazado: ya fue usado (la contraseña cambió desde que se emitió)");
-            throw new BusinessException(MSG_ENLACE_INVALIDO);
-        }
-
-        if (passwordEncoder.matches(nuevaPassword, usuario.getPasswordHash())) {
-            throw new BusinessException("La nueva contraseña debe ser distinta a la anterior.");
-        }
-
-        usuario.setPasswordHash(passwordEncoder.encode(nuevaPassword));
-        usuario.setIntentosFallidos((short) 0);
-        usuario.setUserUpdate(usuario.getNombreUsuario());
-        usuario.setProcessUpdate("RESET_PASSWORD");
-        usuario.setDateUpdate(LocalDateTime.now());
         usuarioRepository.save(usuario);
     }
 }

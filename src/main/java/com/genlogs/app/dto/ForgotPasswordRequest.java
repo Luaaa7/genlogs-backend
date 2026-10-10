@@ -10,6 +10,6 @@ import lombok.Setter;
 public class ForgotPasswordRequest {
 
     @NotBlank(message = "El correo es obligatorio")
-    @Email(message = "El correo no tiene un formato válido")
+    @Email(message = "Correo inválido")
     private String correo;
 }

@@ -1,10 +1,7 @@
 package com.genlogs.app.security;
 
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Date;
-import java.util.HexFormat;
 import java.util.function.Function;
 
 import javax.crypto.SecretKey;
@@ -14,19 +11,16 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
 import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 
+/**
+ * Tokens JWT de sesión. La recuperación de contraseña YA NO usa JWT: ahora va
+ * por la tabla password_reset_token (ver PasswordResetService).
+ */
 @Component
 public class JwtUtil {
-
-    private static final String CLAIM_PURPOSE = "purpose";
-    private static final String CLAIM_HUELLA = "ph";
-    private static final String PURPOSE_RESET = "reset";
-    /** Minutos de vida del enlace de recuperación (también se muestra en el correo y en la pantalla). */
-    public static final int RESET_EXPIRATION_MINUTES = 15;
-    private static final long RESET_EXPIRATION_MS = RESET_EXPIRATION_MINUTES * 60L * 1000;
 
     @Value("${jwt.secret}")
     private String secret;
@@ -34,8 +28,16 @@ public class JwtUtil {
     @Value("${jwt.expiration}")
     private long expirationMs;
 
+    /** Falla al arrancar (y no en el primer login) si JWT_SECRET es demasiado corto para HS256. */
+    @PostConstruct
+    void validarSecreto() {
+        if (secret == null || secret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException("jwt.secret debe tener al menos 32 caracteres (256 bits)");
+        }
+    }
+
     private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(secret.getBytes());
+        return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
     public String generarToken(UserDetails userDetails) {
@@ -51,55 +53,17 @@ public class JwtUtil {
         return extraerClaim(token, Claims::getSubject);
     }
 
+    /**
+     * El token sirve solo si corresponde al usuario, no venció y la cuenta sigue
+     * habilitada y sin bloquear (así un usuario bloqueado o desactivado pierde el
+     * acceso aunque su token no haya vencido).
+     */
     public boolean esTokenValido(String token, UserDetails userDetails) {
         Claims claims = parsear(token);
-        // Un token de recuperación de contraseña NUNCA sirve para iniciar sesión.
-        if (PURPOSE_RESET.equals(claims.get(CLAIM_PURPOSE, String.class))) {
-            return false;
-        }
         return claims.getSubject().equals(userDetails.getUsername())
-                && !claims.getExpiration().before(new Date());
-    }
-
-    // ----- Recuperación de contraseña (sin tablas nuevas en la BD) -----
-
-    /**
-     * Token de un solo uso lógico: lleva una "huella" del hash de contraseña actual.
-     * Apenas la contraseña cambia, la huella ya no coincide y el enlace deja de servir.
-     */
-    public String generarTokenReset(String username, String passwordHashActual) {
-        return Jwts.builder()
-                .subject(username)
-                .claim(CLAIM_PURPOSE, PURPOSE_RESET)
-                .claim(CLAIM_HUELLA, huella(passwordHashActual))
-                .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + RESET_EXPIRATION_MS))
-                .signWith(getSigningKey())
-                .compact();
-    }
-
-    /** Lanza JwtException si el token es inválido, venció o no es de recuperación. */
-    public Claims leerClaimsReset(String token) {
-        Claims claims = parsear(token);
-        if (!PURPOSE_RESET.equals(claims.get(CLAIM_PURPOSE, String.class))) {
-            throw new JwtException("El token no es de recuperación de contraseña");
-        }
-        return claims;
-    }
-
-    public boolean huellaCoincide(Claims claims, String passwordHashActual) {
-        String enToken = claims.get(CLAIM_HUELLA, String.class);
-        return enToken != null && enToken.equals(huella(passwordHashActual));
-    }
-
-    private String huella(String passwordHash) {
-        try {
-            MessageDigest sha = MessageDigest.getInstance("SHA-256");
-            byte[] digest = sha.digest(passwordHash.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest).substring(0, 16);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
-        }
+                && !claims.getExpiration().before(new Date())
+                && userDetails.isEnabled()
+                && userDetails.isAccountNonLocked();
     }
 
     private Claims parsear(String token) {
@@ -114,3 +78,4 @@ public class JwtUtil {
         return resolver.apply(parsear(token));
     }
 }
+

@@ -1,5 +1,12 @@
 package com.genlogs.app.service;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.genlogs.app.dto.ProveedorRequest;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
@@ -7,6 +14,7 @@ import com.genlogs.app.model.Distrito;
 import com.genlogs.app.model.Proveedor;
 import com.genlogs.app.model.Tercero;
 import com.genlogs.app.model.TipoDocumento;
+import com.genlogs.app.repository.DistritoRepository;
 import com.genlogs.app.repository.ProveedorRepository;
 import com.genlogs.app.repository.TerceroRepository;
 import com.genlogs.app.repository.TipoDocumentoRepository;
@@ -16,8 +24,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
-import java.util.List;
+import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
@@ -81,7 +88,6 @@ public class ProveedorService {
         proveedorRepository.save(proveedor);
     }
 
-    // ------------------------------------------------------------------
 
     private Tercero crearTercero(ProveedorRequest request, TipoDocumento tipoDocumento) {
         Distrito distrito = distritoRepository.findById(request.getIdDistrito())

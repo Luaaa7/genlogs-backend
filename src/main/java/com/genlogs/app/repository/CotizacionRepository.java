@@ -1,6 +1,8 @@
 package com.genlogs.app.repository;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -13,20 +15,17 @@ import org.springframework.data.repository.query.Param;
 import com.genlogs.app.model.Cotizacion;
 
 public interface CotizacionRepository extends JpaRepository<Cotizacion, Long> {
+
     Optional<Cotizacion> findByCodigoCotizacion(String codigoCotizacion);
 
     @Query("SELECT c FROM Cotizacion c WHERE c.cliente.idCliente = :idCliente AND c.status = 'A' ORDER BY c.fechaCotizacion DESC")
     List<Cotizacion> findByCliente(@Param("idCliente") Long idCliente);
 
-    /**
-     * La tabla "cotizacion" no guarda el total: se calcula en la vista
-     * vw_cotizacion_totales (subtotal = suma de importe_linea, igv = 18%,
-     * total = subtotal * 1.18). Devuelve null si la cotización aún no
-     * tiene líneas activas (LEFT JOIN + COALESCE en la vista igual
-     * garantiza fila, pero se deja Optional por seguridad).
-     */
-    public interface TotalesCotizacionProjection {
-        BigDecimal getDescuentoTotal();
+    List<Cotizacion> findByDateCreateBetween(LocalDateTime inicio, LocalDateTime fin);
+
+    // ---- Totales desde la vista (Requeridos por CotizacionService) ----
+
+    interface TotalesCotizacionProjection {
         BigDecimal getSubtotal();
         BigDecimal getIgv();
         BigDecimal getTotal();

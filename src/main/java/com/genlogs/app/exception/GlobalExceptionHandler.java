@@ -1,21 +1,26 @@
 package com.genlogs.app.exception;
 
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
-
-import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -32,10 +37,25 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
+    /** Ruta inexistente: 404 en lugar de caer en el handler genérico (500). */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleRutaInexistente(NoResourceFoundException ex) {
+        return buildResponse(HttpStatus.NOT_FOUND, "La ruta /" + ex.getResourcePath() + " no existe");
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException ex) {
         log.warn("Acceso denegado: {}", ex.getMessage());
         return buildResponse(HttpStatus.FORBIDDEN, "No tienes permisos suficientes para realizar esta acción.");
+    }
+
+    /** JSON mal formado, parámetro faltante o de tipo incorrecto: 400 en lugar de 500. */
+    @ExceptionHandler({HttpMessageNotReadableException.class,
+                       MissingServletRequestParameterException.class,
+                       MethodArgumentTypeMismatchException.class})
+    public ResponseEntity<Map<String, Object>> handlePeticionInvalida(Exception ex) {
+        log.warn("Petición inválida: {}", ex.getMessage());
+        return buildResponse(HttpStatus.BAD_REQUEST, "Petición mal formada o parámetros inválidos.");
     }
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
@@ -57,9 +77,10 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
-        Map<String, String> errores = new HashMap<>();
+        // LinkedHashMap + putIfAbsent: se conserva el orden de los campos y el primer mensaje de cada uno.
+        Map<String, String> errores = new LinkedHashMap<>();
         for (FieldError error : ex.getBindingResult().getFieldErrors()) {
-            errores.put(error.getField(), error.getDefaultMessage());
+            errores.putIfAbsent(error.getField(), error.getDefaultMessage());
         }
 
         String primerMensaje = errores.values().stream().findFirst().orElse("Error de validación");
@@ -76,7 +97,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneric(Exception ex) {
-        // Antes este error se devolvía sin dejar rastro en los logs de Render.
+        // El detalle queda solo en el log de Render; al cliente no se le expone.
         log.error("Error inesperado en el servidor", ex);
         return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Ocurrió un error inesperado en el servidor. Por favor, intente nuevamente.");
     }
@@ -90,4 +111,5 @@ public class GlobalExceptionHandler {
         body.put("message", mensaje);
         return ResponseEntity.status(status).body(body);
     }
-}
+}
+

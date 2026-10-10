@@ -52,8 +52,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String token = authHeader.substring(7);
 
         // Un token corrupto, con firma inválida o vencido no debe tumbar la
-        // petición con un 500: simplemente no autenticamos y seguimos; el
-        // resto de la cadena de seguridad rechaza la ruta protegida.
+        // petición con un 500: no autenticamos, limpiamos el contexto y seguimos;
+        // SecurityConfig responde 401 en las rutas protegidas.
         try {
             String username = jwtUtil.extraerUsername(token);
 
@@ -68,8 +68,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 }
             }
         } catch (JwtException | IllegalArgumentException e) {
+            SecurityContextHolder.clearContext();
             log.warn("Token JWT inválido en {} {}: {}", request.getMethod(), request.getRequestURI(), e.getMessage());
         } catch (UsernameNotFoundException e) {
+            SecurityContextHolder.clearContext();
             log.warn("Token JWT con usuario inexistente en {} {}: {}", request.getMethod(), request.getRequestURI(), e.getMessage());
         }
 

@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.genlogs.app.dto.UsuarioRequest;
 import com.genlogs.app.dto.UsuarioResponse;
+import com.genlogs.app.dto.UsuarioUpdateRequest; // Importante para el PUT
 import com.genlogs.app.service.UsuarioService;
 
 import jakarta.validation.Valid;
@@ -33,7 +34,7 @@ public class UsuarioController {
 
     @GetMapping
     public ResponseEntity<List<UsuarioResponse>> listar() {
-        return ResponseEntity.ok(usuarioService.listarTodos());
+        return ResponseEntity.ok(usuarioService.listar()); // Corregido: listar() en lugar de listarTodos()
     }
 
     @GetMapping("/{id}")
@@ -47,8 +48,8 @@ public class UsuarioController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<UsuarioResponse> actualizar(@PathVariable Long id, @Valid @RequestBody UsuarioRequest request) {
-        return ResponseEntity.ok(usuarioService.actualizar(id, request));
+    public ResponseEntity<UsuarioResponse> actualizar(@PathVariable Long id, @Valid @RequestBody UsuarioUpdateRequest request) {
+        return ResponseEntity.ok(usuarioService.actualizar(id, request)); // Corregido: Usa UsuarioUpdateRequest
     }
 
     @PatchMapping("/{id}/bloqueo")

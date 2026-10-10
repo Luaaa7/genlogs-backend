@@ -16,10 +16,10 @@ import com.genlogs.app.model.Departamento;
 import com.genlogs.app.model.Distrito;
 import com.genlogs.app.model.Pais;
 import com.genlogs.app.model.Provincia;
-import com.genlogs.app.repository.PaisRepository;
 import com.genlogs.app.repository.DepartamentoRepository;
-import com.genlogs.app.repository.ProvinciaRepository;
 import com.genlogs.app.repository.DistritoRepository;
+import com.genlogs.app.repository.PaisRepository;
+import com.genlogs.app.repository.ProvinciaRepository;
 
 import lombok.RequiredArgsConstructor;
 

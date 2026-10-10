@@ -14,9 +14,6 @@ public class UsuarioResponse {
     private String nombreUsuario;
     private String nombres;
     private String correo;
-    private String iniciales;
     private String nombreRol;
-    private Integer idRol;
     private Boolean bloqueado;
-    private Short intentosFallidos;
 }
