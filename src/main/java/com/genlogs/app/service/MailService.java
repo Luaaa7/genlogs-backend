@@ -11,7 +11,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import com.genlogs.app.security.JwtUtil;
 
 /**
  * Envío de correos por la API HTTPS de Brevo (https://www.brevo.com).
@@ -39,7 +38,7 @@ public class MailService {
             .build();
 
     public void enviarRecuperacion(String destino, String nombres, String link) {
-        int minutos = JwtUtil.RESET_EXPIRATION_MINUTES;
+        int minutos = PasswordResetService.DURACION_MINUTOS;
 
         if (apiKey == null || apiKey.isBlank() || fromEmail == null || fromEmail.isBlank()) {
             log.warn("BREVO_API_KEY o MAIL_FROM_EMAIL no configuradas. Enlace de recuperación (válido {} min): {}",
