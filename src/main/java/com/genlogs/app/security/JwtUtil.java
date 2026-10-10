@@ -15,6 +15,10 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
 
+/**
+ * Tokens JWT de sesión. La recuperación de contraseña YA NO usa JWT: ahora va
+ * por la tabla password_reset_token (ver PasswordResetService).
+ */
 @Component
 public class JwtUtil {
 
@@ -24,6 +28,7 @@ public class JwtUtil {
     @Value("${jwt.expiration}")
     private long expirationMs;
 
+    /** Falla al arrancar (y no en el primer login) si JWT_SECRET es demasiado corto para HS256. */
     @PostConstruct
     void validarSecreto() {
         if (secret == null || secret.getBytes(StandardCharsets.UTF_8).length < 32) {
@@ -48,24 +53,29 @@ public class JwtUtil {
         return extraerClaim(token, Claims::getSubject);
     }
 
+    /**
+     * El token sirve solo si corresponde al usuario, no venció y la cuenta sigue
+     * habilitada y sin bloquear (así un usuario bloqueado o desactivado pierde el
+     * acceso aunque su token no haya vencido).
+     */
     public boolean esTokenValido(String token, UserDetails userDetails) {
-        String username = extraerUsername(token);
-        return username.equals(userDetails.getUsername()) 
-                && !estaExpirado(token)
+        Claims claims = parsear(token);
+        return claims.getSubject().equals(userDetails.getUsername())
+                && !claims.getExpiration().before(new Date())
                 && userDetails.isEnabled()
                 && userDetails.isAccountNonLocked();
     }
 
-    private boolean estaExpirado(String token) {
-        return extraerClaim(token, Claims::getExpiration).before(new Date());
-    }
-
-    private <T> T extraerClaim(String token, Function<Claims, T> resolver) {
-        Claims claims = Jwts.parser()
+    private Claims parsear(String token) {
+        return Jwts.parser()
                 .verifyWith(getSigningKey())
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
-        return resolver.apply(claims);
+    }
+
+    private <T> T extraerClaim(String token, Function<Claims, T> resolver) {
+        return resolver.apply(parsear(token));
     }
 }
+

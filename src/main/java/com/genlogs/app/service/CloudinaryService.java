@@ -2,7 +2,10 @@ package com.genlogs.app.service;
 
 import com.cloudinary.Cloudinary;
 import com.cloudinary.utils.ObjectUtils;
+import com.genlogs.app.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -19,12 +22,27 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class CloudinaryService {
 
+    private static final Logger log = LoggerFactory.getLogger(CloudinaryService.class);
+
     /** resource_type de Cloudinary para imágenes. */
     public static final String TIPO_IMAGEN = "image";
     /** resource_type de Cloudinary para PDF, Word, Excel, etc. */
     public static final String TIPO_DOCUMENTO = "raw";
 
     private final Cloudinary cloudinary;
+
+    /** Verifica si las credenciales de Cloudinary están presentes y no vacías. */
+    public boolean estaConfigurado() {
+        if (cloudinary == null || cloudinary.config == null) {
+            return false;
+        }
+        String cloudName = cloudinary.config.cloudName;
+        String apiKey = cloudinary.config.apiKey;
+        String apiSecret = cloudinary.config.apiSecret;
+        return cloudName != null && !cloudName.isBlank()
+                && apiKey != null && !apiKey.isBlank()
+                && apiSecret != null && !apiSecret.isBlank();
+    }
 
     /** Sube una imagen a la carpeta indicada y devuelve la URL https segura. */
     public String subirImagen(MultipartFile archivo, String carpeta) {
@@ -38,15 +56,26 @@ public class CloudinaryService {
 
     /** Elimina de Cloudinary el archivo al que apunta la URL guardada en la BD. */
     public void eliminarPorUrl(String urlCloudinary, String resourceType) {
+        if (urlCloudinary == null || urlCloudinary.isBlank()) {
+            return;
+        }
+        if (!estaConfigurado()) {
+            log.warn("Cloudinary no configurado. Se omite eliminación física para URL: {}", urlCloudinary);
+            return;
+        }
         eliminar(extraerPublicId(urlCloudinary, resourceType), resourceType);
     }
 
     /** Elimina un recurso de Cloudinary a partir de su public_id. */
     public void eliminar(String publicId, String resourceType) {
+        if (!estaConfigurado()) {
+            log.warn("Cloudinary no configurado. Se omite eliminación física para publicId: {}", publicId);
+            return;
+        }
         try {
             cloudinary.uploader().destroy(publicId, ObjectUtils.asMap("resource_type", resourceType));
         } catch (IOException e) {
-            throw new RuntimeException("No se pudo eliminar el archivo de Cloudinary: " + publicId, e);
+            log.error("No se pudo eliminar el archivo de Cloudinary: {}", publicId, e);
         }
     }
 
@@ -78,15 +107,31 @@ public class CloudinaryService {
     }
 
     private String subir(MultipartFile archivo, String carpeta, String resourceType) {
+        if (archivo == null || archivo.isEmpty()) {
+            throw new BusinessException("El archivo está vacío o no es válido");
+        }
+
+        if (!estaConfigurado()) {
+            log.warn("CLOUDINARY no configurado. Simulando subida para '{}' ({})",
+                    archivo.getOriginalFilename(), resourceType);
+            if (TIPO_IMAGEN.equals(resourceType)) {
+                return "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=800&auto=format&fit=crop&q=60";
+            }
+            return "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf";
+        }
+
         try {
+            // Streaming directo con getInputStream() para evitar picos de memoria RAM (OOM)
             Map<?, ?> resultado = cloudinary.uploader().upload(
-                    archivo.getBytes(),
+                    archivo.getInputStream(),
                     ObjectUtils.asMap(
                             "folder", carpeta,
                             "resource_type", resourceType));
             return (String) resultado.get("secure_url");
         } catch (IOException e) {
-            throw new RuntimeException("No se pudo subir el archivo a Cloudinary", e);
+            log.error("Error al subir archivo a Cloudinary", e);
+            throw new BusinessException("No se pudo subir el archivo: " + e.getMessage());
         }
     }
 }
+

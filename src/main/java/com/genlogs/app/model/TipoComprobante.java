@@ -12,6 +12,8 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "tipo_comprobante")
@@ -30,7 +32,8 @@ public class TipoComprobante extends Auditable {
     @Column(name = "nombre_tipo", nullable = false, length = 60)
     private String nombreTipo;
     
-    @Column(name = "serie_prefijo", nullable = false, length = 1)
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "serie_prefijo", columnDefinition = "CHAR(1)", nullable = false)
     private String seriePrefijo;
     
     @Column(name = "requiere_ruc", nullable = false)

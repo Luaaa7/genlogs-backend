@@ -2,7 +2,9 @@ package com.genlogs.app.controller;
 
 import java.util.List;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -10,12 +12,14 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.genlogs.app.dto.CambiarEstadoFacturacionRequest;
 import com.genlogs.app.dto.DetalleFacturacionResponse;
 import com.genlogs.app.dto.FacturacionRequest;
 import com.genlogs.app.dto.FacturacionResponse;
+import com.genlogs.app.dto.PaginaResponse;
 import com.genlogs.app.dto.RegistrarPagoRequest;
 import com.genlogs.app.service.FacturacionService;
 
@@ -28,6 +32,16 @@ import lombok.RequiredArgsConstructor;
 public class FacturacionController {
 
     private final FacturacionService facturacionService;
+
+    @GetMapping
+    public ResponseEntity<PaginaResponse<FacturacionResponse>> listar(
+            @RequestParam(required = false) String estadoCodigo,
+            @RequestParam(required = false) String tipoCodigo,
+            @RequestParam(required = false) Long idOrdenCompra,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "100") int size) {
+        return ResponseEntity.ok(facturacionService.listar(estadoCodigo, tipoCodigo, idOrdenCompra, page, size));
+    }
 
     @GetMapping("/{id}")
     public ResponseEntity<FacturacionResponse> buscarPorId(@PathVariable Long id) {
@@ -64,5 +78,14 @@ public class FacturacionController {
     public ResponseEntity<FacturacionResponse> registrarPago(
             @PathVariable Long id, @Valid @RequestBody RegistrarPagoRequest request) {
         return ResponseEntity.ok(facturacionService.registrarPago(id, request));
+    }
+
+    @GetMapping("/{id}/pdf")
+    public ResponseEntity<byte[]> descargarPdf(@PathVariable Long id) {
+        byte[] pdf = facturacionService.generarPdf(id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"facturacion-" + id + ".pdf\"")
+                .body(pdf);
     }
 }

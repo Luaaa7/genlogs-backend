@@ -17,6 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 import com.genlogs.app.dto.CambiarEstadoOrdenCompraRequest;
 import com.genlogs.app.dto.OrdenCompraRequest;
 import com.genlogs.app.dto.OrdenCompraResponse;
+import com.genlogs.app.dto.PaginaResponse;
 import com.genlogs.app.service.OrdenCompraService;
 
 import jakarta.validation.Valid;
@@ -28,6 +29,15 @@ import lombok.RequiredArgsConstructor;
 public class OrdenCompraController {
 
     private final OrdenCompraService ordenCompraService;
+
+    @GetMapping
+    public ResponseEntity<PaginaResponse<OrdenCompraResponse>> listar(
+            @RequestParam(required = false) String estadoCodigo,
+            @RequestParam(required = false) Long idCotizacion,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "100") int size) {
+        return ResponseEntity.ok(ordenCompraService.listar(estadoCodigo, idCotizacion, page, size));
+    }
 
     @GetMapping("/{id}")
     public ResponseEntity<OrdenCompraResponse> buscarPorId(@PathVariable Long id) {

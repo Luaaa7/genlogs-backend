@@ -38,16 +38,24 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource))
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            // Sin sesión / token inválido -> 401 (el frontend lo usa para mandar al login).
+            // Sin permiso para la ruta -> 403 en JSON ("message" es lo que lee el frontend).
             .exceptionHandling(e -> e
                 .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
                 .accessDeniedHandler((req, res, ex) -> {
                     res.setStatus(HttpServletResponse.SC_FORBIDDEN);
                     res.setContentType("application/json;charset=UTF-8");
-                    res.getWriter().write("{\"status\":403,\"error\":\"No tienes permiso para esta acción\"}");
+                    res.getWriter().write("{\"status\":403,\"error\":\"No tienes permiso para esta acción\","
+                            + "\"message\":\"No tienes permiso para esta acción\"}");
                 }))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                .requestMatchers("/error").permitAll()
+                // Health check público para monitoreo de Render
+                .requestMatchers("/", "/health", "/api/health").permitAll()
                 .requestMatchers("/api/auth/**").permitAll()
+                .requestMatchers("/api/catalogo/**").permitAll()
+                .requestMatchers("/api/empresas-mineras/**").permitAll()
                 .anyRequest().authenticated()
             )
             .authenticationProvider(authenticationProvider())
@@ -68,3 +76,4 @@ public class SecurityConfig {
         return config.getAuthenticationManager();
     }
 }
+

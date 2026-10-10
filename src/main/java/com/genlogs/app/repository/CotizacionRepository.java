@@ -6,6 +6,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -29,17 +31,54 @@ public interface CotizacionRepository extends JpaRepository<Cotizacion, Long> {
         BigDecimal getTotal();
     }
 
-    interface TotalesPorCotizacionProjection extends TotalesCotizacionProjection {
-        Long getIdCotizacion();
+    @Query(value = "SELECT descuento_total AS descuentoTotal, subtotal, igv, total " +
+            "FROM vw_cotizacion_totales WHERE id_cotizacion = :idCotizacion", nativeQuery = true)
+    Optional<TotalesCotizacionProjection> findTotalesByCotizacion(@Param("idCotizacion") Long idCotizacion);
+
+    /**
+     * Listado paginado con filtros opcionales (cualquiera puede venir null).
+     * Usada por GET /api/cotizaciones (CotizacionesListPage.tsx del frontend).
+     */
+    @Query("SELECT c FROM Cotizacion c WHERE c.status = 'A' " +
+            "AND (:codigoEstado IS NULL OR c.estadoCotizacion.codigoEstado = :codigoEstado) " +
+            "AND (:idCliente IS NULL OR c.cliente.idCliente = :idCliente) " +
+            "AND (:codigoMoneda IS NULL OR c.moneda.codigoMoneda = :codigoMoneda)")
+    Page<Cotizacion> buscarPaginado(@Param("codigoEstado") String codigoEstado,
+                                     @Param("idCliente") Long idCliente,
+                                     @Param("codigoMoneda") String codigoMoneda,
+                                     Pageable pageable);
+
+    // --- Soporte para DashboardController ---
+
+    @Query("SELECT COUNT(c) FROM Cotizacion c WHERE c.status = 'A' AND c.estadoCotizacion.esFinal = false")
+    long countPendientes();
+
+    public interface EstadoCantidadProjection {
+        String getEstado();
+        Long getCantidad();
     }
 
-    @Query(value = "SELECT subtotal AS subtotal, igv AS igv, total AS total "
-                 + "FROM vw_cotizacion_totales WHERE id_cotizacion = :id",
-           nativeQuery = true)
-    Optional<TotalesCotizacionProjection> findTotalesByCotizacion(@Param("id") Long id);
+    @Query("SELECT c.estadoCotizacion.nombreEstado AS estado, COUNT(c) AS cantidad " +
+            "FROM Cotizacion c WHERE c.status = 'A' " +
+            "GROUP BY c.estadoCotizacion.nombreEstado")
+    List<EstadoCantidadProjection> countAgrupadoPorEstado();
 
-    @Query(value = "SELECT id_cotizacion AS idCotizacion, subtotal AS subtotal, igv AS igv, total AS total "
-                 + "FROM vw_cotizacion_totales WHERE id_cotizacion IN (:ids)",
-           nativeQuery = true)
-    List<TotalesPorCotizacionProjection> findTotalesByCotizaciones(@Param("ids") Collection<Long> ids);
+    // --- Soporte para GET /api/cotizaciones/estadisticas ---
+
+    @Query("SELECT COUNT(c) FROM Cotizacion c WHERE c.status = 'A'")
+    long countActivas();
+
+    @Query("SELECT COUNT(c) FROM Cotizacion c WHERE c.status = 'A' AND c.estadoCotizacion.codigoEstado = 'APROBADA'")
+    long countAprobadas();
+
+    /**
+     * Suma el total (vw_cotizacion_totales) de las cotizaciones activas que
+     * todavía no llegaron a un estado final (pendientes de cerrar).
+     */
+    @Query(value = "SELECT COALESCE(SUM(v.total), 0) " +
+            "FROM cotizacion c " +
+            "JOIN estado_cotizacion e ON e.id_estado_cotizacion = c.id_estado_cotizacion " +
+            "JOIN vw_cotizacion_totales v ON v.id_cotizacion = c.id_cotizacion " +
+            "WHERE c.status = 'A' AND e.es_final = false", nativeQuery = true)
+    BigDecimal sumTotalPendiente();
 }

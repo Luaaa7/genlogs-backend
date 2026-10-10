@@ -2,6 +2,8 @@ package com.genlogs.app.security;
 
 import java.io.IOException;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -21,8 +23,17 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
+    private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
+
     private final JwtUtil jwtUtil;
     private final CustomUserDetailsService userDetailsService;
+
+    // Las rutas de autenticación (login, recuperar contraseña, etc.) son públicas:
+    // ignoramos cualquier token viejo que mande el navegador para que no estorbe.
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return request.getRequestURI().startsWith("/api/auth/");
+    }
 
     @Override
     protected void doFilterInternal(
@@ -38,8 +49,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
+        String token = authHeader.substring(7);
+
+        // Un token corrupto, con firma inválida o vencido no debe tumbar la
+        // petición con un 500: no autenticamos, limpiamos el contexto y seguimos;
+        // SecurityConfig responde 401 en las rutas protegidas.
         try {
-            String token = authHeader.substring(7);
             String username = jwtUtil.extraerUsername(token);
 
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
@@ -52,9 +67,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     SecurityContextHolder.getContext().setAuthentication(authToken);
                 }
             }
-        } catch (JwtException | IllegalArgumentException | UsernameNotFoundException ex) {
-            // Token inválido o usuario no encontrado: se limpia el contexto y SecurityConfig responderá 401.
+        } catch (JwtException | IllegalArgumentException e) {
             SecurityContextHolder.clearContext();
+            log.warn("Token JWT inválido en {} {}: {}", request.getMethod(), request.getRequestURI(), e.getMessage());
+        } catch (UsernameNotFoundException e) {
+            SecurityContextHolder.clearContext();
+            log.warn("Token JWT con usuario inexistente en {} {}: {}", request.getMethod(), request.getRequestURI(), e.getMessage());
         }
 
         filterChain.doFilter(request, response);

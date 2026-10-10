@@ -1,9 +1,12 @@
 package com.genlogs.app.service;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,6 +14,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.genlogs.app.dto.CambiarEstadoOrdenCompraRequest;
 import com.genlogs.app.dto.OrdenCompraRequest;
+import com.genlogs.app.dto.PaginaResponse;
 import com.genlogs.app.dto.OrdenCompraResponse;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
@@ -37,6 +41,17 @@ public class OrdenCompraService {
     private final CondicionPagoRepository condicionPagoRepository;
     private final UsuarioRepository usuarioRepository;
     private final CloudinaryService cloudinaryService;
+
+    @Transactional(readOnly = true)
+    public PaginaResponse<OrdenCompraResponse> listar(String estadoCodigo, Long idCotizacion, int page, int size) {
+        int p = Math.max(page, 0);
+        int s = Math.min(Math.max(size, 1), 200);
+        Page<OrdenCompra> resultado = ordenCompraRepository.buscar(
+                estadoCodigo == null ? "" : estadoCodigo.trim(),
+                idCotizacion == null ? 0L : idCotizacion,
+                PageRequest.of(p, s));
+        return PaginaResponse.of(resultado.map(this::toResponse));
+    }
 
     @Transactional(readOnly = true)
     public OrdenCompraResponse buscarPorId(Long idOrdenCompra) {
@@ -122,11 +137,27 @@ public class OrdenCompraService {
         return toResponse(ordenCompra);
     }
 
-    @Transactional
     public OrdenCompraResponse agregarArchivo(Long idOrdenCompra, MultipartFile archivo) {
         OrdenCompra ordenCompra = obtenerOLanzar(idOrdenCompra);
+        String urlAnterior = ordenCompra.getUrlArchivo();
 
-        String url = cloudinaryService.subirDocumento(archivo, "genlogs/ordenes-compra");
+        // Subida HTTP fuera de la transacción de BD
+        String urlNueva = cloudinaryService.subirDocumento(archivo, "genlogs/ordenes-compra");
+
+        // Persistencia en BD
+        OrdenCompraResponse response = guardarArchivoOrdenCompra(idOrdenCompra, urlNueva);
+
+        // Limpieza de archivo anterior si existía para evitar huérfanos
+        if (urlAnterior != null && !urlAnterior.isBlank()) {
+            cloudinaryService.eliminarPorUrl(urlAnterior, CloudinaryService.TIPO_DOCUMENTO);
+        }
+
+        return response;
+    }
+
+    @Transactional
+    public OrdenCompraResponse guardarArchivoOrdenCompra(Long idOrdenCompra, String url) {
+        OrdenCompra ordenCompra = obtenerOLanzar(idOrdenCompra);
         ordenCompra.setUrlArchivo(url);
 
         Usuario usuario = usuarioActual();
@@ -152,17 +183,28 @@ public class OrdenCompraService {
     }
 
     private OrdenCompraResponse toResponse(OrdenCompra oc) {
+        Long idCotizacion = oc.getCotizacion().getIdCotizacion();
+        // El total no vive en la orden de compra: se toma de la cotización
+        // origen vía la misma vista (vw_cotizacion_totales) que usa CotizacionService.
+        BigDecimal total = cotizacionRepository.findTotalesByCotizacion(idCotizacion)
+                .map(t -> t.getTotal())
+                .orElse(BigDecimal.ZERO);
+
         return OrdenCompraResponse.builder()
                 .idOrdenCompra(oc.getIdOrdenCompra())
-                .idCotizacion(oc.getCotizacion().getIdCotizacion())
+                .idCotizacion(idCotizacion)
                 .codigoCotizacion(oc.getCotizacion().getCodigoCotizacion())
                 .numeroOrdenCompra(oc.getNumeroOrdenCompra())
                 .clienteRazonSocial(oc.getCotizacion().getCliente().getTercero().getRazonSocial())
+                .cliente(oc.getCotizacion().getCliente().getTercero().getRazonSocial())
+                .estadoCodigo(oc.getEstadoOrdenCompra().getCodigoEstado())
                 .fechaEmisionCliente(oc.getFechaEmisionCliente())
                 .fechaRecepcion(oc.getFechaRecepcion())
                 .estado(oc.getEstadoOrdenCompra().getNombreEstado())
                 .urlArchivo(oc.getUrlArchivo())
                 .observaciones(oc.getObservaciones())
+                .total(total)
+                .moneda(oc.getCotizacion().getMoneda().getSimbolo())
                 .build();
     }
 }

@@ -4,6 +4,8 @@ import jakarta.persistence.Column;
 import jakarta.persistence.MappedSuperclass;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
@@ -34,7 +36,8 @@ public abstract class Auditable {
     private LocalDateTime dateUpdate;
 
     /** 'A' = Activo, 'I' = Inactivo (eliminación lógica) */
-    @Column(name = "status", length = 1, nullable = false)
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "status", columnDefinition = "CHAR(1)", nullable = false)
     private String status = "A";
 }
 

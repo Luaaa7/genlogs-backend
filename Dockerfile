@@ -1,22 +1,23 @@
 # ---- Etapa 1: build ----
-FROM eclipse-temurin:17-jdk AS build
+FROM eclipse-temurin:17-jdk-jammy AS build
 WORKDIR /app
 
-# Copiamos primero solo lo necesario para resolver dependencias (mejor cache de Docker)
-COPY mvnw .
-COPY .mvn .mvn
-COPY pom.xml .
-RUN chmod +x mvnw && ./mvnw -B dependency:go-offline
+# Copiamos primero el wrapper y el pom para aprovechar la cache de capas de Docker
+COPY .mvn/ .mvn/
+COPY mvnw pom.xml ./
+RUN chmod +x mvnw
+RUN ./mvnw dependency:go-offline -B
 
-# Ahora copiamos el código y compilamos
+# Ahora sí copiamos el código fuente y compilamos el jar
 COPY src ./src
-RUN ./mvnw -B clean package -DskipTests
+RUN ./mvnw clean package -DskipTests -B
 
 # ---- Etapa 2: runtime ----
-FROM eclipse-temurin:17-jre
+FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
+
 COPY --from=build /app/target/*.jar app.jar
 
-# Render inyecta la variable PORT; el application.properties ya la lee con ${PORT:8080}
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# Limita memoria JVM para no exceder RAM de Render
+ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]

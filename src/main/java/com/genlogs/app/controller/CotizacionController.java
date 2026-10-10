@@ -2,7 +2,12 @@ package com.genlogs.app.controller;
 
 import java.util.List;
 
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,6 +25,10 @@ import com.genlogs.app.dto.CambiarEstadoCotizacionRequest;
 import com.genlogs.app.dto.CotizacionDetalleResponse;
 import com.genlogs.app.dto.CotizacionRequest;
 import com.genlogs.app.dto.CotizacionResponse;
+import com.genlogs.app.dto.EnviarCotizacionRequest;
+import com.genlogs.app.dto.EnviarCotizacionResponse;
+import com.genlogs.app.dto.EstadisticasCotizacionResponse;
+import com.genlogs.app.dto.PaginaResponse;
 import com.genlogs.app.dto.SeguimientoCotizacionResponse;
 import com.genlogs.app.service.CotizacionService;
 
@@ -32,6 +41,26 @@ import lombok.RequiredArgsConstructor;
 public class CotizacionController {
 
     private final CotizacionService cotizacionService;
+
+    /**
+     * Listado paginado con filtros, consumido por CotizacionesListPage.tsx
+     * (cotizacionesApi.listarCotizaciones). Los nombres de parámetros
+     * (estadoCotizacion, clienteId, moneda, page, size, sortBy, sortDir)
+     * coinciden con CotizacionesFilterParams del frontend.
+     */
+    @GetMapping
+    public ResponseEntity<PaginaResponse<CotizacionResponse>> listar(
+            @RequestParam(required = false) String estadoCotizacion,
+            @RequestParam(required = false) Long clienteId,
+            @RequestParam(required = false) String moneda,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "fechaCotizacion") String sortBy,
+            @RequestParam(defaultValue = "DESC") String sortDir) {
+        Sort sort = Sort.by(Sort.Direction.fromString(sortDir), sortBy);
+        Pageable pageable = PageRequest.of(page, size, sort);
+        return ResponseEntity.ok(cotizacionService.listar(estadoCotizacion, clienteId, moneda, pageable));
+    }
 
     @GetMapping("/{id}")
     public ResponseEntity<CotizacionResponse> buscarPorId(@PathVariable Long id) {
@@ -63,6 +92,18 @@ public class CotizacionController {
         return ResponseEntity.ok(cotizacionService.listarAdjuntos(id));
     }
 
+    /**
+     * Estadísticas agregadas para CotizacionesListPage.tsx
+     * (cotizacionesApi.obtenerEstadisticas). Nota: se declara antes de
+     * "/{id}" solo por orden de lectura — Spring ya prioriza el segmento
+     * literal "estadisticas" sobre la variable {id}, así que no hay riesgo
+     * de que "estadisticas" se intente parsear como Long.
+     */
+    @GetMapping("/estadisticas")
+    public ResponseEntity<EstadisticasCotizacionResponse> obtenerEstadisticas() {
+        return ResponseEntity.ok(cotizacionService.obtenerEstadisticas());
+    }
+
     @PostMapping
     public ResponseEntity<CotizacionResponse> crear(@Valid @RequestBody CotizacionRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(cotizacionService.crear(request));
@@ -82,7 +123,28 @@ public class CotizacionController {
 
     @DeleteMapping("/{idCotizacion}/adjuntos/{idAdjunto}")
     public ResponseEntity<Void> eliminarAdjunto(@PathVariable Long idCotizacion, @PathVariable Long idAdjunto) {
-        cotizacionService.eliminarAdjunto(idAdjunto);
+        cotizacionService.eliminarAdjunto(idCotizacion, idAdjunto);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/enviar")
+    public ResponseEntity<EnviarCotizacionResponse> enviar(
+            @PathVariable Long id, @Valid @RequestBody EnviarCotizacionRequest request) {
+        return ResponseEntity.ok(cotizacionService.enviar(id, request));
+    }
+
+    // Alias /pdf para compatibilidad total con frontend
+    @GetMapping(value = {"/{id}/descargar-pdf", "/{id}/pdf"})
+    public ResponseEntity<byte[]> descargarPdf(@PathVariable Long id) {
+        byte[] pdf = cotizacionService.descargarPdf(id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"cotizacion-" + id + ".pdf\"")
+                .body(pdf);
+    }
+
+    @PostMapping("/{id}/duplicar")
+    public ResponseEntity<CotizacionResponse> duplicar(@PathVariable Long id) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(cotizacionService.duplicar(id));
     }
 }

@@ -1,5 +1,8 @@
 package com.genlogs.app.controller;
 
+import com.genlogs.app.dto.DocumentoAdjuntoRequest;
+import com.genlogs.app.dto.ImagenAdjuntaRequest;
+import com.genlogs.app.dto.PageResponseDto;
 import com.genlogs.app.dto.ProductoCaracteristicaRequest;
 import com.genlogs.app.dto.ProductoProveedorRequest;
 import com.genlogs.app.dto.ProductoRequest;
@@ -44,8 +47,21 @@ public class ProductoController {
         return ResponseEntity.ok(productoService.buscarPorCodigo(codigoProducto));
     }
 
-    /** Catálogo web público: solo productos activos y visibles. */
+    /** Listado del panel interno: paginado y con filtros opcionales. */
     @GetMapping
+    public ResponseEntity<PageResponseDto<ProductoResponse>> listar(
+            @RequestParam(required = false) String nombre,
+            @RequestParam(required = false) String codigo,
+            @RequestParam(required = false) Integer idCategoriaProducto,
+            @RequestParam(required = false) Integer idMarca,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "12") int size) {
+        return ResponseEntity.ok(productoService.listarPaginado(
+                nombre, codigo, idCategoriaProducto, idMarca, page, size));
+    }
+
+    /** Catálogo web público: solo productos activos y visibles. */
+    @GetMapping("/web")
     public ResponseEntity<List<ProductoResponse>> listarVisiblesWeb() {
         return ResponseEntity.ok(productoService.listarVisiblesWeb());
     }
@@ -91,6 +107,14 @@ public class ProductoController {
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
+    /** Asocia una imagen ya subida a Cloudinary (flujo del frontend: upload + asociar URL). */
+    @PostMapping(value = "/{idProducto}/imagenes", consumes = "application/json")
+    public ResponseEntity<Void> asociarImagen(@PathVariable Long idProducto,
+                                               @Valid @RequestBody ImagenAdjuntaRequest request) {
+        productoService.agregarImagenPorUrl(idProducto, request);
+        return ResponseEntity.status(HttpStatus.CREATED).build();
+    }
+
     @DeleteMapping("/imagenes/{idProductoImagen}")
     public ResponseEntity<Void> eliminarImagen(@PathVariable Long idProductoImagen) {
         productoService.eliminarImagen(idProductoImagen);
@@ -107,6 +131,14 @@ public class ProductoController {
                                                 @RequestParam TipoDocumentoProducto tipo,
                                                 @RequestParam String nombreDocumento) {
         productoService.subirDocumento(idProducto, archivo, tipo, nombreDocumento);
+        return ResponseEntity.status(HttpStatus.CREATED).build();
+    }
+
+    /** Asocia un documento ya subido a Cloudinary (flujo del frontend: upload + asociar URL). */
+    @PostMapping(value = "/{idProducto}/documentos", consumes = "application/json")
+    public ResponseEntity<Void> asociarDocumento(@PathVariable Long idProducto,
+                                                  @Valid @RequestBody DocumentoAdjuntoRequest request) {
+        productoService.agregarDocumentoPorUrl(idProducto, request);
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
