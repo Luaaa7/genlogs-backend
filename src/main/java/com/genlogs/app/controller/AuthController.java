@@ -18,15 +18,18 @@ import com.genlogs.app.service.AuthService;
 import com.genlogs.app.service.PasswordResetService;
 
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/api/auth")
-@RequiredArgsConstructor
 public class AuthController {
 
     private final AuthService authService;
     private final PasswordResetService passwordResetService;
+
+    public AuthController(AuthService authService, PasswordResetService passwordResetService) {
+        this.authService = authService;
+        this.passwordResetService = passwordResetService;
+    }
 
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {

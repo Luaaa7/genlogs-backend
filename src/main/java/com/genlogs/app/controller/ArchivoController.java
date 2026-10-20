@@ -11,17 +11,19 @@ import com.genlogs.app.dto.ArchivoSubidoResponse;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.service.CloudinaryService;
 
-import lombok.RequiredArgsConstructor;
 
 /** Sube un archivo a Cloudinary y devuelve su URL. El frontend la asocia después al producto/cotización. */
 @RestController
 @RequestMapping("/api/archivos")
-@RequiredArgsConstructor
 public class ArchivoController {
 
     private static final String CARPETA = "genlogs/archivos";
 
     private final CloudinaryService cloudinaryService;
+
+    public ArchivoController(CloudinaryService cloudinaryService) {
+        this.cloudinaryService = cloudinaryService;
+    }
 
     @PostMapping(value = "/upload", consumes = "multipart/form-data")
     public ResponseEntity<ArchivoSubidoResponse> subir(@RequestParam("file") MultipartFile file) {

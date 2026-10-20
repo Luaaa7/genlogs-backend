@@ -7,7 +7,6 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
-@Repository
 public interface EmpresaMineraMineralRepository extends JpaRepository<EmpresaMineraMineral, EmpresaMineraMineralId> {
 
     List<EmpresaMineraMineral> findByEmpresaMinera_IdEmpresaMinera(Long idEmpresaMinera);
