@@ -73,8 +73,12 @@ public class CotizacionController {
     }
 
     @GetMapping("/cliente/{idCliente}")
-    public ResponseEntity<List<CotizacionResponse>> listarPorCliente(@PathVariable Long idCliente) {
-        return ResponseEntity.ok(cotizacionService.listarPorCliente(idCliente));
+    public ResponseEntity<PaginaResponse<CotizacionResponse>> listarPorCliente(
+            @PathVariable Long idCliente,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        Pageable pageable = PageRequest.of(page, Math.min(size, 100), Sort.by("fechaCotizacion").descending());
+        return ResponseEntity.ok(cotizacionService.listar(null, idCliente, null, pageable));
     }
 
     @GetMapping("/{id}/lineas")
