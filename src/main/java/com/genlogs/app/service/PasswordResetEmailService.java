@@ -20,11 +20,22 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class PasswordResetEmailService {
 
-    @Value("${brevo.api.key}")
+    /**
+     * Propiedades del correo. Antes se usaban "${brevo.api.key}" y
+     * "${app.mail.from}", que NO existen en application.properties: el
+     * placeholder sin valor por defecto hace fallar el arranque de la
+     * aplicación ("Could not resolve placeholder 'brevo.api.key'") cuando no
+     * está definida la variable de entorno correspondiente. Ahora se usan las
+     * mismas claves que MailService y todas tienen valor por defecto.
+     */
+    @Value("${app.mail.brevo-api-key:}")
     private String brevoApiKey;
 
-    @Value("${app.mail.from}")
+    @Value("${app.mail.from-email:}")
     private String from;
+
+    @Value("${app.mail.from-name:GenLogs}")
+    private String fromName;
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
@@ -32,6 +43,12 @@ public class PasswordResetEmailService {
     private final RestTemplate restTemplate = new RestTemplate();
 
     public void enviarEnlaceReset(String correo, String token) {
+        if (brevoApiKey == null || brevoApiKey.isBlank() || from == null || from.isBlank()) {
+            log.warn("BREVO_API_KEY o MAIL_FROM_EMAIL no configuradas. No se envió el enlace de recuperación a {}.",
+                    correo);
+            return;
+        }
+
         String resetUrl = UriComponentsBuilder.fromUriString(frontendUrl)
                 .pathSegment("reset-password")
                 .queryParam("token", token)
@@ -45,16 +62,16 @@ public class PasswordResetEmailService {
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("api-key", brevoApiKey);
 
-        String contenidoTexto = "Recibimos una solicitud para restablecer tu contraseña.\n\n"
+        String contenidoTexto = "Recibimos una solicitud para restablecer su contraseña.\n\n"
                 + "Abre este enlace dentro de los próximos 30 minutos:\n"
                 + resetUrl
                 + "\n\nSi no solicitaste el cambio, ignora este correo.";
 
         Map<String, Object> body = Map.of(
-            "sender", Map.of("email", from, "name", "GENLOGS"),
-            "to", List.of(Map.of("email", correo)),
-            "subject", "Restablecer contraseña - GENLOGS",
-            "textContent", contenidoTexto
+                "sender", Map.of("email", from, "name", fromName),
+                "to", List.of(Map.of("email", correo)),
+                "subject", "Restablecer contraseña - GENLOGS",
+                "textContent", contenidoTexto
         );
 
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);

@@ -41,8 +41,10 @@ class CotizacionControllerTest {
     @BeforeEach
     void setUp() {
         cotizacionService = mock(CotizacionService.class);
+        PaginaResponse<CotizacionResponse> paginaVacia =
+                PaginaResponse.of(new org.springframework.data.domain.PageImpl<>(List.of()));
         when(cotizacionService.listar(any(), any(), any(), any()))
-                .thenReturn(new PaginaResponse<CotizacionResponse>(List.of(), 0, 0, 0, 10));
+                .thenReturn(paginaVacia);
 
         mockMvc = MockMvcBuilders.standaloneSetup(new CotizacionController(cotizacionService))
                 .setControllerAdvice(new GlobalExceptionHandler())
