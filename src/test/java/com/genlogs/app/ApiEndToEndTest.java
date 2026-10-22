@@ -9,6 +9,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,9 +21,15 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 
+import com.genlogs.app.model.CategoriaProducto;
+import com.genlogs.app.model.Producto;
 import com.genlogs.app.model.Rol;
+import com.genlogs.app.model.UnidadMedida;
 import com.genlogs.app.model.Usuario;
+import com.genlogs.app.repository.CategoriaProductoRepository;
+import com.genlogs.app.repository.ProductoRepository;
 import com.genlogs.app.repository.RolRepository;
+import com.genlogs.app.repository.UnidadMedidaRepository;
 import com.genlogs.app.repository.UsuarioRepository;
 
 /**
@@ -51,10 +59,20 @@ class ApiEndToEndTest {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
+    @Autowired
+    private ProductoRepository productoRepository;
+
+    @Autowired
+    private CategoriaProductoRepository categoriaProductoRepository;
+
+    @Autowired
+    private UnidadMedidaRepository unidadMedidaRepository;
+
     private final HttpClient client = HttpClient.newHttpClient();
 
     @BeforeEach
     void seed() {
+        seedProductos();
         if (usuarioRepository.findByNombreUsuario(USUARIO).isPresent()) {
             return;
         }
@@ -143,7 +161,94 @@ class ApiEndToEndTest {
         assertEquals(404, get("/api/cotizaciones/999999", token()).statusCode());
     }
 
+    // --- Catálogo de repuestos: orden global por código y paginación ---
+
+    @Test
+    void catalogo_devuelve12ProductosPorPaginaOrdenadosPorCodigo() throws Exception {
+        HttpResponse<String> res = get("/api/productos?page=0&size=12", token());
+
+        assertEquals(200, res.statusCode(), res.body());
+        assertTrue(res.body().contains("\"content\""), res.body());
+        assertTrue(res.body().contains("\"totalElements\":15"), res.body());
+        assertTrue(res.body().contains("\"totalPages\":2"), res.body());
+        assertTrue(res.body().contains("\"page\":0"), res.body());
+        assertTrue(res.body().contains("\"size\":12"), res.body());
+
+        List<String> codigos = codigosDe(res.body());
+        assertEquals(12, codigos.size());
+        assertEquals("GLB-000001", codigos.get(0));
+        assertEquals("GLB-000012", codigos.get(11));
+    }
+
+    @Test
+    void catalogo_segundaPaginaContinuaLaSecuencia() throws Exception {
+        HttpResponse<String> res = get("/api/productos?page=1&size=12", token());
+
+        assertEquals(200, res.statusCode(), res.body());
+        List<String> codigos = codigosDe(res.body());
+        assertEquals(3, codigos.size());
+        assertEquals("GLB-000013", codigos.get(0));
+        assertEquals("GLB-000015", codigos.get(2));
+    }
+
+    @Test
+    void catalogo_buscaPorCodigoYPorNombre() throws Exception {
+        HttpResponse<String> porCodigo = get("/api/productos?codigo=000013", token());
+        assertEquals(200, porCodigo.statusCode(), porCodigo.body());
+        assertTrue(porCodigo.body().contains("\"totalElements\":1"), porCodigo.body());
+        assertTrue(porCodigo.body().contains("GLB-000013"), porCodigo.body());
+
+        HttpResponse<String> porNombre = get("/api/productos?nombre=Repuesto%2002", token());
+        assertEquals(200, porNombre.statusCode(), porNombre.body());
+        assertTrue(porNombre.body().contains("\"totalElements\":1"), porNombre.body());
+    }
+
+    @Test
+    void catalogo_tamanioDePaginaSuperadoSeAcotaA100() throws Exception {
+        HttpResponse<String> res = get("/api/productos?size=500", token());
+
+        assertEquals(200, res.statusCode(), res.body());
+        assertTrue(res.body().contains("\"size\":100"), res.body());
+    }
+
+    /** Extrae los codigoProducto de la respuesta JSON, en el orden en que llegan. */
+    private List<String> codigosDe(String json) {
+        List<String> codigos = new ArrayList<>();
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("\"codigoProducto\":\"([^\"]+)\"").matcher(json);
+        while (m.find()) {
+            codigos.add(m.group(1));
+        }
+        return codigos;
+    }
+
     // ------------------------------------------------------------------
+
+    /** 15 repuestos GLB-000001..GLB-000015, insertados en orden inverso y con nombres inversos. */
+    private void seedProductos() {
+        if (productoRepository.findByCodigoProducto("GLB-000001").isPresent()) {
+            return;
+        }
+        CategoriaProducto categoria = categoriaProductoRepository.save(auditar(new CategoriaProducto(), e -> {
+            e.setNombreCategoria("General E2E");
+            e.setSlugWeb("general-e2e");
+            e.setNivel((short) 1);
+        }));
+        UnidadMedida unidad = unidadMedidaRepository.save(auditar(new UnidadMedida(), e -> {
+            e.setCodigoUnidad("UNDE2E");
+            e.setNombreUnidad("Unidad E2E");
+        }));
+        for (int i = 15; i >= 1; i--) {
+            final int numero = i;
+            productoRepository.save(auditar(new Producto(), e -> {
+                e.setCodigoProducto(String.format("GLB-%06d", numero));
+                e.setNombreProducto(String.format("Repuesto %02d", 16 - numero));
+                e.setCategoriaProducto(categoria);
+                e.setUnidadMedida(unidad);
+                e.setVisibleWeb(true);
+            }));
+        }
+    }
 
     private String token() throws Exception {
         HttpResponse<String> res = post("/api/auth/login",
