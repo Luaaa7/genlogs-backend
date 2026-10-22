@@ -31,9 +31,38 @@ public interface CotizacionRepository extends JpaRepository<Cotizacion, Long> {
         BigDecimal getTotal();
     }
 
-    @Query(value = "SELECT descuento_total AS descuentoTotal, subtotal, igv, total " +
-            "FROM vw_cotizacion_totales WHERE id_cotizacion = :idCotizacion", nativeQuery = true)
+    @Query(value = "SELECT descuento_total AS descuentoTotal, subtotal, igv, total FROM vw_cotizacion_totales WHERE id_cotizacion = :idCotizacion", nativeQuery = true)
     Optional<TotalesCotizacionProjection> findTotalesByCotizacion(@Param("idCotizacion") Long idCotizacion);
+
+    // Projection for paginated list by cliente
+    interface CotizacionListProjection {
+        Long getIdCotizacion();
+        String getCodigoCotizacion();
+        java.time.LocalDate getFechaCotizacion();
+        String getClienteRazonSocial();
+        String getEstadoNombre();
+        String getMonedaSimbolo();
+        BigDecimal getTotal();
+    }
+
+    @Query(value = """
+        SELECT c.id_cotizacion as idCotizacion,
+               c.codigo_cotizacion as codigoCotizacion,
+               c.fecha_cotizacion as fechaCotizacion,
+               t.razon_social as clienteRazonSocial,
+               ec.nombre_estado as estadoNombre,
+               m.simbolo as monedaSimbolo,
+               v.total as total
+        FROM cotizacion c
+        JOIN cliente cl ON cl.id_cliente = c.id_cliente
+        JOIN tercero t ON t.id_tercero = cl.id_tercero
+        JOIN estado_cotizacion ec ON ec.id_estado_cotizacion = c.id_estado_cotizacion
+        JOIN moneda m ON m.id_moneda = c.id_moneda
+        LEFT JOIN vw_cotizacion_totales v ON v.id_cotizacion = c.id_cotizacion
+        WHERE c.status = 'A' AND cl.id_cliente = :idCliente
+        ORDER BY c.fecha_cotizacion DESC
+        """, nativeQuery = true)
+    Page<CotizacionListProjection> findByClientePaginado(@Param("idCliente") Long idCliente, Pageable pageable);
 
     /**
      * Listado paginado con filtros opcionales (cualquiera puede venir null).

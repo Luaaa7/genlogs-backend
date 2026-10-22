@@ -7,6 +7,8 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
+import com.genlogs.app.service.pdf.PdfGenerationService;
+import com.genlogs.app.service.pdf.PdfGenerationService.ReportePdfData;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -55,6 +57,7 @@ public class ReporteService {
     private final FacturacionRepository facturacionRepository;
     private final ServicioRepository servicioRepository;
     private final ProductoRepository productoRepository;
+    private final PdfGenerationService pdfGenerationService;
 
     public record ArchivoGenerado(byte[] contenido, String nombreArchivo, String contentType) {}
 
@@ -77,7 +80,8 @@ public class ReporteService {
             return new ArchivoGenerado(bytes, nombreBase + ".xlsx",
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         } else {
-            byte[] bytes = generarPdf(encabezados, datos, request.getTipoReporte().name());
+            ReportePdfData data = new ReportePdfData(request.getTipoReporte().name(), encabezados, datos);
+            byte[] bytes = pdfGenerationService.generarPdfReporte(data);
             return new ArchivoGenerado(bytes, nombreBase + ".pdf", "application/pdf");
         }
     }
@@ -248,63 +252,5 @@ public class ReporteService {
         } catch (IOException e) {
             throw new UncheckedIOException("No se pudo generar el archivo Excel del reporte", e);
         }
-    }
-
-    private byte[] generarPdf(String[] encabezados, String[][] datos, String titulo) {
-        try (PDDocument documento = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            PDType1Font fuenteTitulo = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
-            PDType1Font fuenteTexto = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
-
-            float margenIzq = 40;
-            float anchoUtil = PDRectangle.A4.getWidth() - 2 * margenIzq;
-            float anchoColumna = anchoUtil / encabezados.length;
-            float alturaLinea = 16;
-            float yInicio = PDRectangle.A4.getHeight() - 50;
-
-            PDPage pagina = new PDPage(PDRectangle.A4);
-            documento.addPage(pagina);
-            PDPageContentStream cs = new PDPageContentStream(documento, pagina);
-            float y = yInicio;
-
-            cs.setFont(fuenteTitulo, 14);
-            cs.beginText();
-            cs.newLineAtOffset(margenIzq, y);
-            cs.showText("Reporte GENLOGS — " + titulo);
-            cs.endText();
-            y -= alturaLinea * 2;
-
-            y = escribirFila(cs, fuenteTitulo, encabezados, margenIzq, y, anchoColumna, alturaLinea);
-
-            for (String[] fila : datos) {
-                if (y < 50) {
-                    cs.close();
-                    pagina = new PDPage(PDRectangle.A4);
-                    documento.addPage(pagina);
-                    cs = new PDPageContentStream(documento, pagina);
-                    y = yInicio;
-                }
-                y = escribirFila(cs, fuenteTexto, fila, margenIzq, y, anchoColumna, alturaLinea);
-            }
-            cs.close();
-
-            documento.save(out);
-            return out.toByteArray();
-        } catch (IOException e) {
-            throw new UncheckedIOException("No se pudo generar el archivo PDF del reporte", e);
-        }
-    }
-
-    private float escribirFila(PDPageContentStream cs, PDType1Font fuente, String[] valores,
-            float margenIzq, float y, float anchoColumna, float alturaLinea) throws IOException {
-        cs.setFont(fuente, 9);
-        float x = margenIzq;
-        for (String valor : valores) {
-            cs.beginText();
-            cs.newLineAtOffset(x, y);
-            cs.showText(valor == null ? "" : valor.length() > 28 ? valor.substring(0, 25) + "..." : valor);
-            cs.endText();
-            x += anchoColumna;
-        }
-        return y - alturaLinea;
     }
 }
