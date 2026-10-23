@@ -19,6 +19,10 @@ public interface FacturacionRepository extends JpaRepository<Facturacion, Long> 
     @Query("SELECT f FROM Facturacion f WHERE f.ordenCompra.cotizacion.cliente.idCliente = :idCliente AND f.status = 'A' ORDER BY f.fechaEmision DESC")
     List<Facturacion> findByCliente(@Param("idCliente") Long idCliente);
 
+    /** Comprobantes del periodo (módulo de Reportes): filtro en la BD. */
+    List<Facturacion> findByStatusAndFechaEmisionBetweenOrderByFechaEmisionAsc(
+            String status, LocalDate desde, LocalDate hasta);
+
     // Listado paginado con filtros opcionales ('' y 0 significan "sin filtro").
     @Query(value = "SELECT f FROM Facturacion f WHERE f.status = 'A' "
             + "AND (:codigoEstado = '' OR f.estadoFacturacion.codigoEstado = :codigoEstado) "

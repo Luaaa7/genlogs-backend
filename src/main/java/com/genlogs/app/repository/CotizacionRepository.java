@@ -1,6 +1,7 @@
 package com.genlogs.app.repository;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 import java.util.Collection;
@@ -23,6 +24,14 @@ public interface CotizacionRepository extends JpaRepository<Cotizacion, Long> {
     List<Cotizacion> findByCliente(@Param("idCliente") Long idCliente);
 
     List<Cotizacion> findByDateCreateBetween(LocalDateTime inicio, LocalDateTime fin);
+
+    /**
+     * Cotizaciones activas del periodo, ordenadas por fecha de cotización.
+     * El filtro de fechas se hace en la BD (no cargando toda la tabla y
+     * filtrando en Java): lo usa el módulo de Reportes.
+     */
+    List<Cotizacion> findByStatusAndFechaCotizacionBetweenOrderByFechaCotizacionAsc(
+            String status, LocalDate desde, LocalDate hasta);
 
     // ---- Totales desde la vista (Requeridos por CotizacionService) ----
 

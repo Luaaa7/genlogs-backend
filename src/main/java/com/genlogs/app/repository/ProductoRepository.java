@@ -12,6 +12,9 @@ import com.genlogs.app.model.Producto;
 
 public interface ProductoRepository extends JpaRepository<Producto, Long>, JpaSpecificationExecutor<Producto> {
 
+    /** Catálogo de productos para el reporte (ordenado por nombre). */
+    List<Producto> findByStatusOrderByNombreProductoAsc(String status);
+
     Optional<Producto> findByCodigoProducto(String codigoProducto);
 
     /** Catálogo web: mismo orden global por código que el listado paginado. */
