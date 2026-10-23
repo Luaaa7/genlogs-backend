@@ -20,10 +20,10 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class PasswordResetEmailService {
 
-    @Value("${brevo.api.key}")
+    @Value("${app.mail.brevo-api-key:}")
     private String brevoApiKey;
 
-    @Value("${app.mail.from}")
+    @Value("${app.mail.from-email:}")
     private String from;
 
     @Value("${app.frontend-url}")
@@ -38,6 +38,11 @@ public class PasswordResetEmailService {
                 .build()
                 .encode()
                 .toUriString();
+
+        if (brevoApiKey == null || brevoApiKey.isBlank() || from == null || from.isBlank()) {
+            log.warn("BREVO_API_KEY o MAIL_FROM_EMAIL no configuradas. Enlace de recuperación: {}", resetUrl);
+            return;
+        }
 
         String url = "https://api.brevo.com/v3/smtp/email";
 
