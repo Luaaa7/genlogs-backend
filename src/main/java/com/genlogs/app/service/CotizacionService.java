@@ -138,7 +138,9 @@ public class CotizacionService {
                         .estado(s.getEstadoCotizacion().getNombreEstado())
                         .codigoEstado(s.getEstadoCotizacion().getCodigoEstado())
                         .usuario(s.getUsuario() != null ? s.getUsuario().getNombreUsuario() : null)
-                        .fechaEvento(s.getFechaEvento())
+                        .fechaEvento(s.getFechaEvento() != null
+                                ? s.getFechaEvento().atZone(java.time.ZoneId.systemDefault()).toInstant()
+                                : null)
                         .comentario(s.getComentario())
                         .build())
                 .toList();

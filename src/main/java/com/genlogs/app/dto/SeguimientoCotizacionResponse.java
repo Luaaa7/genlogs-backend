@@ -1,6 +1,6 @@
 package com.genlogs.app.dto;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -16,6 +16,7 @@ public class SeguimientoCotizacionResponse {
     private String estado;
     private String codigoEstado;
     private String usuario;
-    private LocalDateTime fechaEvento;
+    /** Instante absoluto (se envia con zona, "...Z"): cada navegador lo muestra en su hora local. */
+    private Instant fechaEvento;
     private String comentario;
 }
