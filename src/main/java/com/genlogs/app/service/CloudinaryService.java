@@ -128,7 +128,7 @@ public class CloudinaryService {
                             "folder", carpeta,
                             "resource_type", resourceType));
             return (String) resultado.get("secure_url");
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.error("Error al subir archivo a Cloudinary", e);
             throw new BusinessException("No se pudo subir el archivo: " + e.getMessage());
         }
