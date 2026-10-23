@@ -1,4 +1,4 @@
- # GenLogs Backend
+# GenLogs Backend
 
 API REST de **GenLogs S.A.C.** — Sistema de Gestión Logística (clientes, proveedores, productos, empresas mineras, cotizaciones, facturación, órdenes de compra y reportes).
 

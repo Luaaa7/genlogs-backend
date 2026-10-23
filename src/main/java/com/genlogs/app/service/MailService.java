@@ -80,10 +80,13 @@ public class MailService {
     }
 
     /**
-     * Envío genérico (p. ej. cotizaciones). A diferencia de
-     * {@link #enviarRecuperacion}, devuelve si el correo salió o no, para que
-     * el llamador pueda informarle al usuario en la respuesta HTTP en vez de
-     * solo loguearlo.
+     * Envío genérico (p. ej. cotizaciones). Devuelve si el correo salió o no,
+     * para que el llamador pueda informarle al usuario en la respuesta HTTP
+     * en vez de solo loguearlo.
+     *
+     * <p>El correo de recuperación de contraseña YA NO se envía desde aquí:
+     * ahora va por {@link PasswordResetEmailService}, usada por
+     * {@link PasswordResetService}.</p>
      */
     public boolean enviarCorreo(String destino, String nombreDestino, String asunto, String htmlContent, String textContent) {
         if (apiKey == null || apiKey.isBlank() || fromEmail == null || fromEmail.isBlank()) {

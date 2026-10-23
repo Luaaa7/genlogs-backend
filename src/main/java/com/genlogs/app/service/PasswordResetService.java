@@ -126,6 +126,23 @@ public class PasswordResetService {
         return new TokenResetInfoResponse(segundos);
     }
 
+    /** La pantalla de "nueva contraseña" lo consulta al abrirse: indica si el enlace sigue vigente. */
+    @Transactional(readOnly = true)
+    public TokenResetInfoResponse validarToken(String tokenPlano) {
+        String hash = sha256(tokenPlano);
+
+        PasswordResetToken resetToken = resetTokenRepository
+                .findByTokenHashForUpdate(hash)
+                .orElseThrow(() -> new BusinessException(MENSAJE_TOKEN_INVALIDO));
+
+        long segundosRestantes = Duration.between(Instant.now(), resetToken.getExpiresAt()).getSeconds();
+        if (segundosRestantes <= 0) {
+            throw new BusinessException(MENSAJE_TOKEN_INVALIDO);
+        }
+
+        return new TokenResetInfoResponse(segundosRestantes);
+    }
+
     @Transactional
     public void restablecer(String tokenPlano, String nuevaPassword) {
         PasswordResetToken resetToken = resetTokenRepository
