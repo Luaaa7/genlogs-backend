@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import jakarta.persistence.EntityManager;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -90,6 +91,7 @@ public class CotizacionService {
     private final UnidadMedidaRepository unidadMedidaRepository;
     private final CloudinaryService cloudinaryService;
     private final MailService mailService;
+    private final EntityManager entityManager;
 
     private static final DateTimeFormatter FMT_FECHA = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
@@ -496,8 +498,25 @@ public class CotizacionService {
 
     private Usuario usuarioActual() {
         String nombreUsuario = SecurityContextHolder.getContext().getAuthentication().getName();
-        return usuarioRepository.findByNombreUsuario(nombreUsuario)
+        Usuario usuario = usuarioRepository.findByNombreUsuario(nombreUsuario)
                 .orElseThrow(() -> new ResourceNotFoundException("Usuario autenticado no encontrado"));
+        fijarAuditoriaBD(usuario.getNombreUsuario());
+        return usuario;
+    }
+
+    /**
+     * Los triggers de la BD (p. ej. fn_cotizacion_seguimiento, que inserta el
+     * historial al crear/cambiar de estado) rellenan user_create/process_create
+     * desde app.user/app.process. Si no se fijan, esas filas llegan con NULL y
+     * el NOT NULL las rechaza (409 al crear/duplicar). El tercer argumento
+     * "true" limita el valor a la transaccion actual (seguro con el pooler).
+     */
+    private void fijarAuditoriaBD(String nombreUsuario) {
+        entityManager.createNativeQuery(
+                        "select set_config('app.user', :u, true), set_config('app.process', :p, true)")
+                .setParameter("u", nombreUsuario)
+                .setParameter("p", "FRM_COTIZACION")
+                .getSingleResult();
     }
 
     private CotizacionResponse toResponse(Cotizacion c) {
