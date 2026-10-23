@@ -15,6 +15,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.genlogs.app.dto.TokenResetInfoResponse;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.model.PasswordResetToken;
 import com.genlogs.app.model.Usuario;
@@ -85,6 +86,23 @@ public class PasswordResetService {
             // No devolver al cliente si el correo existe; revisar los logs del backend.
             log.error("No se pudo enviar el correo de recuperación", ex);
         }
+    }
+
+    /** La pantalla de "nueva contraseña" lo consulta al abrirse: indica si el enlace sigue vigente. */
+    @Transactional(readOnly = true)
+    public TokenResetInfoResponse validarToken(String tokenPlano) {
+        String hash = sha256(tokenPlano);
+
+        PasswordResetToken resetToken = resetTokenRepository
+                .findByTokenHashForUpdate(hash)
+                .orElseThrow(() -> new BusinessException(MENSAJE_TOKEN_INVALIDO));
+
+        long segundosRestantes = Duration.between(Instant.now(), resetToken.getExpiresAt()).getSeconds();
+        if (segundosRestantes <= 0) {
+            throw new BusinessException(MENSAJE_TOKEN_INVALIDO);
+        }
+
+        return new TokenResetInfoResponse(segundosRestantes);
     }
 
     @Transactional
