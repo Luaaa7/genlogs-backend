@@ -21,5 +21,10 @@ public class CotizacionResponse {
     private BigDecimal igv;
     private BigDecimal total;
     private String moneda;
+    /** Codigo ISO (PEN/USD/EUR); "moneda" lleva el simbolo. */
+    private String monedaCodigo;
+    private String condicionPago;
+    private Long idCliente;
+    private String clienteEmail;
     private String observaciones;
 }

@@ -136,6 +136,7 @@ public class CotizacionService {
                 .map(s -> SeguimientoCotizacionResponse.builder()
                         .idSeguimiento(s.getIdSeguimiento())
                         .estado(s.getEstadoCotizacion().getNombreEstado())
+                        .codigoEstado(s.getEstadoCotizacion().getCodigoEstado())
                         .usuario(s.getUsuario() != null ? s.getUsuario().getNombreUsuario() : null)
                         .fechaEvento(s.getFechaEvento())
                         .comentario(s.getComentario())
@@ -540,6 +541,10 @@ public class CotizacionService {
                 .igv(igv)
                 .total(total)
                 .moneda(c.getMoneda() != null ? c.getMoneda().getSimbolo() : "S/")
+                .monedaCodigo(c.getMoneda() != null ? c.getMoneda().getCodigoMoneda() : null)
+                .condicionPago(c.getCondicionPago() != null ? c.getCondicionPago().getNombreCondicion() : null)
+                .idCliente(c.getCliente() != null ? c.getCliente().getIdCliente() : null)
+                .clienteEmail(obtenerCorreoCliente(c))
                 .observaciones(c.getObservaciones())
                 .build();
     }
@@ -754,6 +759,16 @@ public class CotizacionService {
     }
 
     // Obtiene razón social o documento con fallback seguro
+    private String obtenerCorreoCliente(Cotizacion c) {
+        if (c.getContacto() != null && c.getContacto().getCorreo() != null && !c.getContacto().getCorreo().isBlank()) {
+            return c.getContacto().getCorreo();
+        }
+        if (c.getCliente() != null && c.getCliente().getTercero() != null) {
+            return c.getCliente().getTercero().getCorreo();
+        }
+        return null;
+    }
+
     private String obtenerNombreCliente(Cotizacion c) {
         try {
             if (c.getCliente() != null && c.getCliente().getTercero() != null) {

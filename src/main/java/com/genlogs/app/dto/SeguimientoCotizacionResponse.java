@@ -14,6 +14,7 @@ import lombok.NoArgsConstructor;
 public class SeguimientoCotizacionResponse {
     private Long idSeguimiento;
     private String estado;
+    private String codigoEstado;
     private String usuario;
     private LocalDateTime fechaEvento;
     private String comentario;
