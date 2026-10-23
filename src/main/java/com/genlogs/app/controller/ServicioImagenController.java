@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -23,9 +24,15 @@ public class ServicioImagenController {
         return ResponseEntity.ok(servicioImagenService.listarPorServicio(idServicio));
     }
 
-    @PostMapping
-    public ResponseEntity<ServicioImagen> registrar(@PathVariable Long idServicio,
-                                                     @Valid @RequestBody ServicioImagen nueva) {
+    @PostMapping(consumes = "multipart/form-data")
+    public ResponseEntity<Void> subirImagen(@PathVariable Long idServicio,
+                                           @RequestParam("archivo") MultipartFile archivo,
+                                           @RequestParam(defaultValue = "false") boolean esPrincipal) {
+        servicioImagenService.subirImagen(idServicio, archivo, esPrincipal);
+        return ResponseEntity.status(HttpStatus.CREATED).build();
+    }
+
+    @PostMapping(consumes = "application/json")
         ServicioImagen creada = servicioImagenService.registrar(idServicio, nueva);
         return ResponseEntity.status(HttpStatus.CREATED).body(creada);
     }
