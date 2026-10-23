@@ -41,9 +41,8 @@ public class MailService {
      * para que el llamador pueda informarle al usuario en la respuesta HTTP
      * en vez de solo loguearlo.
      *
-     * <p>El correo de recuperación de contraseña YA NO se envía desde aquí:
-     * ahora va por {@link PasswordResetEmailService}, usada por
-     * {@link PasswordResetService}.</p>
+     * <p>El correo de recuperación de contraseña va por
+     * {@link #enviarRecuperacion(String, String, String)}.</p>
      */
     public boolean enviarCorreo(String destino, String nombreDestino, String asunto, String htmlContent, String textContent) {
         if (apiKey == null || apiKey.isBlank() || fromEmail == null || fromEmail.isBlank()) {
@@ -94,6 +93,25 @@ public class MailService {
             log.error("No se pudo enviar el correo '{}'", asunto, e);
             return false;
         }
+    }
+
+    /**
+     * Correo de recuperación de contraseña (lo llama PasswordResetService).
+     * Si Brevo no está configurado, el enlace se escribe en los logs para poder
+     * probar en local sin correo real.
+     */
+    public void enviarRecuperacion(String destino, String nombres, String link) {
+        int minutos = 15;
+
+        if (apiKey == null || apiKey.isBlank() || fromEmail == null || fromEmail.isBlank()) {
+            log.warn("BREVO_API_KEY o MAIL_FROM_EMAIL no configuradas. Enlace de recuperación (válido {} min): {}",
+                    minutos, link);
+            return;
+        }
+
+        String nombre = (nombres != null && !nombres.isBlank()) ? nombres.trim() : "usuario";
+        enviarCorreo(destino, nombre, "Restablece tu contraseña de GenLogs",
+                construirHtml(nombre, link, minutos), construirTexto(nombre, link, minutos));
     }
 
     // ------------------------------------------------------------------
