@@ -479,7 +479,33 @@ public class CotizacionService {
         return linea;
     }
 
+    private static final List<String> COMENTARIOS_TRIGGER = List.of("Cotización registrada", "Cambio de estado");
+
+    /**
+     * La BD ya registra el seguimiento sola (trigger fn_cotizacion_seguimiento)
+     * al crear la cotizacion o cambiarle el estado. Para no duplicar el
+     * historial, aqui solo se reemplaza el comentario generico de esa fila por
+     * el comentario real; si el trigger no dejo fila, se inserta una como antes.
+     */
     private void registrarSeguimiento(Cotizacion cotizacion, EstadoCotizacion estado, Usuario usuario, String comentario) {
+        cotizacionRepository.flush();
+        SeguimientoCotizacion delTrigger = seguimientoCotizacionRepository
+                .findByCotizacion(cotizacion.getIdCotizacion()).stream()
+                .filter(s -> s.getEstadoCotizacion().getIdEstadoCotizacion().equals(estado.getIdEstadoCotizacion()))
+                .filter(s -> COMENTARIOS_TRIGGER.contains(s.getComentario()))
+                .max((x, y) -> Long.compare(x.getIdSeguimiento(), y.getIdSeguimiento()))
+                .orElse(null);
+        if (delTrigger != null) {
+            if (comentario != null && !comentario.isBlank()) {
+                delTrigger.setComentario(comentario);
+                seguimientoCotizacionRepository.save(delTrigger);
+            }
+            return;
+        }
+        insertarSeguimiento(cotizacion, estado, usuario, comentario);
+    }
+
+    private void insertarSeguimiento(Cotizacion cotizacion, EstadoCotizacion estado, Usuario usuario, String comentario) {
         SeguimientoCotizacion seguimiento = SeguimientoCotizacion.builder()
                 .cotizacion(cotizacion)
                 .estadoCotizacion(estado)
