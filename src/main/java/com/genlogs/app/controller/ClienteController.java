@@ -37,8 +37,12 @@ public class ClienteController {
     }
 
     @GetMapping
-    public ResponseEntity<List<Cliente>> listarActivos() {
-        return ResponseEntity.ok(clienteService.listarActivos());
+    public ResponseEntity<List<Cliente>> listarActivos(
+            @RequestParam(required = false) String razonSocial,
+            @RequestParam(required = false) String documento,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size) {
+        return ResponseEntity.ok(clienteService.buscarActivos(razonSocial, documento, page, size));
     }
 
     @DeleteMapping("/{idCliente}")

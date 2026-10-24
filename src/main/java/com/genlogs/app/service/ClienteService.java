@@ -3,6 +3,8 @@ package com.genlogs.app.service;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -88,6 +90,22 @@ public class ClienteService {
     @Transactional(readOnly = true)
     public List<Cliente> listarActivos() {
         return clienteRepository.findBySituacionAndStatus("ACTIVO", "A");
+    }
+
+    /**
+     * Listado de clientes activos con búsqueda opcional por razón social o documento
+     * (el frontend manda el mismo texto en ambos parámetros) y límite de resultados.
+     * Sin `size` devuelve todos, como antes.
+     */
+    @Transactional(readOnly = true)
+    public List<Cliente> buscarActivos(String razonSocial, String documento, Integer page, Integer size) {
+        String texto = (razonSocial != null && !razonSocial.isBlank()) ? razonSocial
+                : (documento != null && !documento.isBlank()) ? documento : null;
+        String patron = texto == null ? "%" : "%" + texto.trim().toLowerCase() + "%";
+        Pageable pageable = (size != null && size > 0)
+                ? PageRequest.of(page == null ? 0 : Math.max(page, 0), Math.min(size, 500))
+                : Pageable.unpaged();
+        return clienteRepository.buscarActivos(patron, pageable);
     }
 
     @Transactional
