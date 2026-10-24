@@ -31,7 +31,9 @@ import com.genlogs.app.exception.ResourceNotFoundException;
 import com.genlogs.app.model.CondicionPago;
 import com.genlogs.app.model.DetalleFacturacion;
 import com.genlogs.app.model.EstadoFacturacion;
+import com.genlogs.app.model.EstadoOrdenCompra;
 import com.genlogs.app.model.Facturacion;
+import com.genlogs.app.repository.EstadoOrdenCompraRepository;
 import com.genlogs.app.model.Moneda;
 import com.genlogs.app.model.OrdenCompra;
 import com.genlogs.app.model.TipoComprobante;
@@ -56,6 +58,7 @@ public class FacturacionService {
     private final FacturacionRepository facturacionRepository;
     private final DetalleFacturacionRepository detalleFacturacionRepository;
     private final OrdenCompraRepository ordenCompraRepository;
+    private final EstadoOrdenCompraRepository estadoOrdenCompraRepository;
     private final TipoComprobanteRepository tipoComprobanteRepository;
     private final EstadoFacturacionRepository estadoFacturacionRepository;
     private final CondicionPagoRepository condicionPagoRepository;
@@ -149,6 +152,15 @@ public class FacturacionService {
         facturacion.setProcessCreate("ALTA_FACTURACION");
 
         facturacion = facturacionRepository.save(facturacion);
+
+        // Al emitir una factura asociada a una orden, la orden pasa a "Atendida"
+        // (si aún no está en un estado final), dentro de la misma transacción.
+        EstadoOrdenCompra estadoAtendida = estadoOrdenCompraRepository.findByCodigoEstado("ATENDIDA").orElse(null);
+        if (estadoAtendida != null && ordenCompra.getEstadoOrdenCompra() != null
+                && !Boolean.TRUE.equals(ordenCompra.getEstadoOrdenCompra().getEsFinal())) {
+            ordenCompra.setEstadoOrdenCompra(estadoAtendida);
+            ordenCompraRepository.save(ordenCompra);
+        }
 
         for (DetalleFacturacionRequest lineaReq : request.getLineas()) {
             DetalleFacturacion linea = construirLinea(facturacion, lineaReq, usuario.getNombreUsuario());
