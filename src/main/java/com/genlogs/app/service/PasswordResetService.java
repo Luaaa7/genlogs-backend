@@ -89,7 +89,8 @@ public class PasswordResetService {
     }
 
     /** La pantalla de "nueva contraseña" lo consulta al abrirse: indica si el enlace sigue vigente. */
-    @Transactional(readOnly = true)
+    // No usar readOnly: la consulta usa FOR UPDATE y PostgreSQL la rechaza en transacciones de solo lectura.
+    @Transactional
     public TokenResetInfoResponse validarToken(String tokenPlano) {
         String hash = sha256(tokenPlano);
 
