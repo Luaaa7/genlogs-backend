@@ -33,6 +33,8 @@ public class ServicioImagenController {
     }
 
     @PostMapping(consumes = "application/json")
+    public ResponseEntity<ServicioImagen> registrar(@PathVariable Long idServicio,
+                                                    @Valid @RequestBody ServicioImagen nueva) {
         ServicioImagen creada = servicioImagenService.registrar(idServicio, nueva);
         return ResponseEntity.status(HttpStatus.CREATED).body(creada);
     }
