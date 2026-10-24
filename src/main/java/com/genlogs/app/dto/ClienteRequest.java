@@ -40,4 +40,24 @@ public class ClienteRequest {
 
     @NotNull(message = "Debe indicar el sector económico")
     private Integer idSectorEconomico;
+
+    /**
+     * El frontend envía los datos del tercero anidados:
+     * { "tercero": { idTipoDocumento, idDistrito, numeroDocumento, razonSocial, ... }, ... }
+     * pero este DTO es plano. Este setter copia los datos anidados a los campos planos,
+     * de modo que se aceptan los dos formatos. Las validaciones (@NotNull, etc.) se
+     * aplican después sobre los campos planos ya rellenados.
+     */
+    public void setTercero(TerceroDatos tercero) {
+        if (tercero == null) {
+            return;
+        }
+        if (tercero.getIdTipoDocumento() != null) this.idTipoDocumento = tercero.getIdTipoDocumento();
+        if (tercero.getNumeroDocumento() != null) this.numeroDocumento = tercero.getNumeroDocumento();
+        if (tercero.getRazonSocial() != null) this.razonSocial = tercero.getRazonSocial();
+        if (tercero.getIdDistrito() != null) this.idDistrito = tercero.getIdDistrito();
+        if (tercero.getDireccion() != null) this.direccion = tercero.getDireccion();
+        if (tercero.getTelefono() != null) this.telefono = tercero.getTelefono();
+        if (tercero.getCorreo() != null) this.correo = tercero.getCorreo();
+    }
 }

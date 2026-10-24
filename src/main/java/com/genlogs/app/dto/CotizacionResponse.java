@@ -70,11 +70,10 @@ public class CotizacionResponse {
      * símbolo ("S/"), así que aquí va el CÓDIGO y no el símbolo.
      */
     private String moneda;
+    /** Símbolo de la moneda (p. ej. "S/", "$"). */
+    private String monedaSimbolo;
     /** Codigo ISO (PEN/USD/EUR); "moneda" lleva el simbolo. */
     private String monedaCodigo;
-    private String condicionPago;
-    private Long idCliente;
-    private String clienteEmail;
     private String observaciones;
 
     /** Líneas, seguimientos y adjuntos: se llenan en el detalle (GET /{id}). */

@@ -71,6 +71,57 @@ public class ClienteService {
         return toResponse(cliente);
     }
 
+    /**
+     * Actualiza los datos de un cliente existente (datos del tercero + sector económico).
+     * Si el tercero también es proveedor, los datos compartidos cambian para ambos roles.
+     */
+    @Transactional
+    public ClienteResponse actualizar(Long idCliente, ClienteRequest request) {
+        Cliente cliente = clienteRepository.findById(idCliente)
+                .orElseThrow(() -> new ResourceNotFoundException("Cliente no encontrado"));
+        Tercero tercero = cliente.getTercero();
+
+        TipoDocumento tipoDocumento = tipoDocumentoRepository.findById(request.getIdTipoDocumento())
+                .orElseThrow(() -> new ResourceNotFoundException("Tipo de documento no existe"));
+        validarLongitudDocumento(tipoDocumento, request.getNumeroDocumento());
+
+        terceroRepository
+                .findByTipoDocumento_IdTipoDocumentoAndNumeroDocumento(
+                        request.getIdTipoDocumento(), request.getNumeroDocumento())
+                .filter(otro -> !otro.getIdTercero().equals(tercero.getIdTercero()))
+                .ifPresent(otro -> {
+                    throw new BusinessException("Ya existe otro registro con ese tipo y número de documento");
+                });
+
+        Distrito distrito = distritoRepository.findById(request.getIdDistrito())
+                .orElseThrow(() -> new ResourceNotFoundException("Distrito no existe"));
+        SectorEconomico sector = sectorEconomicoRepository.findById(request.getIdSectorEconomico())
+                .orElseThrow(() -> new ResourceNotFoundException("Sector económico no existe"));
+
+        LocalDateTime ahora = LocalDateTime.now();
+        String usuario = usuarioActual();
+
+        tercero.setTipoDocumento(tipoDocumento);
+        tercero.setDistrito(distrito);
+        tercero.setNumeroDocumento(request.getNumeroDocumento());
+        tercero.setRazonSocial(request.getRazonSocial());
+        tercero.setDireccion(request.getDireccion());
+        tercero.setTelefono(request.getTelefono());
+        tercero.setCorreo(request.getCorreo());
+        tercero.setUserUpdate(usuario);
+        tercero.setProcessUpdate("EDICION_CLIENTE");
+        tercero.setDateUpdate(ahora);
+        terceroRepository.save(tercero);
+
+        cliente.setSectorEconomico(sector);
+        cliente.setUserUpdate(usuario);
+        cliente.setProcessUpdate("EDICION_CLIENTE");
+        cliente.setDateUpdate(ahora);
+        cliente = clienteRepository.save(cliente);
+
+        return toResponse(cliente);
+    }
+
     @Transactional(readOnly = true)
     public ClienteResponse buscarPorId(Long idCliente) {
         Cliente cliente = clienteRepository.findById(idCliente)

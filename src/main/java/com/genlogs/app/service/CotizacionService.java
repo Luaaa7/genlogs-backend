@@ -5,6 +5,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -1162,12 +1164,8 @@ public class CotizacionService {
                         .total(total)
                         // El campo moneda utiliza el código ISO.
                         .moneda(codigoMoneda)
-                        .monedaCodigo(codigoMoneda)
                         .monedaSimbolo(simboloMoneda)
-                        .monedaNombre(
-                                c.getMoneda() != null
-                                        ? c.getMoneda().getNombreMoneda()
-                                        : null)
+                        .monedaCodigo(codigoMoneda)
                         .observaciones(c.getObservaciones());
 
         if (conDetalle) {
@@ -1271,6 +1269,10 @@ public class CotizacionService {
                 ? s.getUsuario().getNombreUsuario()
                 : null;
 
+        Instant fechaEventoInstant = s.getFechaEvento() != null
+                ? s.getFechaEvento().toInstant(ZoneOffset.UTC)
+                : null;
+
         return SeguimientoCotizacionResponse.builder()
                 .idSeguimiento(s.getIdSeguimiento())
                 .id(s.getIdSeguimiento())
@@ -1285,8 +1287,8 @@ public class CotizacionService {
                 .estadoAnterior(estadoAnterior)
                 .usuario(usuario)
                 .usuarioNombre(usuario)
-                .fechaEvento(s.getFechaEvento())
-                .fecha(s.getFechaEvento())
+                .fechaEvento(fechaEventoInstant)
+                .fecha(fechaEventoInstant)
                 .comentario(s.getComentario())
                 .observaciones(s.getComentario())
                 .build();

@@ -3,7 +3,8 @@
 -- Las tablas las crea Hibernate (ddl-auto=create-drop); aquí solo se crea la
 -- vista de totales, que en PostgreSQL es parte del script "BD V8" y que las
 -- consultas nativas del backend necesitan para calcular subtotal/igv/total.
-CREATE OR REPLACE VIEW vw_cotizacion_totales AS
+DROP VIEW IF EXISTS vw_cotizacion_totales;
+CREATE VIEW vw_cotizacion_totales AS
 SELECT c.id_cotizacion AS id_cotizacion,
        COALESCE(SUM(d.cantidad * (d.precio_unitario - d.descuento_unitario)), 0) AS subtotal,
        COALESCE(SUM(d.cantidad * (d.precio_unitario - d.descuento_unitario)) * 0.18, 0) AS igv,
