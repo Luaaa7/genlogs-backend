@@ -3,8 +3,6 @@ package com.genlogs.app.repository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-
-import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -19,6 +17,8 @@ import com.genlogs.app.model.Cotizacion;
 public interface CotizacionRepository extends JpaRepository<Cotizacion, Long> {
 
     Optional<Cotizacion> findByCodigoCotizacion(String codigoCotizacion);
+
+    boolean existsByUsuarioVendedor_IdUsuario(Long idUsuario);
 
     @Query("SELECT c FROM Cotizacion c WHERE c.cliente.idCliente = :idCliente AND c.status = 'A' ORDER BY c.fechaCotizacion DESC")
     List<Cotizacion> findByCliente(@Param("idCliente") Long idCliente);
