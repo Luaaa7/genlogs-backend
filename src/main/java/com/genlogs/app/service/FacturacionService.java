@@ -1,8 +1,6 @@
 package com.genlogs.app.service;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.UncheckedIOException;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -14,13 +12,6 @@ import java.util.stream.Collectors;
 
 import com.genlogs.app.service.pdf.PdfGenerationService;
 import com.genlogs.app.service.pdf.PdfGenerationService.FacturacionPdfData;
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.PDPage;
-import org.apache.pdfbox.pdmodel.PDPageContentStream;
-import org.apache.pdfbox.pdmodel.common.PDRectangle;
-import org.apache.pdfbox.pdmodel.font.PDType1Font;
-import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
-import com.genlogs.app.util.PdfUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -198,6 +189,8 @@ public class FacturacionService {
         }
 
         facturacion.setMontoPagado(nuevoPagado);
+        // La tabla no tiene un detalle de pagos: cada pago queda anotado en las observaciones.
+        facturacion.setObservaciones(agregarNotaPago(facturacion, request));
 
         if (nuevoPagado.compareTo(total) == 0) {
             estadoFacturacionRepository.findByCodigoEstado("PAGADA")
@@ -214,11 +207,6 @@ public class FacturacionService {
     }
 
     /**
-     * GET /{id}/pdf — antes 404 garantizado: facturacionApi.descargarPdf()
-     * del frontend llama a esta ruta y el controller no tenía nada mapeado.
-     * Mismo patrón PDFBox que CotizacionService.descargarPdf / ReporteService.
-     */
-/**
      * GET /{id}/pdf — genera PDF delegando a {@link PdfGenerationService}.
      */
     @Transactional(readOnly = true)
@@ -266,6 +254,14 @@ public class FacturacionService {
     
 
 
+    private Long obtenerIdCliente(Facturacion f) {
+        if (f.getOrdenCompra() == null || f.getOrdenCompra().getCotizacion() == null
+                || f.getOrdenCompra().getCotizacion().getCliente() == null) {
+            return null;
+        }
+        return f.getOrdenCompra().getCotizacion().getCliente().getIdCliente();
+    }
+
     // Obtiene razón social o documento con fallback seguro
     private String obtenerNombreCliente(Facturacion f) {
         try {
@@ -285,6 +281,21 @@ public class FacturacionService {
             log.warn("Error obteniendo nombre de cliente para facturación {}: {}", f.getIdFacturacion(), e.getMessage());
         }
         return "—";
+    }
+
+    /** "Pago 24/10/2026 · Transferencia · Op. 123456 · USD 100.00" agregado a las observaciones. */
+    private String agregarNotaPago(Facturacion f, RegistrarPagoRequest request) {
+        StringBuilder nota = new StringBuilder("Pago ")
+                .append(request.getFechaPago().format(FMT_FECHA))
+                .append(" · ").append(request.getMedioPago().trim());
+        if (request.getNumeroOperacion() != null && !request.getNumeroOperacion().isBlank()) {
+            nota.append(" · Op. ").append(request.getNumeroOperacion().trim());
+        }
+        String moneda = f.getMoneda() != null ? f.getMoneda().getCodigoMoneda() : "PEN";
+        nota.append(" · ").append(moneda).append(" ").append(request.getMontoPagado().setScale(2, RoundingMode.HALF_UP).toPlainString());
+
+        String previas = f.getObservaciones();
+        return (previas == null || previas.isBlank()) ? nota.toString() : previas + "\n" + nota;
     }
 
     private static final DateTimeFormatter FMT_FECHA = DateTimeFormatter.ofPattern("dd/MM/yyyy");
@@ -369,6 +380,7 @@ public class FacturacionService {
                 .numeroComprobante(f.getSerieComprobante() + "-" + f.getNumeroComprobante())
                 .codigoComprobante(f.getSerieComprobante() + "-" + f.getNumeroComprobante())
                 .cliente(clienteNombre)
+                .clienteId(obtenerIdCliente(f))
                 .estadoCodigo(f.getEstadoFacturacion() != null ? f.getEstadoFacturacion().getCodigoEstado() : null)
                 .tipoComprobante(f.getTipoComprobante() != null ? f.getTipoComprobante().getNombreTipo() : null)
                 .clienteRazonSocial(clienteNombre)
