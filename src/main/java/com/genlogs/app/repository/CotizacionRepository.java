@@ -17,6 +17,8 @@ public interface CotizacionRepository extends JpaRepository<Cotizacion, Long> {
 
     Optional<Cotizacion> findByCodigoCotizacion(String codigoCotizacion);
 
+    boolean existsByUsuarioVendedor_IdUsuario(Long idUsuario);
+
     @Query("SELECT c FROM Cotizacion c WHERE c.cliente.idCliente = :idCliente AND c.status = 'A' ORDER BY c.fechaCotizacion DESC")
     List<Cotizacion> findByCliente(@Param("idCliente") Long idCliente);
 

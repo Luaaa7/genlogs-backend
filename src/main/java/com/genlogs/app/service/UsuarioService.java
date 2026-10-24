@@ -15,7 +15,10 @@ import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
 import com.genlogs.app.model.Rol;
 import com.genlogs.app.model.Usuario;
+import com.genlogs.app.repository.CotizacionRepository;
+import com.genlogs.app.repository.PasswordResetTokenRepository;
 import com.genlogs.app.repository.RolRepository;
+import com.genlogs.app.repository.SeguimientoCotizacionRepository;
 import com.genlogs.app.repository.UsuarioRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -27,6 +30,9 @@ public class UsuarioService {
     private final UsuarioRepository usuarioRepository;
     private final RolRepository rolRepository;
     private final PasswordEncoder passwordEncoder;
+    private final CotizacionRepository cotizacionRepository;
+    private final SeguimientoCotizacionRepository seguimientoRepository;
+    private final PasswordResetTokenRepository resetTokenRepository;
 
     @Transactional(readOnly = true)
     public List<UsuarioResponse> listar() {
@@ -113,6 +119,19 @@ public class UsuarioService {
         if (usuario.getNombreUsuario().equals(usuarioActual())) {
             throw new BusinessException("No puedes desactivar tu propio usuario");
         }
+        // Borrado inteligente: si el usuario nunca participó en cotizaciones ni en su
+        // historial, se elimina de verdad (queda libre su nombre de usuario y correo).
+        // Si tiene historial se conserva y solo se desactiva (baja lógica).
+        boolean tieneHistorial = cotizacionRepository.existsByUsuarioVendedor_IdUsuario(idUsuario)
+                || seguimientoRepository.existsByUsuario_IdUsuario(idUsuario);
+
+        if (!tieneHistorial) {
+            resetTokenRepository.deleteByUsuario_IdUsuario(idUsuario);
+            resetTokenRepository.flush();
+            usuarioRepository.delete(usuario);
+            return;
+        }
+
         usuario.setStatus("I");
         usuario.setUserUpdate(usuarioActual());
         usuario.setProcessUpdate("BAJA_USUARIO");
