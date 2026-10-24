@@ -1,11 +1,20 @@
 package com.genlogs.app.model;
 
-import java.time.Instant;
+import java.time.LocalDateTime;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OneToOne;
+import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+
 
 @Entity
 @Table(name = "password_reset_token")
@@ -19,16 +28,16 @@ public class PasswordResetToken extends Auditable {
     @Column(name = "id_password_reset_token")
     private Long idPasswordResetToken;
 
-    @OneToOne(fetch = FetchType.LAZY)
+    @OneToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "id_usuario", nullable = false, unique = true)
     private Usuario usuario;
 
-    @Column(name = "token_hash", nullable = false, unique = true, length = 64)
+    @Column(name = "token_hash", length = 64, nullable = false, unique = true)
     private String tokenHash;
 
     @Column(name = "expires_at", nullable = false)
-    private Instant expiresAt;
+    private LocalDateTime expiresAt;
 
     @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt = Instant.now();
+    private LocalDateTime createdAt = LocalDateTime.now();
 }

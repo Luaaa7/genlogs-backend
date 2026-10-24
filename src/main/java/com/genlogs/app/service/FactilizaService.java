@@ -54,7 +54,8 @@ public class FactilizaService {
             case 11 -> "RUC";
             case 8 -> "DNI";
             default -> throw new BusinessException(
-                    "El número debe tener 11 dígitos (RUC) u 8 dígitos (DNI)");
+                    "El autocompletado solo está disponible para RUC (11 dígitos) y DNI (8 dígitos). " +
+                    "Para Carné de Extranjería y Pasaporte, ingrese los datos manualmente.");
         };
         if (!limpio.matches("\\d+")) {
             throw new BusinessException("El número de documento debe ser numérico");

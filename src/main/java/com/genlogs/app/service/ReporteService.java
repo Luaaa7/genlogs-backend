@@ -3,10 +3,17 @@ package com.genlogs.app.service;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
+import com.genlogs.app.service.pdf.PdfGenerationService;
+import com.genlogs.app.service.pdf.PdfGenerationService.ReportePdfData;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -22,14 +29,17 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.genlogs.app.dto.ReportePreviewResponse;
 import com.genlogs.app.dto.ReporteRequest;
 import com.genlogs.app.exception.BusinessException;
+import com.genlogs.app.model.Cliente;
 import com.genlogs.app.model.Cotizacion;
 import com.genlogs.app.model.Facturacion;
 import com.genlogs.app.model.OrdenCompra;
 import com.genlogs.app.model.Producto;
 import com.genlogs.app.model.Servicio;
 import com.genlogs.app.repository.CotizacionRepository;
+import com.genlogs.app.repository.CotizacionRepository.TotalesCotizacionPorIdProjection;
 import com.genlogs.app.repository.FacturacionRepository;
 import com.genlogs.app.repository.OrdenCompraRepository;
 import com.genlogs.app.repository.ProductoRepository;
@@ -43,6 +53,10 @@ import lombok.RequiredArgsConstructor;
  * llamaba a POST /api/reportes/generar y el backend no tenía NADA bajo ese
  * path: 404 garantizado. Esta clase arma el archivo (Excel con Apache POI o
  * PDF con PDFBox) para los 5 tipos de reporte que el frontend ya sabe pedir.
+ *
+ * <p>La vista previa (POST /api/reportes/preview) usa EXACTAMENTE el mismo
+ * armado de filas que la descarga: mismo tipo de reporte, mismo periodo y
+ * mismos filtros. Si cambian las reglas de negocio, cambian en los dos.
  */
 @Service
 @RequiredArgsConstructor
@@ -50,19 +64,28 @@ public class ReporteService {
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
+    /**
+     * Máximo de filas que se devuelven en la vista previa. El total real
+     * siempre viaja en "totalFilas"; el archivo descargable NO se recorta.
+     */
+    private static final int MAX_FILAS_PREVIEW = 200;
+
     private final CotizacionRepository cotizacionRepository;
     private final OrdenCompraRepository ordenCompraRepository;
     private final FacturacionRepository facturacionRepository;
     private final ServicioRepository servicioRepository;
     private final ProductoRepository productoRepository;
+    private final PdfGenerationService pdfGenerationService;
 
     public record ArchivoGenerado(byte[] contenido, String nombreArchivo, String contentType) {}
 
+    /**
+     * Descarga el reporte en Excel o PDF. No se modifica: la vista previa
+     * reutiliza el mismo armado de datos.
+     */
     @Transactional(readOnly = true)
     public ArchivoGenerado generar(ReporteRequest request) {
-        if (request.getFechaInicio().isAfter(request.getFechaFin())) {
-            throw new BusinessException("La fecha de inicio no puede ser mayor a la fecha fin");
-        }
+        validarReporte(request);
 
         String[][] filas = construirFilas(request);
         String[] encabezados = filas[0];
@@ -77,8 +100,57 @@ public class ReporteService {
             return new ArchivoGenerado(bytes, nombreBase + ".xlsx",
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         } else {
-            byte[] bytes = generarPdf(encabezados, datos, request.getTipoReporte().name());
+            ReportePdfData data = new ReportePdfData(request.getTipoReporte().name(), encabezados, datos);
+            byte[] bytes = pdfGenerationService.generarPdfReporte(data);
             return new ArchivoGenerado(bytes, nombreBase + ".pdf", "application/pdf");
+        }
+    }
+
+    /**
+     * Vista previa: los mismos datos que se descargarían, en JSON, para
+     * pintarlos como tabla.
+     *
+     * <p>No inventa datos ni captura excepciones: si algo falla, el error
+     * sube al manejador global con su código correcto.
+     */
+    @Transactional(readOnly = true)
+    public ReportePreviewResponse preview(ReporteRequest request) {
+        validarReporte(request);
+
+        String[][] filas = construirFilas(request);
+        String[] encabezados = filas[0];
+
+        int totalFilas = filas.length - 1;
+        int mostradas = Math.min(totalFilas, MAX_FILAS_PREVIEW);
+
+        List<List<String>> datos = new ArrayList<>(mostradas);
+        for (int i = 1; i <= mostradas; i++) {
+            datos.add(List.of(filas[i]));
+        }
+
+        return ReportePreviewResponse.builder()
+                .tipoReporte(request.getTipoReporte())
+                .formato(request.getFormato())
+                .fechaInicio(request.getFechaInicio())
+                .fechaFin(request.getFechaFin())
+                .encabezados(List.of(encabezados))
+                .filas(datos)
+                .totalFilas(totalFilas)
+                .filasMostradas(mostradas)
+                .truncado(totalFilas > mostradas)
+                .build();
+    }
+
+    /** Validaciones comunes a la vista previa y a la descarga. */
+    private void validarReporte(ReporteRequest request) {
+        if (request == null || request.getTipoReporte() == null) {
+            throw new BusinessException("Debe indicar el tipo de reporte");
+        }
+        if (request.getFechaInicio() == null || request.getFechaFin() == null) {
+            throw new BusinessException("Debe indicar el rango de fechas del reporte");
+        }
+        if (request.getFechaInicio().isAfter(request.getFechaFin())) {
+            throw new BusinessException("La fecha de inicio no puede ser mayor a la fecha fin");
         }
     }
 
@@ -100,70 +172,70 @@ public class ReporteService {
     }
 
     private String[][] filasCotizaciones(LocalDate desde, LocalDate hasta) {
-        List<Cotizacion> cotizaciones = cotizacionRepository.findAll().stream()
-                .filter(c -> "A".equals(c.getStatus()))
-                .filter(c -> !c.getFechaCotizacion().isBefore(desde) && !c.getFechaCotizacion().isAfter(hasta))
-                .sorted((a, b) -> a.getFechaCotizacion().compareTo(b.getFechaCotizacion()))
-                .toList();
+        List<Cotizacion> cotizaciones = cotizacionRepository
+                .findByStatusAndFechaCotizacionBetweenOrderByFechaCotizacionAsc("A", desde, hasta);
+
+        // Los totales salen de la vista en UNA consulta (no una por fila).
+        Map<Long, TotalesCotizacionPorIdProjection> totales = new HashMap<>();
+        if (!cotizaciones.isEmpty()) {
+            List<Long> ids = cotizaciones.stream().map(Cotizacion::getIdCotizacion).toList();
+            for (TotalesCotizacionPorIdProjection t : cotizacionRepository.findTotalesPorCotizaciones(ids)) {
+                totales.put(t.getIdCotizacion(), t);
+            }
+        }
 
         String[][] filas = new String[cotizaciones.size() + 1][];
         filas[0] = new String[] { "Código", "Cliente", "Fecha", "Estado", "Moneda", "Total" };
         for (int i = 0; i < cotizaciones.size(); i++) {
             Cotizacion c = cotizaciones.get(i);
-            var totales = cotizacionRepository.findTotalesByCotizacion(c.getIdCotizacion()).orElse(null);
+            TotalesCotizacionPorIdProjection t = totales.get(c.getIdCotizacion());
+            BigDecimal total = t != null && t.getTotal() != null ? t.getTotal() : BigDecimal.ZERO;
             filas[i + 1] = new String[] {
-                    c.getCodigoCotizacion(),
-                    c.getCliente().getTercero().getRazonSocial(),
-                    c.getFechaCotizacion().format(FMT),
-                    c.getEstadoCotizacion().getNombreEstado(),
-                    c.getMoneda().getSimbolo(),
-                    totales != null ? totales.getTotal().toPlainString() : "0.00",
+                    texto(c.getCodigoCotizacion()),
+                    razonSocialDe(c.getCliente()),
+                    c.getFechaCotizacion() != null ? c.getFechaCotizacion().format(FMT) : "",
+                    c.getEstadoCotizacion() != null ? c.getEstadoCotizacion().getNombreEstado() : "",
+                    c.getMoneda() != null ? c.getMoneda().getSimbolo() : "",
+                    formatoMonto(total),
             };
         }
         return filas;
     }
 
     private String[][] filasOrdenesCompra(LocalDate desde, LocalDate hasta) {
-        List<OrdenCompra> ordenes = ordenCompraRepository.findAll().stream()
-                .filter(o -> "A".equals(o.getStatus()))
-                .filter(o -> !o.getFechaRecepcion().isBefore(desde) && !o.getFechaRecepcion().isAfter(hasta))
-                .sorted((a, b) -> a.getFechaRecepcion().compareTo(b.getFechaRecepcion()))
-                .toList();
+        List<OrdenCompra> ordenes = ordenCompraRepository
+                .findByStatusAndFechaRecepcionBetweenOrderByFechaRecepcionAsc("A", desde, hasta);
 
         String[][] filas = new String[ordenes.size() + 1][];
         filas[0] = new String[] { "Número", "Cotización origen", "Cliente", "Fecha recepción", "Estado" };
         for (int i = 0; i < ordenes.size(); i++) {
             OrdenCompra o = ordenes.get(i);
+            Cotizacion cotizacion = o.getCotizacion();
             filas[i + 1] = new String[] {
-                    o.getNumeroOrdenCompra(),
-                    o.getCotizacion().getCodigoCotizacion(),
-                    o.getCotizacion().getCliente().getTercero().getRazonSocial(),
-                    o.getFechaRecepcion().format(FMT),
-                    o.getEstadoOrdenCompra().getNombreEstado(),
+                    texto(o.getNumeroOrdenCompra()),
+                    cotizacion != null ? texto(cotizacion.getCodigoCotizacion()) : "",
+                    cotizacion != null ? razonSocialDe(cotizacion.getCliente()) : "",
+                    o.getFechaRecepcion() != null ? o.getFechaRecepcion().format(FMT) : "",
+                    o.getEstadoOrdenCompra() != null ? o.getEstadoOrdenCompra().getNombreEstado() : "",
             };
         }
         return filas;
     }
 
     private String[][] filasFacturacion(LocalDate desde, LocalDate hasta) {
-        List<Facturacion> facturas = facturacionRepository.findAll().stream()
-                .filter(f -> "A".equals(f.getStatus()))
-                .filter(f -> !f.getFechaEmision().isBefore(desde) && !f.getFechaEmision().isAfter(hasta))
-                .sorted((a, b) -> a.getFechaEmision().compareTo(b.getFechaEmision()))
-                .toList();
+        List<Facturacion> facturas = facturacionRepository
+                .findByStatusAndFechaEmisionBetweenOrderByFechaEmisionAsc("A", desde, hasta);
 
         String[][] filas = new String[facturas.size() + 1][];
         filas[0] = new String[] { "Comprobante", "Cliente", "Fecha emisión", "Fecha vencimiento", "Monto pagado", "Estado" };
         for (int i = 0; i < facturas.size(); i++) {
             Facturacion f = facturas.get(i);
             filas[i + 1] = new String[] {
-                    f.getSerieComprobante() + "-" + f.getNumeroComprobante(),
-                    f.getOrdenCompra().getCotizacion().getCliente().getTercero().getRazonSocial(),
-                    f.getFechaEmision().format(FMT),
-                    f.getFechaVencimiento().format(FMT),
-                    f.getMontoPagado().toPlainString(),
-                    f.getEstadoFacturacion().getNombreEstado(),
-            };
+                    texto(f.getSerieComprobante()) + "-" + texto(f.getNumeroComprobante()),
+                    razonSocialDeFactura(f),
+                    f.getFechaEmision() != null ? f.getFechaEmision().format(FMT) : "",
+                    f.getFechaVencimiento() != null ? f.getFechaVencimiento().format(FMT) : "",
+                    formatoMonto(f.getMontoPagado()),                    f.getEstadoFacturacion() != null ? f.getEstadoFacturacion().getNombreEstado() : "",            };
         }
         return filas;
     }
@@ -171,20 +243,17 @@ public class ReporteService {
     /** Servicios y Productos no tienen una fecha de negocio propia para filtrar
      *  por rango (son catálogo, no movimiento); se listan completos (activos). */
     private String[][] filasServicios() {
-        List<Servicio> servicios = servicioRepository.findAll().stream()
-                .filter(s -> "A".equals(s.getStatus()))
-                .sorted((a, b) -> a.getNombreServicio().compareTo(b.getNombreServicio()))
-                .toList();
+        List<Servicio> servicios = servicioRepository.findByStatusOrderByNombreServicioAsc("A");
 
         String[][] filas = new String[servicios.size() + 1][];
         filas[0] = new String[] { "Código", "Nombre", "Categoría", "Unidad de medida", "Visible web" };
         for (int i = 0; i < servicios.size(); i++) {
             Servicio s = servicios.get(i);
             filas[i + 1] = new String[] {
-                    s.getCodigoServicio(),
-                    s.getNombreServicio(),
-                    s.getCategoriaServicio().getNombreCategoria(),
-                    s.getUnidadMedida().getNombreUnidad(),
+                    texto(s.getCodigoServicio()),
+                    texto(s.getNombreServicio()),
+                    s.getCategoriaServicio() != null ? texto(s.getCategoriaServicio().getNombreCategoria()) : "",
+                    s.getUnidadMedida() != null ? texto(s.getUnidadMedida().getNombreUnidad()) : "",
                     Boolean.TRUE.equals(s.getVisibleWeb()) ? "Sí" : "No",
             };
         }
@@ -192,24 +261,51 @@ public class ReporteService {
     }
 
     private String[][] filasProductos() {
-        List<Producto> productos = productoRepository.findAll().stream()
-                .filter(p -> "A".equals(p.getStatus()))
-                .sorted((a, b) -> a.getNombreProducto().compareTo(b.getNombreProducto()))
-                .toList();
+        List<Producto> productos = productoRepository.findByStatusOrderByNombreProductoAsc("A");
 
         String[][] filas = new String[productos.size() + 1][];
         filas[0] = new String[] { "Código", "Nombre", "Categoría", "Marca", "Visible web" };
         for (int i = 0; i < productos.size(); i++) {
             Producto p = productos.get(i);
             filas[i + 1] = new String[] {
-                    p.getCodigoProducto(),
-                    p.getNombreProducto(),
-                    p.getCategoriaProducto().getNombreCategoria(),
-                    p.getMarca().getNombreMarca(),
+                    texto(p.getCodigoProducto()),
+                    texto(p.getNombreProducto()),
+                    p.getCategoriaProducto() != null ? texto(p.getCategoriaProducto().getNombreCategoria()) : "",
+                    // La marca es OPCIONAL en el catálogo (fabricación a medida):
+                    // sin esta guarda el reporte reventaba con NullPointerException.
+                    p.getMarca() != null ? texto(p.getMarca().getNombreMarca()) : "",
                     Boolean.TRUE.equals(p.getVisibleWeb()) ? "Sí" : "No",
             };
         }
         return filas;
+    }
+
+    // ------------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------------
+    /** Razón social del cliente de una factura, tolerando eslabones nulos. */
+    private String razonSocialDeFactura(Facturacion f) {
+        if (f.getOrdenCompra() == null || f.getOrdenCompra().getCotizacion() == null) {
+            return "";
+        }
+        return razonSocialDe(f.getOrdenCompra().getCotizacion().getCliente());
+    }
+
+    /** Razón social del cliente de una cotización (tercero), tolerando nulos. */
+    private String razonSocialDe(Cliente cliente) {
+        if (cliente == null || cliente.getTercero() == null) {
+            return "";
+        }
+        return texto(cliente.getTercero().getRazonSocial());
+    }
+
+    private String texto(String valor) {
+        return valor == null ? "" : valor;
+    }
+
+    /** Montos con 2 decimales, igual que en el archivo descargable. */
+    private String formatoMonto(BigDecimal valor) {
+        return valor == null ? "0.00" : valor.setScale(2, RoundingMode.HALF_UP).toPlainString();
     }
 
     // ------------------------------------------------------------------
@@ -248,63 +344,5 @@ public class ReporteService {
         } catch (IOException e) {
             throw new UncheckedIOException("No se pudo generar el archivo Excel del reporte", e);
         }
-    }
-
-    private byte[] generarPdf(String[] encabezados, String[][] datos, String titulo) {
-        try (PDDocument documento = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            PDType1Font fuenteTitulo = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
-            PDType1Font fuenteTexto = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
-
-            float margenIzq = 40;
-            float anchoUtil = PDRectangle.A4.getWidth() - 2 * margenIzq;
-            float anchoColumna = anchoUtil / encabezados.length;
-            float alturaLinea = 16;
-            float yInicio = PDRectangle.A4.getHeight() - 50;
-
-            PDPage pagina = new PDPage(PDRectangle.A4);
-            documento.addPage(pagina);
-            PDPageContentStream cs = new PDPageContentStream(documento, pagina);
-            float y = yInicio;
-
-            cs.setFont(fuenteTitulo, 14);
-            cs.beginText();
-            cs.newLineAtOffset(margenIzq, y);
-            cs.showText("Reporte GENLOGS — " + titulo);
-            cs.endText();
-            y -= alturaLinea * 2;
-
-            y = escribirFila(cs, fuenteTitulo, encabezados, margenIzq, y, anchoColumna, alturaLinea);
-
-            for (String[] fila : datos) {
-                if (y < 50) {
-                    cs.close();
-                    pagina = new PDPage(PDRectangle.A4);
-                    documento.addPage(pagina);
-                    cs = new PDPageContentStream(documento, pagina);
-                    y = yInicio;
-                }
-                y = escribirFila(cs, fuenteTexto, fila, margenIzq, y, anchoColumna, alturaLinea);
-            }
-            cs.close();
-
-            documento.save(out);
-            return out.toByteArray();
-        } catch (IOException e) {
-            throw new UncheckedIOException("No se pudo generar el archivo PDF del reporte", e);
-        }
-    }
-
-    private float escribirFila(PDPageContentStream cs, PDType1Font fuente, String[] valores,
-            float margenIzq, float y, float anchoColumna, float alturaLinea) throws IOException {
-        cs.setFont(fuente, 9);
-        float x = margenIzq;
-        for (String valor : valores) {
-            cs.beginText();
-            cs.newLineAtOffset(x, y);
-            cs.showText(valor == null ? "" : valor.length() > 28 ? valor.substring(0, 25) + "..." : valor);
-            cs.endText();
-            x += anchoColumna;
-        }
-        return y - alturaLinea;
     }
 }

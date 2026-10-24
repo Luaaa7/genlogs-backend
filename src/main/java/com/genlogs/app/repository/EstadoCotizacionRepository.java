@@ -7,4 +7,7 @@ import java.util.Optional;
 
 public interface EstadoCotizacionRepository extends JpaRepository<EstadoCotizacion, Integer> {
     Optional<EstadoCotizacion> findByCodigoEstado(String codigoEstado);
+
+    /** Búsqueda tolerante a mayúsculas/espacios del código de estado. */
+    Optional<EstadoCotizacion> findFirstByCodigoEstadoIgnoreCase(String codigoEstado);
 }

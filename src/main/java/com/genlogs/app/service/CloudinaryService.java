@@ -106,32 +106,43 @@ public class CloudinaryService {
         return publicId;
     }
 
+    
     private String subir(MultipartFile archivo, String carpeta, String resourceType) {
         if (archivo == null || archivo.isEmpty()) {
             throw new BusinessException("El archivo está vacío o no es válido");
         }
 
         if (!estaConfigurado()) {
-            log.warn("CLOUDINARY no configurado. Simulando subida para '{}' ({})",
-                    archivo.getOriginalFilename(), resourceType);
-            if (TIPO_IMAGEN.equals(resourceType)) {
-                return "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=800&auto=format&fit=crop&q=60";
-            }
-            return "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf";
+            throw new BusinessException(
+                    "El servicio de almacenamiento de archivos no está configurado");
         }
 
         try {
-            // Streaming directo con getInputStream() para evitar picos de memoria RAM (OOM)
             Map<?, ?> resultado = cloudinary.uploader().upload(
-                    archivo.getInputStream(),
+                    archivo.getBytes(),
                     ObjectUtils.asMap(
                             "folder", carpeta,
                             "resource_type", resourceType));
-            return (String) resultado.get("secure_url");
+
+            Object secureUrl = resultado.get("secure_url");
+
+            if (!(secureUrl instanceof String url) || url.isBlank()) {
+                throw new BusinessException(
+                        "Cloudinary no devolvió una URL válida para el archivo");
+            }
+
+            return url;
+
         } catch (IOException e) {
-            log.error("Error al subir archivo a Cloudinary", e);
-            throw new BusinessException("No se pudo subir el archivo: " + e.getMessage());
+            log.error(
+                    "Error al subir archivo a Cloudinary. Tipo de recurso: {}, carpeta: {}",
+                    resourceType,
+                    carpeta,
+                    e);
+
+            throw new BusinessException("No se pudo subir el archivo a Cloudinary");
         }
     }
+
 }
 

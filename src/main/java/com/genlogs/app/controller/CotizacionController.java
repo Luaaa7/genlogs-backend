@@ -1,6 +1,9 @@
 package com.genlogs.app.controller;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -30,6 +33,7 @@ import com.genlogs.app.dto.EnviarCotizacionResponse;
 import com.genlogs.app.dto.EstadisticasCotizacionResponse;
 import com.genlogs.app.dto.PaginaResponse;
 import com.genlogs.app.dto.SeguimientoCotizacionResponse;
+import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.service.CotizacionService;
 
 import jakarta.validation.Valid;
@@ -41,6 +45,31 @@ import lombok.RequiredArgsConstructor;
 public class CotizacionController {
 
     private final CotizacionService cotizacionService;
+
+    /**
+     * Lista blanca de campos de ordenamiento del listado.
+     * Clave = valor que acepta el frontend (sortBy).
+     * Valor = atributo real de la entidad Cotizacion por el que se ordena.
+     *
+     * Sin esta lista blanca, Spring Data JPA inyecta el sortBy tal cual en el
+     * ORDER BY del JPQL de CotizacionRepository.buscarPaginado y Hibernate
+     * falla con "Could not resolve attribute ..." cuando el cliente manda un
+     * campo que no existe en la entidad (p.ej. "fechaCreacion"), provocando
+     * un HTTP 500 en toda la pantalla de cotizaciones.
+     */
+    private static final Map<String, String> CAMPOS_ORDENAMIENTO = new LinkedHashMap<>();
+
+    static {
+        CAMPOS_ORDENAMIENTO.put("fechaCotizacion", "fechaCotizacion");
+        // Alias histórico del frontend: la entidad NO tiene "fechaCreacion"
+        // (la fecha de alta es Auditable.dateCreate, columna date_create).
+        CAMPOS_ORDENAMIENTO.put("fechaCreacion", "fechaCotizacion");
+        CAMPOS_ORDENAMIENTO.put("dateCreate", "dateCreate");
+        CAMPOS_ORDENAMIENTO.put("codigoCotizacion", "codigoCotizacion");
+        CAMPOS_ORDENAMIENTO.put("idCotizacion", "idCotizacion");
+        CAMPOS_ORDENAMIENTO.put("estado", "estadoCotizacion.nombreEstado");
+        CAMPOS_ORDENAMIENTO.put("cliente", "cliente.tercero.razonSocial");
+    }
 
     /**
      * Listado paginado con filtros, consumido por CotizacionesListPage.tsx
@@ -57,9 +86,36 @@ public class CotizacionController {
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "fechaCotizacion") String sortBy,
             @RequestParam(defaultValue = "DESC") String sortDir) {
-        Sort sort = Sort.by(Sort.Direction.fromString(sortDir), sortBy);
-        Pageable pageable = PageRequest.of(page, size, sort);
+        Sort sort = construirSort(sortBy, sortDir);
+        Pageable pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100), sort);
         return ResponseEntity.ok(cotizacionService.listar(estadoCotizacion, clienteId, moneda, pageable));
+    }
+
+    /**
+     * Traduce el sortBy del frontend a un atributo válido de la entidad
+     * Cotizacion y valida la dirección. Un campo o una dirección no válidos
+     * devuelven 400 (BusinessException) en lugar de reventar con 500 al
+     * construir la consulta.
+     */
+    private Sort construirSort(String sortBy, String sortDir) {
+        String clave = sortBy == null ? "" : sortBy.trim();
+        String atributo = CAMPOS_ORDENAMIENTO.get(clave);
+        if (atributo == null) {
+            throw new BusinessException("Campo de ordenamiento inválido: '" + sortBy + "'. Campos permitidos: "
+                    + String.join(", ", CAMPOS_ORDENAMIENTO.keySet()));
+        }
+
+        String direccion = sortDir == null ? "" : sortDir.trim().toUpperCase(Locale.ROOT);
+        Sort.Direction direction;
+        if ("ASC".equals(direccion)) {
+            direction = Sort.Direction.ASC;
+        } else if ("DESC".equals(direccion)) {
+            direction = Sort.Direction.DESC;
+        } else {
+            throw new BusinessException("Dirección de ordenamiento inválida: '" + sortDir + "'. Use ASC o DESC.");
+        }
+
+        return Sort.by(direction, atributo);
     }
 
     @GetMapping("/{id}")
@@ -73,8 +129,13 @@ public class CotizacionController {
     }
 
     @GetMapping("/cliente/{idCliente}")
-    public ResponseEntity<List<CotizacionResponse>> listarPorCliente(@PathVariable Long idCliente) {
-        return ResponseEntity.ok(cotizacionService.listarPorCliente(idCliente));
+    public ResponseEntity<PaginaResponse<CotizacionResponse>> listarPorCliente(
+            @PathVariable Long idCliente,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        Pageable pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100),
+                Sort.by("fechaCotizacion").descending());
+        return ResponseEntity.ok(cotizacionService.listar(null, idCliente, null, pageable));
     }
 
     @GetMapping("/{id}/lineas")

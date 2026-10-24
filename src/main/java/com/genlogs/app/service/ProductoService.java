@@ -59,6 +59,23 @@ public class ProductoService {
     private static final String CARPETA_IMAGENES   = "genlogs/productos/imagenes";
     private static final String CARPETA_DOCUMENTOS = "genlogs/productos/documentos";
 
+    /**
+     * Orden global del catálogo: ASCENDENTE POR CÓDIGO y, como segundo
+     * criterio, el id del producto.
+     *
+     * - El código es el orden natural del catálogo (GLB-000006, GLB-000012,
+     *   GLB-000013, GLB-000022, GLB-000026...). Como el sufijo numérico va
+     *   con ceros a la izquierda y siempre con el mismo ancho, el orden
+     *   lexicográfico de la columna coincide con el numérico.
+     * - El idProducto como segundo criterio hace el orden ESTABLE: sin él,
+     *   dos productos con el mismo nombre pueden repartirse entre páginas
+     *   distintas (duplicados y saltos al avanzar).
+     * - Se aplica en la BD (ORDER BY) ANTES del LIMIT/OFFSET, no en Java.
+     */
+    private static final Sort ORDEN_CATALOGO = Sort.by(
+            Sort.Order.asc("codigoProducto"),
+            Sort.Order.asc("idProducto"));
+
     private final ProductoRepository productoRepository;
     private final CategoriaProductoRepository categoriaProductoRepository;
     private final MarcaRepository marcaRepository;
@@ -140,7 +157,7 @@ public class ProductoService {
 
     @Transactional(readOnly = true)
     public List<ProductoResponse> listarVisiblesWeb() {
-        return productoRepository.findByStatusAndVisibleWeb("A", true).stream()
+        return productoRepository.findByStatusAndVisibleWeb("A", true, ORDEN_CATALOGO).stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
     }
@@ -170,10 +187,17 @@ public class ProductoService {
         }
 
         int paginaSegura = Math.max(page, 0);
+        // Tope de 100 registros por petición: protege a la base de datos de
+        // pedidos desmedidos. No se elimina ni se sube: el catálogo se recorre
+        // paginando (12 por página en el contrato del frontend), no trayendo
+        // todo de una vez.
         int tamanioSeguro = Math.min(Math.max(size, 1), 100);
 
-        Page<Producto> resultado = productoRepository.findAll(
-                spec, PageRequest.of(paginaSegura, tamanioSeguro, Sort.by("nombreProducto")));
+        // findAll(spec, pageable) genera: WHERE <filtros> ORDER BY codigo_producto, id_producto
+        // LIMIT <size> OFFSET <page*size>. El count sale de la misma spec, así
+        // que totalElements y totalPages corresponden a los registros que
+        // cumplen los filtros.
+        Page<Producto> resultado = productoRepository.findAll(spec, PageRequest.of(paginaSegura, tamanioSeguro, ORDEN_CATALOGO));
 
         List<ProductoResponse> contenido = resultado.getContent().stream()
                 .map(this::toResponse)

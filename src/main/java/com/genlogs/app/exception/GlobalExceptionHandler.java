@@ -7,20 +7,33 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.dao.QueryTimeoutException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingPathVariableException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+
+import jakarta.validation.ConstraintViolationException;
+import org.springframework.web.bind.ServletRequestBindingException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -93,6 +106,68 @@ public class GlobalExceptionHandler {
         body.put("detalles", errores);
 
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    /**
+     * Validación de parámetros del método del controller (Spring 6.1+): si no
+     * se atiende aquí, el handler genérico la degradaba a 500.
+     */
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ResponseEntity<Map<String, Object>> handleValidacionDeParametros(HandlerMethodValidationException ex) {
+        log.warn("Parámetros inválidos: {}", ex.getMessage());
+        return buildResponse(HttpStatus.BAD_REQUEST, "Parámetros de la petición inválidos.");
+    }
+
+    /** ConstraintViolationException (validación jakarta fuera del binding): 400, no 500. */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleConstraintViolation(ConstraintViolationException ex) {
+        log.warn("Violación de restricción: {}", ex.getMessage());
+        return buildResponse(HttpStatus.BAD_REQUEST, "Parámetros de la petición inválidos.");
+    }
+
+    /** Sin cabecera obligatoria o sin variable de ruta: 400, no 500. */
+    @ExceptionHandler({MissingRequestHeaderException.class,
+                       MissingPathVariableException.class,
+                       ServletRequestBindingException.class})
+    public ResponseEntity<Map<String, Object>> handlePeticionIncompleta(Exception ex) {
+        log.warn("Petición incompleta: {}", ex.getMessage());
+        return buildResponse(HttpStatus.BAD_REQUEST, "Faltan datos obligatorios en la petición.");
+    }
+
+    /** Content-Type no soportado: 415, no 500. */
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<Map<String, Object>> handleMediaTypeNoSoportado(HttpMediaTypeNotSupportedException ex) {
+        log.warn("Content-Type no soportado: {}", ex.getMessage());
+        return buildResponse(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "El tipo de contenido de la petición no está soportado.");
+    }
+
+    /** Sin credenciales: 401, no 500. */
+    @ExceptionHandler(AuthenticationCredentialsNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleSinCredenciales(AuthenticationCredentialsNotFoundException ex) {
+        log.warn("Petición sin autenticación: {}", ex.getMessage());
+        return buildResponse(HttpStatus.UNAUTHORIZED, "Debes iniciar sesión para realizar esta acción.");
+    }
+
+    /**
+     * Falta de conexiones o timeout (típico con el pooler de Supabase): 503
+     * en lugar del 500 genérico, para que el frontend pueda reintentar.
+     */
+    @ExceptionHandler({CannotAcquireLockException.class,
+                       QueryTimeoutException.class,
+                       CannotGetJdbcConnectionException.class})
+    public ResponseEntity<Map<String, Object>> handleBaseDeDatosNoDisponible(Exception ex) {
+        log.error("Base de datos no disponible temporalmente", ex);
+        return buildResponse(HttpStatus.SERVICE_UNAVAILABLE,
+                "La base de datos no está disponible en este momento. Intenta de nuevo en unos segundos.");
+    }
+
+    /** Conflicto de bloqueo optimista / pesimista: 409, no 500. */
+    @ExceptionHandler({PessimisticLockingFailureException.class,
+                       OptimisticLockingFailureException.class})
+    public ResponseEntity<Map<String, Object>> handleConflictoDeBloqueo(Exception ex) {
+        log.error("Conflicto de bloqueo al guardar los datos", ex);
+        return buildResponse(HttpStatus.CONFLICT,
+                "El registro fue modificado por otra operación. Recarga la página e inténtalo de nuevo.");
     }
 
     @ExceptionHandler(Exception.class)
