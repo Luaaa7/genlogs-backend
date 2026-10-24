@@ -62,7 +62,7 @@ public class SecurityConfig {
                 // Health check público para monitoreo de Render
                 .requestMatchers("/", "/health", "/api/health").permitAll()
                 .requestMatchers("/api/auth/**").permitAll()
-                .requestMatchers("/api/catalogo/**").permitAll()
+                .requestMatchers("/api/catalogo/**", "/api/catalogos/**").permitAll()
                 .requestMatchers("/api/empresas-mineras/**").permitAll()
                 .anyRequest().authenticated()
             )

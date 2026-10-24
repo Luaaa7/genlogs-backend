@@ -104,10 +104,17 @@ public class UbigeoController {
     }
 
     private DistritoResponse toResponse(Distrito d) {
+        Provincia p = d.getProvincia();
+        Departamento dep = p != null ? p.getDepartamento() : null;
+
         return DistritoResponse.builder()
                 .idDistrito(d.getIdDistrito())
                 .nombreDistrito(d.getNombreDistrito())
                 .ubigeo(d.getUbigeo())
+                .idProvincia(p != null ? p.getIdProvincia() : null)
+                .nombreProvincia(p != null ? p.getNombreProvincia() : null)
+                .idDepartamento(dep != null ? dep.getIdDepartamento() : null)
+                .nombreDepartamento(dep != null ? dep.getNombreDepartamento() : null)
                 .build();
     }
 }
