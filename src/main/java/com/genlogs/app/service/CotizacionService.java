@@ -77,6 +77,7 @@ import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -611,6 +612,25 @@ public class CotizacionService {
                 "Duplicada desde " + original.getCodigoCotizacion());
 
         return toResponseDetalle(copia, codigoGenerado);
+    }
+
+    @Transactional
+    @Scheduled(cron = "0 0 0 * * *")
+    public void marcarCotizacionesVencidas() {
+        EstadoCotizacion estadoVencida = estadoCotizacionRepository.findByCodigoEstado("VENCIDA")
+                .orElse(estadoCotizacionRepository.findFirstByCodigoEstadoIgnoreCase("VENCIDA").orElse(null));
+        if (estadoVencida == null) {
+            return;
+        }
+        List<Cotizacion> vencidas = cotizacionRepository
+                .findByStatusAndEstadoCotizacionEsFinalFalseAndFechaValidezBefore("A", LocalDate.now());
+        for (Cotizacion c : vencidas) {
+            if (c.getFechaValidez() != null && c.getFechaValidez().isBefore(LocalDate.now())) {
+                c.setEstadoCotizacion(estadoVencida);
+                c.setDateUpdate(LocalDateTime.now());
+                cotizacionRepository.save(c);
+            }
+        }
     }
 
     @Transactional(readOnly = true)
