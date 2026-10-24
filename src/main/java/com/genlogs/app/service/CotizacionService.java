@@ -1285,8 +1285,8 @@ public class CotizacionService {
                 .estadoAnterior(estadoAnterior)
                 .usuario(usuario)
                 .usuarioNombre(usuario)
-                .fechaEvento(s.getFechaEvento())
-                .fecha(s.getFechaEvento())
+                .fechaEvento(s.getFechaEvento() != null ? s.getFechaEvento().atZone(java.time.ZoneId.systemDefault()).toInstant() : null)
+                .fecha(s.getFechaEvento() != null ? s.getFechaEvento().atZone(java.time.ZoneId.systemDefault()).toInstant() : null)
                 .comentario(s.getComentario())
                 .observaciones(s.getComentario())
                 .build();

@@ -120,7 +120,8 @@ class CotizacionContratoFrontendTest {
                 mock(CloudinaryService.class),
                 mock(MailService.class),
                 new org.springframework.transaction.support.TransactionTemplate(
-                        mock(org.springframework.transaction.PlatformTransactionManager.class)));
+                        mock(org.springframework.transaction.PlatformTransactionManager.class)),
+                mock(jakarta.persistence.EntityManager.class));
 
         mockMvc = MockMvcBuilders.standaloneSetup(new CotizacionController(service))
                 .setControllerAdvice(new GlobalExceptionHandler())
