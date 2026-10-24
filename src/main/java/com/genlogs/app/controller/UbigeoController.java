@@ -68,6 +68,19 @@ public class UbigeoController {
         return ResponseEntity.ok(lista);
     }
 
+    /**
+     * Catálogo completo de distritos para formularios que necesitan seleccionar
+     * un distrito y mostrar su UBIGEO sin elegir previamente una provincia.
+     * Los datos proceden de la base de datos; no se generan valores simulados.
+     */
+    @GetMapping("/catalogos/distritos")
+    public ResponseEntity<List<DistritoResponse>> listarTodosLosDistritos() {
+        List<DistritoResponse> lista = distritoRepository.findAll().stream()
+                .map(this::toResponse)
+                .toList();
+        return ResponseEntity.ok(lista);
+    }
+
     private PaisResponse toResponse(Pais p) {
         return PaisResponse.builder()
                 .idPais(p.getIdPais())
@@ -91,10 +104,17 @@ public class UbigeoController {
     }
 
     private DistritoResponse toResponse(Distrito d) {
+        Provincia p = d.getProvincia();
+        Departamento dep = p != null ? p.getDepartamento() : null;
+
         return DistritoResponse.builder()
                 .idDistrito(d.getIdDistrito())
                 .nombreDistrito(d.getNombreDistrito())
                 .ubigeo(d.getUbigeo())
+                .idProvincia(p != null ? p.getIdProvincia() : null)
+                .nombreProvincia(p != null ? p.getNombreProvincia() : null)
+                .idDepartamento(dep != null ? dep.getIdDepartamento() : null)
+                .nombreDepartamento(dep != null ? dep.getNombreDepartamento() : null)
                 .build();
     }
 }

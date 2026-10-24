@@ -17,7 +17,8 @@ public class ClienteRequest {
     private Integer idTipoDocumento;
 
     @NotBlank(message = "El número de documento es obligatorio")
-    @Pattern(regexp = "^[A-Za-z0-9]{1,15}$", message = "Número de documento inválido")
+    @Size(min = 1, max = 20, message = "El número de documento debe tener entre 1 y 20 caracteres")
+    @Pattern(regexp = "^[A-Za-z0-9\\-]{1,20}$", message = "Número de documento inválido (solo letras, números y guiones)")
     private String numeroDocumento;
 
     @NotBlank(message = "La razón social / nombre es obligatorio")

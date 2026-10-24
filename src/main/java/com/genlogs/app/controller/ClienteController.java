@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -20,7 +21,7 @@ public class ClienteController {
     private final ClienteService clienteService;
 
     @PostMapping
-    // @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')") // lo agrega Luana con MethodSecurityConfig
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
     public ResponseEntity<ClienteResponse> registrar(@Valid @RequestBody ClienteRequest request) {
         ClienteResponse response = clienteService.registrar(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);

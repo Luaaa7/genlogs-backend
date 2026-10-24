@@ -1,5 +1,6 @@
 package com.genlogs.app.repository;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -18,6 +19,10 @@ public interface OrdenCompraRepository extends JpaRepository<OrdenCompra, Long> 
 
     @Query("SELECT oc FROM OrdenCompra oc WHERE oc.cotizacion.cliente.idCliente = :idCliente AND oc.status = 'A' ORDER BY oc.fechaRecepcion DESC")
     List<OrdenCompra> findByCliente(@Param("idCliente") Long idCliente);
+
+    /** Órdenes de compra del periodo (módulo de Reportes): filtro en la BD. */
+    List<OrdenCompra> findByStatusAndFechaRecepcionBetweenOrderByFechaRecepcionAsc(
+            String status, LocalDate desde, LocalDate hasta);
 
     // Listado paginado con filtros opcionales ('' y 0 significan "sin filtro").
     @Query(value = "SELECT oc FROM OrdenCompra oc WHERE oc.status = 'A' "
