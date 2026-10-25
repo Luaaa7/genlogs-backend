@@ -5,8 +5,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.Instant;
-import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -37,6 +35,7 @@ import com.genlogs.app.model.Cliente;
 import com.genlogs.app.model.CondicionPago;
 import com.genlogs.app.model.ContactoTercero;
 import com.genlogs.app.model.Cotizacion;
+import com.genlogs.app.util.FormatoPdf;
 import com.genlogs.app.model.CotizacionDetalle;
 import com.genlogs.app.model.EstadoCotizacion;
 import com.genlogs.app.model.Moneda;
@@ -77,7 +76,6 @@ import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -492,20 +490,22 @@ public class CotizacionService {
                 .findTotalesByCotizacion(idCotizacion)
                 .orElse(null);
 
-        String simbolo = cotizacion.getMoneda() != null
-                ? cotizacion.getMoneda().getSimbolo()
-                : "S/";
+        String codigoMoneda = cotizacion.getMoneda() != null
+                ? cotizacion.getMoneda().getCodigoMoneda()
+                : "PEN";
 
         List<String[]> filas = new ArrayList<>();
 
         for (CotizacionDetalle detalle : lineas) {
-            String descripcion = detalle.getProducto() != null
-                    ? detalle.getProducto().getNombreProducto()
-                    : detalle.getServicio() != null
-                            ? detalle.getServicio().getNombreServicio()
-                            : detalle.getDescripcionPersonalizada() != null
-                                    ? detalle.getDescripcionPersonalizada()
-                                    : "-";
+            // Mismo criterio que la pantalla: el texto personalizado manda sobre el nombre del catálogo.
+            String descripcion = detalle.getDescripcionPersonalizada() != null
+                    && !detalle.getDescripcionPersonalizada().isBlank()
+                            ? detalle.getDescripcionPersonalizada()
+                            : detalle.getProducto() != null
+                                    ? detalle.getProducto().getNombreProducto()
+                                    : detalle.getServicio() != null
+                                            ? detalle.getServicio().getNombreServicio()
+                                            : "-";
 
             BigDecimal cantidad = detalle.getCantidad() != null
                     ? detalle.getCantidad()
@@ -521,20 +521,30 @@ public class CotizacionService {
 
             filas.add(new String[] {
                     descripcion,
-                    cantidad.toPlainString(),
-                    precio.toPlainString(),
-                    importe.toPlainString()
+                    FormatoPdf.cantidad(cantidad),
+                    FormatoPdf.importe(precio),
+                    FormatoPdf.importe(importe)
             });
         }
+
+        var tercero = cotizacion.getCliente() != null ? cotizacion.getCliente().getTercero() : null;
 
         CotizacionPdfData data = new CotizacionPdfData(
                 cotizacion.getCodigoCotizacion() != null
                         ? cotizacion.getCodigoCotizacion()
                         : "Borrador",
                 obtenerNombreCliente(cotizacion),
+                tercero != null && tercero.getTipoDocumento() != null
+                        ? tercero.getTipoDocumento().getNombreTipo()
+                        : null,
+                tercero != null ? tercero.getNumeroDocumento() : null,
+                tercero != null ? tercero.getDireccion() : null,
                 cotizacion.getFechaCotizacion(),
                 cotizacion.getFechaValidez(),
-                simbolo,
+                cotizacion.getCondicionPago() != null
+                        ? cotizacion.getCondicionPago().getNombreCondicion()
+                        : null,
+                codigoMoneda,
                 filas,
                 totales != null && totales.getSubtotal() != null
                         ? totales.getSubtotal()
@@ -612,25 +622,6 @@ public class CotizacionService {
                 "Duplicada desde " + original.getCodigoCotizacion());
 
         return toResponseDetalle(copia, codigoGenerado);
-    }
-
-    @Transactional
-    @Scheduled(cron = "0 0 0 * * *")
-    public void marcarCotizacionesVencidas() {
-        EstadoCotizacion estadoVencida = estadoCotizacionRepository.findByCodigoEstado("VENCIDA")
-                .orElse(estadoCotizacionRepository.findFirstByCodigoEstadoIgnoreCase("VENCIDA").orElse(null));
-        if (estadoVencida == null) {
-            return;
-        }
-        List<Cotizacion> vencidas = cotizacionRepository
-                .findByStatusAndEstadoCotizacionEsFinalFalseAndFechaValidezBefore("A", LocalDate.now());
-        for (Cotizacion c : vencidas) {
-            if (c.getFechaValidez() != null && c.getFechaValidez().isBefore(LocalDate.now())) {
-                c.setEstadoCotizacion(estadoVencida);
-                c.setDateUpdate(LocalDateTime.now());
-                cotizacionRepository.save(c);
-            }
-        }
     }
 
     @Transactional(readOnly = true)
@@ -1184,8 +1175,12 @@ public class CotizacionService {
                         .total(total)
                         // El campo moneda utiliza el código ISO.
                         .moneda(codigoMoneda)
-                        .monedaSimbolo(simboloMoneda)
                         .monedaCodigo(codigoMoneda)
+                        .monedaSimbolo(simboloMoneda)
+                        .monedaNombre(
+                                c.getMoneda() != null
+                                        ? c.getMoneda().getNombreMoneda()
+                                        : null)
                         .observaciones(c.getObservaciones());
 
         if (conDetalle) {
@@ -1289,10 +1284,6 @@ public class CotizacionService {
                 ? s.getUsuario().getNombreUsuario()
                 : null;
 
-        Instant fechaEventoInstant = s.getFechaEvento() != null
-                ? s.getFechaEvento().toInstant(ZoneOffset.UTC)
-                : null;
-
         return SeguimientoCotizacionResponse.builder()
                 .idSeguimiento(s.getIdSeguimiento())
                 .id(s.getIdSeguimiento())
@@ -1307,8 +1298,8 @@ public class CotizacionService {
                 .estadoAnterior(estadoAnterior)
                 .usuario(usuario)
                 .usuarioNombre(usuario)
-                .fechaEvento(fechaEventoInstant)
-                .fecha(fechaEventoInstant)
+                .fechaEvento(s.getFechaEvento() != null ? s.getFechaEvento().atZone(java.time.ZoneId.systemDefault()).toInstant() : null)
+                .fecha(s.getFechaEvento() != null ? s.getFechaEvento().atZone(java.time.ZoneId.systemDefault()).toInstant() : null)
                 .comentario(s.getComentario())
                 .observaciones(s.getComentario())
                 .build();

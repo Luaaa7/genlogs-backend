@@ -12,6 +12,7 @@ import lombok.NoArgsConstructor;
 public class FacturacionResponse {
     private Long idFacturacion;
     private Long idOrdenCompra;
+    private Long clienteId;
     private String numeroOrdenCompra;
     private String numeroComprobante;
     private String codigoComprobante;

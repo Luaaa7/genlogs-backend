@@ -1,5 +1,6 @@
 package com.genlogs.app.service;
 
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -11,6 +12,7 @@ import java.util.stream.Collectors;
 
 import com.genlogs.app.service.pdf.PdfGenerationService;
 import com.genlogs.app.service.pdf.PdfGenerationService.FacturacionPdfData;
+import com.genlogs.app.util.FormatoPdf;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -31,11 +33,10 @@ import com.genlogs.app.exception.ResourceNotFoundException;
 import com.genlogs.app.model.CondicionPago;
 import com.genlogs.app.model.DetalleFacturacion;
 import com.genlogs.app.model.EstadoFacturacion;
-import com.genlogs.app.model.EstadoOrdenCompra;
 import com.genlogs.app.model.Facturacion;
-import com.genlogs.app.repository.EstadoOrdenCompraRepository;
 import com.genlogs.app.model.Moneda;
 import com.genlogs.app.model.OrdenCompra;
+import com.genlogs.app.model.Tercero;
 import com.genlogs.app.model.TipoComprobante;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.CondicionPagoRepository;
@@ -58,7 +59,6 @@ public class FacturacionService {
     private final FacturacionRepository facturacionRepository;
     private final DetalleFacturacionRepository detalleFacturacionRepository;
     private final OrdenCompraRepository ordenCompraRepository;
-    private final EstadoOrdenCompraRepository estadoOrdenCompraRepository;
     private final TipoComprobanteRepository tipoComprobanteRepository;
     private final EstadoFacturacionRepository estadoFacturacionRepository;
     private final CondicionPagoRepository condicionPagoRepository;
@@ -153,15 +153,6 @@ public class FacturacionService {
 
         facturacion = facturacionRepository.save(facturacion);
 
-        // Al emitir una factura asociada a una orden, la orden pasa a "Atendida"
-        // (si aún no está en un estado final), dentro de la misma transacción.
-        EstadoOrdenCompra estadoAtendida = estadoOrdenCompraRepository.findByCodigoEstado("ATENDIDA").orElse(null);
-        if (estadoAtendida != null && ordenCompra.getEstadoOrdenCompra() != null
-                && !Boolean.TRUE.equals(ordenCompra.getEstadoOrdenCompra().getEsFinal())) {
-            ordenCompra.setEstadoOrdenCompra(estadoAtendida);
-            ordenCompraRepository.save(ordenCompra);
-        }
-
         for (DetalleFacturacionRequest lineaReq : request.getLineas()) {
             DetalleFacturacion linea = construirLinea(facturacion, lineaReq, usuario.getNombreUsuario());
             detalleFacturacionRepository.save(linea);
@@ -200,6 +191,8 @@ public class FacturacionService {
         }
 
         facturacion.setMontoPagado(nuevoPagado);
+        // La tabla no tiene un detalle de pagos: cada pago queda anotado en las observaciones.
+        facturacion.setObservaciones(agregarNotaPago(facturacion, request));
 
         if (nuevoPagado.compareTo(total) == 0) {
             estadoFacturacionRepository.findByCodigoEstado("PAGADA")
@@ -216,11 +209,6 @@ public class FacturacionService {
     }
 
     /**
-     * GET /{id}/pdf — antes 404 garantizado: facturacionApi.descargarPdf()
-     * del frontend llama a esta ruta y el controller no tenía nada mapeado.
-     * Mismo patrón PDFBox que CotizacionService.descargarPdf / ReporteService.
-     */
-/**
      * GET /{id}/pdf — genera PDF delegando a {@link PdfGenerationService}.
      */
     @Transactional(readOnly = true)
@@ -231,30 +219,41 @@ public class FacturacionService {
         BigDecimal total = calcularTotal(idFacturacion);
         BigDecimal igv = total.subtract(subtotal);
         BigDecimal pagado = f.getMontoPagado() != null ? f.getMontoPagado() : BigDecimal.ZERO;
-        String simbolo = f.getMoneda() != null ? f.getMoneda().getSimbolo() : "S/";
+        String codigoMoneda = f.getMoneda() != null ? f.getMoneda().getCodigoMoneda() : "PEN";
 
         List<String[]> filas = new ArrayList<>();
         for (DetalleFacturacion d : lineas) {
-            String descripcion = d.getProducto() != null ? d.getProducto().getNombreProducto()
-                    : d.getServicio() != null ? d.getServicio().getNombreServicio()
-                    : d.getDescripcionPersonalizada() != null ? d.getDescripcionPersonalizada() : "-";
+            // Mismo criterio que en la cotización: el texto personalizado manda sobre el nombre del catálogo.
+            String descripcion = d.getDescripcionPersonalizada() != null && !d.getDescripcionPersonalizada().isBlank()
+                    ? d.getDescripcionPersonalizada()
+                    : d.getProducto() != null ? d.getProducto().getNombreProducto()
+                    : d.getServicio() != null ? d.getServicio().getNombreServicio() : "-";
             BigDecimal cant = d.getCantidad() != null ? d.getCantidad() : BigDecimal.ZERO;
             BigDecimal precio = d.getPrecioUnitario() != null ? d.getPrecioUnitario() : BigDecimal.ZERO;
             BigDecimal desc = d.getDescuentoUnitario() != null ? d.getDescuentoUnitario() : BigDecimal.ZERO;
             BigDecimal importe = cant.multiply(precio.subtract(desc)).setScale(2, RoundingMode.HALF_UP);
-            filas.add(new String[] { descripcion, cant.toPlainString(), precio.toPlainString(), importe.toPlainString() });
+            filas.add(new String[] { descripcion, FormatoPdf.cantidad(cant), FormatoPdf.importe(precio), FormatoPdf.importe(importe) });
         }
 
         String numeroComprobante = (f.getSerieComprobante() != null ? f.getSerieComprobante() : "") + "-" + (f.getNumeroComprobante() != null ? f.getNumeroComprobante() : "");
         String tipoComprobante = f.getTipoComprobante() != null ? f.getTipoComprobante().getNombreTipo() : "Comprobante";
 
+        Tercero tercero = obtenerTerceroCliente(f);
+        String tipoDocCliente = tercero != null && tercero.getTipoDocumento() != null
+                ? tercero.getTipoDocumento().getNombreTipo() : null;
+        String condicionPago = f.getCondicionPago() != null ? f.getCondicionPago().getNombreCondicion() : null;
+
         FacturacionPdfData data = new FacturacionPdfData(
                 tipoComprobante,
                 numeroComprobante,
                 obtenerNombreCliente(f),
+                tipoDocCliente,
+                tercero != null ? tercero.getNumeroDocumento() : null,
+                tercero != null ? tercero.getDireccion() : null,
                 f.getFechaEmision(),
                 f.getFechaVencimiento(),
-                simbolo,
+                condicionPago,
+                codigoMoneda,
                 filas,
                 subtotal,
                 igv,
@@ -267,6 +266,23 @@ public class FacturacionService {
 
     
 
+
+    private Long obtenerIdCliente(Facturacion f) {
+        if (f.getOrdenCompra() == null || f.getOrdenCompra().getCotizacion() == null
+                || f.getOrdenCompra().getCotizacion().getCliente() == null) {
+            return null;
+        }
+        return f.getOrdenCompra().getCotizacion().getCliente().getIdCliente();
+    }
+
+    /** Tercero (persona o empresa) del cliente de la factura, o null si no se puede resolver. */
+    private Tercero obtenerTerceroCliente(Facturacion f) {
+        if (f.getOrdenCompra() == null || f.getOrdenCompra().getCotizacion() == null
+                || f.getOrdenCompra().getCotizacion().getCliente() == null) {
+            return null;
+        }
+        return f.getOrdenCompra().getCotizacion().getCliente().getTercero();
+    }
 
     // Obtiene razón social o documento con fallback seguro
     private String obtenerNombreCliente(Facturacion f) {
@@ -287,6 +303,21 @@ public class FacturacionService {
             log.warn("Error obteniendo nombre de cliente para facturación {}: {}", f.getIdFacturacion(), e.getMessage());
         }
         return "—";
+    }
+
+    /** "Pago 24/10/2026 · Transferencia · Op. 123456 · USD 100.00" agregado a las observaciones. */
+    private String agregarNotaPago(Facturacion f, RegistrarPagoRequest request) {
+        StringBuilder nota = new StringBuilder("Pago ")
+                .append(request.getFechaPago().format(FMT_FECHA))
+                .append(" · ").append(request.getMedioPago().trim());
+        if (request.getNumeroOperacion() != null && !request.getNumeroOperacion().isBlank()) {
+            nota.append(" · Op. ").append(request.getNumeroOperacion().trim());
+        }
+        String moneda = f.getMoneda() != null ? f.getMoneda().getCodigoMoneda() : "PEN";
+        nota.append(" · ").append(moneda).append(" ").append(request.getMontoPagado().setScale(2, RoundingMode.HALF_UP).toPlainString());
+
+        String previas = f.getObservaciones();
+        return (previas == null || previas.isBlank()) ? nota.toString() : previas + "\n" + nota;
     }
 
     private static final DateTimeFormatter FMT_FECHA = DateTimeFormatter.ofPattern("dd/MM/yyyy");
@@ -371,6 +402,7 @@ public class FacturacionService {
                 .numeroComprobante(f.getSerieComprobante() + "-" + f.getNumeroComprobante())
                 .codigoComprobante(f.getSerieComprobante() + "-" + f.getNumeroComprobante())
                 .cliente(clienteNombre)
+                .clienteId(obtenerIdCliente(f))
                 .estadoCodigo(f.getEstadoFacturacion() != null ? f.getEstadoFacturacion().getCodigoEstado() : null)
                 .tipoComprobante(f.getTipoComprobante() != null ? f.getTipoComprobante().getNombreTipo() : null)
                 .clienteRazonSocial(clienteNombre)

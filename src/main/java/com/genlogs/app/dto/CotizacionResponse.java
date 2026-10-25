@@ -72,6 +72,8 @@ public class CotizacionResponse {
     private String moneda;
     /** Símbolo de la moneda (p. ej. "S/", "$"). */
     private String monedaSimbolo;
+    /** Nombre de la moneda (p. ej. "Sol Peruano", "Dólar Americano"). */
+    private String monedaNombre;
     /** Codigo ISO (PEN/USD/EUR); "moneda" lleva el simbolo. */
     private String monedaCodigo;
     private String observaciones;
