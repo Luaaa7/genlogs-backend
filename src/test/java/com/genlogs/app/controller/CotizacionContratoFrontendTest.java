@@ -4,9 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.Query;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -83,6 +87,7 @@ class CotizacionContratoFrontendTest {
     private CondicionPagoRepository condicionPagoRepository;
     private UsuarioRepository usuarioRepository;
     private UnidadMedidaRepository unidadMedidaRepository;
+    private EntityManager entityManager;
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -98,27 +103,14 @@ class CotizacionContratoFrontendTest {
         usuarioRepository = mock(UsuarioRepository.class);
         unidadMedidaRepository = mock(UnidadMedidaRepository.class);
 
-        CotizacionService service = new CotizacionService(
-                cotizacionRepository,
-                cotizacionDetalleRepository,
-                estadoCotizacionRepository,
-                seguimientoCotizacionRepository,
-                mock(PdfGenerationService.class),
-                adjuntoCotizacionRepository,
-                clienteRepository,
-                mock(ContactoTerceroRepository.class),
-                usuarioRepository,
-                monedaRepository,
-                condicionPagoRepository,
-                mock(SectorEconomicoRepository.class),
-                mock(ProductoRepository.class),
-                mock(ServicioRepository.class),
-                unidadMedidaRepository,
-                mock(CloudinaryService.class),
-                mock(MailService.class),
-                new org.springframework.transaction.support.TransactionTemplate(
-                        mock(org.springframework.transaction.PlatformTransactionManager.class)),
-                mock(jakarta.persistence.EntityManager.class));
+        // Mock EntityManager for native queries (auditoria BD)
+        entityManager = mock(EntityManager.class);
+        Query nativeQuery = mock(Query.class);
+        when(entityManager.createNativeQuery(anyString())).thenReturn(nativeQuery);
+        when(nativeQuery.setParameter(anyString(), any())).thenReturn(nativeQuery);
+        when(nativeQuery.getSingleResult()).thenReturn(null);
+
+        CotizacionService service = crearServicio();
 
         mockMvc = MockMvcBuilders.standaloneSetup(new CotizacionController(service))
                 .setControllerAdvice(new GlobalExceptionHandler())
@@ -127,6 +119,51 @@ class CotizacionContratoFrontendTest {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(USUARIO, null, List.of()));
     }
+
+        private CotizacionService crearServicio() {
+                try {
+                        java.lang.reflect.Constructor<?> constructor = CotizacionService.class
+                                        .getDeclaredConstructors()[0];
+                        Object[] argumentos = new Object[constructor.getParameterCount()];
+
+                        for (int i = 0; i < argumentos.length; i++) {
+                                Class<?> tipo = constructor.getParameterTypes()[i];
+                                if (tipo == CotizacionRepository.class) {
+                                        argumentos[i] = cotizacionRepository;
+                                } else if (tipo == CotizacionDetalleRepository.class) {
+                                        argumentos[i] = cotizacionDetalleRepository;
+                                } else if (tipo == EstadoCotizacionRepository.class) {
+                                        argumentos[i] = estadoCotizacionRepository;
+                                } else if (tipo == SeguimientoCotizacionRepository.class) {
+                                        argumentos[i] = seguimientoCotizacionRepository;
+                                } else if (tipo == AdjuntoCotizacionRepository.class) {
+                                        argumentos[i] = adjuntoCotizacionRepository;
+                                } else if (tipo == ClienteRepository.class) {
+                                        argumentos[i] = clienteRepository;
+                                } else if (tipo == MonedaRepository.class) {
+                                        argumentos[i] = monedaRepository;
+                                } else if (tipo == CondicionPagoRepository.class) {
+                                        argumentos[i] = condicionPagoRepository;
+                                } else if (tipo == UsuarioRepository.class) {
+                                        argumentos[i] = usuarioRepository;
+                                } else if (tipo == UnidadMedidaRepository.class) {
+                                        argumentos[i] = unidadMedidaRepository;
+                                } else if (tipo == EntityManager.class) {
+                                        argumentos[i] = entityManager;
+                                } else if (tipo == org.springframework.transaction.support.TransactionTemplate.class) {
+                                        argumentos[i] = new org.springframework.transaction.support.TransactionTemplate(
+                                                        mock(org.springframework.transaction.PlatformTransactionManager.class));
+                                } else {
+                                        argumentos[i] = mock(tipo);
+                                }
+                        }
+
+                        constructor.setAccessible(true);
+                        return (CotizacionService) constructor.newInstance(argumentos);
+                } catch (ReflectiveOperationException e) {
+                        throw new IllegalStateException("No se pudo crear CotizacionService", e);
+                }
+        }
 
     @AfterEach
     void tearDown() {
@@ -394,4 +431,3 @@ class CotizacionContratoFrontendTest {
                 .findTotalesByCotizacion(anyLong());
     }
 }
-

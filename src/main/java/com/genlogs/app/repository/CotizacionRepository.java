@@ -105,8 +105,10 @@ public interface CotizacionRepository extends JpaRepository<Cotizacion, Long> {
 
     // --- Soporte para DashboardController ---
 
-    @Query("SELECT COUNT(c) FROM Cotizacion c WHERE c.status = 'A' AND c.estadoCotizacion.esFinal = false")
+    @Query("SELECT COUNT(c) FROM Cotizacion c WHERE c.status = 'A' AND c.estadoCotizacion.esFinal = false AND (c.fechaValidez IS NULL OR c.fechaValidez >= CURRENT_DATE)")
     long countPendientes();
+
+    List<Cotizacion> findByStatusAndEstadoCotizacionEsFinalFalseAndFechaValidezBefore(String status, LocalDate fecha);
 
     public interface EstadoCantidadProjection {
         String getEstado();
@@ -138,6 +140,6 @@ public interface CotizacionRepository extends JpaRepository<Cotizacion, Long> {
             "FROM cotizacion c " +
             "JOIN estado_cotizacion e ON e.id_estado_cotizacion = c.id_estado_cotizacion " +
             "LEFT JOIN vw_cotizacion_totales v ON v.id_cotizacion = c.id_cotizacion " +
-            "WHERE c.status = 'A' AND e.es_final = false", nativeQuery = true)
+            "WHERE c.status = 'A' AND e.es_final = false AND (c.fecha_validez IS NULL OR c.fecha_validez >= CURRENT_DATE)", nativeQuery = true)
     BigDecimal sumTotalPendiente();
 }

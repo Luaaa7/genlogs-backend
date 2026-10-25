@@ -37,48 +37,6 @@ public class MailService {
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 
-    public void enviarRecuperacion(String destino, String nombres, String link) {
-        int minutos = PasswordResetService.DURACION_MINUTOS;
-
-        if (apiKey == null || apiKey.isBlank() || fromEmail == null || fromEmail.isBlank()) {
-            log.warn("BREVO_API_KEY o MAIL_FROM_EMAIL no configuradas. Enlace de recuperación (válido {} min): {}",
-                    minutos, link);
-            return;
-        }
-
-        String json = "{"
-                + "\"sender\":{\"name\":" + jsonString(fromName) + ",\"email\":" + jsonString(fromEmail) + "},"
-                + "\"to\":[{\"email\":" + jsonString(destino) + ",\"name\":" + jsonString(nombres) + "}],"
-                + "\"subject\":" + jsonString("Restablece tu contraseña de GenLogs") + ","
-                + "\"htmlContent\":" + jsonString(construirHtml(nombres, link, minutos)) + ","
-                + "\"textContent\":" + jsonString(construirTexto(nombres, link, minutos))
-                + "}";
-
-        try {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("https://api.brevo.com/v3/smtp/email"))
-                    .timeout(Duration.ofSeconds(15))
-                    .header("api-key", apiKey)
-                    .header("accept", "application/json")
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(json))
-                    .build();
-
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() >= 300) {
-                log.error("Brevo respondió {}: {}", response.statusCode(), response.body());
-            } else {
-                log.info("Correo de recuperación enviado");
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.error("Envío de correo interrumpido", e);
-        } catch (Exception e) {
-            log.error("No se pudo enviar el correo de recuperación", e);
-        }
-    }
-
     /**
      * Envío genérico (p. ej. cotizaciones). Devuelve si el correo salió o no,
      * para que el llamador pueda informarle al usuario en la respuesta HTTP
@@ -136,6 +94,13 @@ public class MailService {
             log.error("No se pudo enviar el correo '{}'", asunto, e);
             return false;
         }
+    }
+
+    public boolean enviarRecuperacion(String destino, String nombres, String link) {
+        String asunto = "Restablece tu contraseña - GenLogs";
+        String texto = construirTexto(nombres, link, PasswordResetService.DURACION_MINUTOS);
+        String html = construirHtml(nombres, link, PasswordResetService.DURACION_MINUTOS);
+        return enviarCorreo(destino, nombres, asunto, html, texto);
     }
 
     // ------------------------------------------------------------------

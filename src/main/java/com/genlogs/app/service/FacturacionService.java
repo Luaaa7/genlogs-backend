@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 
 import com.genlogs.app.service.pdf.PdfGenerationService;
 import com.genlogs.app.service.pdf.PdfGenerationService.FacturacionPdfData;
+import com.genlogs.app.util.FormatoPdf;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -35,6 +36,7 @@ import com.genlogs.app.model.EstadoFacturacion;
 import com.genlogs.app.model.Facturacion;
 import com.genlogs.app.model.Moneda;
 import com.genlogs.app.model.OrdenCompra;
+import com.genlogs.app.model.Tercero;
 import com.genlogs.app.model.TipoComprobante;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.CondicionPagoRepository;
@@ -217,30 +219,41 @@ public class FacturacionService {
         BigDecimal total = calcularTotal(idFacturacion);
         BigDecimal igv = total.subtract(subtotal);
         BigDecimal pagado = f.getMontoPagado() != null ? f.getMontoPagado() : BigDecimal.ZERO;
-        String simbolo = f.getMoneda() != null ? f.getMoneda().getSimbolo() : "S/";
+        String codigoMoneda = f.getMoneda() != null ? f.getMoneda().getCodigoMoneda() : "PEN";
 
         List<String[]> filas = new ArrayList<>();
         for (DetalleFacturacion d : lineas) {
-            String descripcion = d.getProducto() != null ? d.getProducto().getNombreProducto()
-                    : d.getServicio() != null ? d.getServicio().getNombreServicio()
-                    : d.getDescripcionPersonalizada() != null ? d.getDescripcionPersonalizada() : "-";
+            // Mismo criterio que en la cotización: el texto personalizado manda sobre el nombre del catálogo.
+            String descripcion = d.getDescripcionPersonalizada() != null && !d.getDescripcionPersonalizada().isBlank()
+                    ? d.getDescripcionPersonalizada()
+                    : d.getProducto() != null ? d.getProducto().getNombreProducto()
+                    : d.getServicio() != null ? d.getServicio().getNombreServicio() : "-";
             BigDecimal cant = d.getCantidad() != null ? d.getCantidad() : BigDecimal.ZERO;
             BigDecimal precio = d.getPrecioUnitario() != null ? d.getPrecioUnitario() : BigDecimal.ZERO;
             BigDecimal desc = d.getDescuentoUnitario() != null ? d.getDescuentoUnitario() : BigDecimal.ZERO;
             BigDecimal importe = cant.multiply(precio.subtract(desc)).setScale(2, RoundingMode.HALF_UP);
-            filas.add(new String[] { descripcion, cant.toPlainString(), precio.toPlainString(), importe.toPlainString() });
+            filas.add(new String[] { descripcion, FormatoPdf.cantidad(cant), FormatoPdf.importe(precio), FormatoPdf.importe(importe) });
         }
 
         String numeroComprobante = (f.getSerieComprobante() != null ? f.getSerieComprobante() : "") + "-" + (f.getNumeroComprobante() != null ? f.getNumeroComprobante() : "");
         String tipoComprobante = f.getTipoComprobante() != null ? f.getTipoComprobante().getNombreTipo() : "Comprobante";
 
+        Tercero tercero = obtenerTerceroCliente(f);
+        String tipoDocCliente = tercero != null && tercero.getTipoDocumento() != null
+                ? tercero.getTipoDocumento().getNombreTipo() : null;
+        String condicionPago = f.getCondicionPago() != null ? f.getCondicionPago().getNombreCondicion() : null;
+
         FacturacionPdfData data = new FacturacionPdfData(
                 tipoComprobante,
                 numeroComprobante,
                 obtenerNombreCliente(f),
+                tipoDocCliente,
+                tercero != null ? tercero.getNumeroDocumento() : null,
+                tercero != null ? tercero.getDireccion() : null,
                 f.getFechaEmision(),
                 f.getFechaVencimiento(),
-                simbolo,
+                condicionPago,
+                codigoMoneda,
                 filas,
                 subtotal,
                 igv,
@@ -262,6 +275,14 @@ public class FacturacionService {
         return f.getOrdenCompra().getCotizacion().getCliente().getIdCliente();
     }
 
+    /** Tercero (persona o empresa) del cliente de la factura, o null si no se puede resolver. */
+    private Tercero obtenerTerceroCliente(Facturacion f) {
+        if (f.getOrdenCompra() == null || f.getOrdenCompra().getCotizacion() == null
+                || f.getOrdenCompra().getCotizacion().getCliente() == null) {
+            return null;
+        }
+        return f.getOrdenCompra().getCotizacion().getCliente().getTercero();
+    }
     // Obtiene razón social o documento con fallback seguro
     private String obtenerNombreCliente(Facturacion f) {
         try {
