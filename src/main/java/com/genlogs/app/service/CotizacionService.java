@@ -1,4 +1,3 @@
-
 package com.genlogs.app.service;
 
 import java.math.BigDecimal;
@@ -61,7 +60,9 @@ import com.genlogs.app.repository.SeguimientoCotizacionRepository;
 import com.genlogs.app.repository.ServicioRepository;
 import com.genlogs.app.repository.UnidadMedidaRepository;
 import com.genlogs.app.repository.UsuarioRepository;
+import com.genlogs.app.model.Tercero;
 import com.genlogs.app.service.pdf.PdfGenerationService;
+import com.genlogs.app.util.PdfUtils;
 import com.genlogs.app.service.pdf.PdfGenerationService.CotizacionPdfData;
 
 import jakarta.persistence.EntityManager;
@@ -489,28 +490,18 @@ public class CotizacionService {
                 .findTotalesByCotizacion(idCotizacion)
                 .orElse(null);
 
-        String simbolo = cotizacion.getMoneda() != null
-                ? cotizacion.getMoneda().getSimbolo()
-                : "S/";
-
         List<String[]> filas = new ArrayList<>();
 
         for (CotizacionDetalle detalle : lineas) {
-            String descripcion = detalle.getProducto() != null
-                    ? detalle.getProducto().getNombreProducto()
-                    : detalle.getServicio() != null
-                            ? detalle.getServicio().getNombreServicio()
-                            : detalle.getDescripcionPersonalizada() != null
-                                    ? detalle.getDescripcionPersonalizada()
-                                    : "-";
-
-            BigDecimal cantidad = detalle.getCantidad() != null
-                    ? detalle.getCantidad()
-                    : BigDecimal.ZERO;
-
-            BigDecimal precio = detalle.getPrecioUnitario() != null
-                    ? detalle.getPrecioUnitario()
-                    : BigDecimal.ZERO;
+            // Igual que la pantalla: si la línea tiene descripción propia, se usa esa.
+            String descripcion = detalle.getDescripcionPersonalizada() != null
+                    && !detalle.getDescripcionPersonalizada().isBlank()
+                            ? detalle.getDescripcionPersonalizada()
+                            : detalle.getProducto() != null
+                                    ? detalle.getProducto().getNombreProducto()
+                                    : detalle.getServicio() != null
+                                            ? detalle.getServicio().getNombreServicio()
+                                            : "-";
 
             BigDecimal importe = detalle.getImporteLinea() != null
                     ? detalle.getImporteLinea()
@@ -518,20 +509,29 @@ public class CotizacionService {
 
             filas.add(new String[] {
                     descripcion,
-                    cantidad.toPlainString(),
-                    precio.toPlainString(),
-                    importe.toPlainString()
+                    PdfUtils.formatearCantidad(detalle.getCantidad()),
+                    PdfUtils.formatearMonto(detalle.getPrecioUnitario()),
+                    PdfUtils.formatearMonto(importe)
             });
         }
+
+        Tercero tercero = cotizacion.getCliente() != null
+                ? cotizacion.getCliente().getTercero()
+                : null;
 
         CotizacionPdfData data = new CotizacionPdfData(
                 cotizacion.getCodigoCotizacion() != null
                         ? cotizacion.getCodigoCotizacion()
                         : "Borrador",
                 obtenerNombreCliente(cotizacion),
+                PdfUtils.documentoTercero(tercero),
+                PdfUtils.direccionTercero(tercero),
                 cotizacion.getFechaCotizacion(),
                 cotizacion.getFechaValidez(),
-                simbolo,
+                cotizacion.getCondicionPago() != null
+                        ? cotizacion.getCondicionPago().getNombreCondicion()
+                        : null,
+                PdfUtils.codigoMoneda(cotizacion.getMoneda()),
                 filas,
                 totales != null && totales.getSubtotal() != null
                         ? totales.getSubtotal()
