@@ -43,7 +43,15 @@ public class ClienteController {
             @RequestParam(required = false) String documento,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size) {
-        return ResponseEntity.ok(clienteService.buscarActivos(razonSocial, documento, page, size));
+        List<Cliente> clientes = clienteService.buscarActivos(razonSocial, documento, page, size);
+        // Con paginación, el total va en una cabecera para no cambiar el formato
+        // de la respuesta (otras pantallas siguen recibiendo una lista).
+        if (size != null && size > 0) {
+            return ResponseEntity.ok()
+                    .header("X-Total-Count", String.valueOf(clienteService.contarActivos(razonSocial, documento)))
+                    .body(clientes);
+        }
+        return ResponseEntity.ok(clientes);
     }
 
     @DeleteMapping("/{idCliente}")

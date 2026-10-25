@@ -30,6 +30,8 @@ public class CorsConfig {
         configuration.setAllowedOriginPatterns(origenes);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
+        // El navegador solo deja leer esta cabecera al frontend si se expone aquí.
+        configuration.setExposedHeaders(List.of("X-Total-Count"));
         configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

@@ -108,6 +108,15 @@ public class ClienteService {
         return clienteRepository.buscarActivos(patron, pageable);
     }
 
+    /** Cuántos clientes devuelve buscarActivos sin límite (cabecera X-Total-Count). */
+    @Transactional(readOnly = true)
+    public long contarActivos(String razonSocial, String documento) {
+        String texto = (razonSocial != null && !razonSocial.isBlank()) ? razonSocial
+                : (documento != null && !documento.isBlank()) ? documento : null;
+        String patron = texto == null ? "%" : "%" + texto.trim().toLowerCase() + "%";
+        return clienteRepository.contarActivos(patron);
+    }
+
     @Transactional
     public void desactivar(Long idCliente) {
         Cliente cliente = clienteRepository.findById(idCliente)
