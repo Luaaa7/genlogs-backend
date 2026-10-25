@@ -631,6 +631,17 @@ public class CotizacionService {
         BigDecimal montoPendiente =
                 cotizacionRepository.sumTotalPendiente();
 
+        // Por moneda: no se suman dólares con soles (bug #3).
+        Map<String, BigDecimal> pendientePorMoneda = new LinkedHashMap<>();
+        for (CotizacionRepository.MonedaMontoProjection fila
+                : cotizacionRepository.sumTotalPendientePorMoneda()) {
+            if (fila.getMoneda() != null) {
+                pendientePorMoneda.put(
+                        fila.getMoneda().trim(),
+                        fila.getMonto() != null ? fila.getMonto() : BigDecimal.ZERO);
+            }
+        }
+
         double tasaAprobacion = total > 0
                 ? BigDecimal.valueOf(aprobadas * 100.0 / total)
                         .setScale(2, RoundingMode.HALF_UP)
@@ -644,6 +655,7 @@ public class CotizacionService {
                         montoPendiente != null
                                 ? montoPendiente
                                 : BigDecimal.ZERO)
+                .montoPendientePorMoneda(pendientePorMoneda)
                 .tasaAprobacion(tasaAprobacion)
                 .build();
     }
@@ -1339,11 +1351,10 @@ public class CotizacionService {
                         ? totales.getTotal()
                         : BigDecimal.ZERO;
 
-        String totalStr = total.toPlainString();
+        // "USD 4,209.30" / "PEN 9,569.80": mismo formato que la pantalla y el PDF.
+        String totalStr = PdfUtils.formatearMonto(total);
 
-        String simbolo = c.getMoneda() != null
-                ? c.getMoneda().getSimbolo()
-                : "S/";
+        String simbolo = PdfUtils.codigoMoneda(c.getMoneda());
 
         StringBuilder sb = new StringBuilder();
 
