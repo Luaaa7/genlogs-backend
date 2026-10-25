@@ -7,8 +7,6 @@ import lombok.*;
  * Sectores económicos a los que aplica un producto, para los filtros
  * del catálogo web (PK compuesta). id_sector_economico referencia el
  * catálogo SectorEconomico del Módulo 3 (Catálogos Generales).
- * [PENDIENTE] SectorEconomico la crea Mell: si al compilar todavía
- * no existe en com.genlogs.app.model, coordina con ella.
  */
 @Entity
 @Table(name = "producto_sector")

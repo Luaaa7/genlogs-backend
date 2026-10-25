@@ -42,11 +42,9 @@ import com.genlogs.app.repository.ServicioRepository;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Backend del módulo de Reportes de Luana. Antes de esto, el frontend
- * (ReportesPage.tsx -> useGenerarReporte -> reportesApi.generarReporte)
- * llamaba a POST /api/reportes/generar y el backend no tenía NADA bajo ese
- * path: 404 garantizado. Esta clase arma el archivo (Excel con Apache POI o
- * PDF con PDFBox) para los 5 tipos de reporte que el frontend ya sabe pedir.
+ * Backend del módulo de Reportes (POST /api/reportes/generar). Arma el archivo
+ * (Excel con Apache POI o PDF con PDFBox) para los 5 tipos de reporte que
+ * el frontend ya sabe pedir.
  *
  * <p>La vista previa (POST /api/reportes/preview) usa EXACTAMENTE el mismo
  * armado de filas que la descarga: mismo tipo de reporte, mismo periodo y

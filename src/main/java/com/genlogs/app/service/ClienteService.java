@@ -185,7 +185,7 @@ public class ClienteService {
                 .build();
     }
 
-    /** Toma el usuario autenticado del JWT (mismo patrón que usa Mell en SectorEconomicoService). */
+    /** Toma el usuario autenticado del JWT (mismo patrón que SectorEconomicoService). */
     private String usuarioActual() {
         return SecurityContextHolder.getContext().getAuthentication().getName();
     }

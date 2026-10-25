@@ -26,7 +26,7 @@ public class ProductoController {
     private final ProductoService productoService;
 
     @PostMapping
-    // @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')") // lo agrega Luana con MethodSecurityConfig
+    // Pendiente: restringir con @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
     public ResponseEntity<ProductoResponse> registrar(@Valid @RequestBody ProductoRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(productoService.registrar(request));
     }
