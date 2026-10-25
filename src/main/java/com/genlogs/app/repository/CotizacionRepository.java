@@ -86,6 +86,10 @@ public interface CotizacionRepository extends JpaRepository<Cotizacion, Long> {
     @Query(value = "SELECT c FROM Cotizacion c " +
             "LEFT JOIN FETCH c.cliente cl " +
             "LEFT JOIN FETCH cl.tercero " +
+            "LEFT JOIN FETCH c.estadoCotizacion " +
+            "LEFT JOIN FETCH c.moneda " +
+            "LEFT JOIN FETCH c.condicionPago " +
+            "LEFT JOIN FETCH c.contacto " +
             "WHERE c.status = 'A' " +
             "AND (:codigoEstado IS NULL OR c.estadoCotizacion.codigoEstado = :codigoEstado) " +
             "AND (:idCliente IS NULL OR c.cliente.idCliente = :idCliente) " +

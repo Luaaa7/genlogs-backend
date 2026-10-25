@@ -283,7 +283,6 @@ public class FacturacionService {
         }
         return f.getOrdenCompra().getCotizacion().getCliente().getTercero();
     }
-
     // Obtiene razón social o documento con fallback seguro
     private String obtenerNombreCliente(Facturacion f) {
         try {

@@ -71,7 +71,6 @@
     <dependency>
       <groupId>org.projectlombok</groupId>
       <artifactId>lombok</artifactId>
-      <version>1.18.38</version>
       <scope>provided</scope>
     </dependency>
     <!-- Jackson (parseo de JSON de APIs externas, p.ej. Factiliza) -->

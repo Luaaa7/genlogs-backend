@@ -17,7 +17,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -27,8 +26,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -273,11 +270,11 @@ class CotizacionContratoFrontendTest {
         cotizacion.setEstadoCotizacion(actual);
         when(cotizacionRepository.findById(5L)).thenReturn(Optional.of(cotizacion));
 
-        EstadoCotizacion aprobada = new EstadoCotizacion();
-        aprobada.setIdEstadoCotizacion(4);
-        aprobada.setCodigoEstado("APROBADA");
-        aprobada.setNombreEstado("Aprobada");
-        when(estadoCotizacionRepository.findByCodigoEstado("APROBADA")).thenReturn(Optional.of(aprobada));
+        EstadoCotizacion enviada = new EstadoCotizacion();
+        enviada.setIdEstadoCotizacion(2);
+        enviada.setCodigoEstado("ENVIADA");
+        enviada.setNombreEstado("Enviada");
+        when(estadoCotizacionRepository.findByCodigoEstado("ENVIADA")).thenReturn(Optional.of(enviada));
 
         Usuario usuario = new Usuario();
         usuario.setIdUsuario(7L);
@@ -291,9 +288,9 @@ class CotizacionContratoFrontendTest {
 
         mockMvc.perform(patch("/api/cotizaciones/5/estado")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"estadoNuevo\":\"APROBADA\",\"observaciones\":\"ok\"}"))
+                        .content("{\"estadoNuevo\":\"ENVIADA\",\"observaciones\":\"ok\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.estadoCodigo").value("APROBADA"));
+                .andExpect(jsonPath("$.estadoCodigo").value("ENVIADA"));
     }
 
     @Test
@@ -434,4 +431,3 @@ class CotizacionContratoFrontendTest {
                 .findTotalesByCotizacion(anyLong());
     }
 }
-
