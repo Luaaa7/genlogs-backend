@@ -9,6 +9,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -83,6 +85,14 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 @RequiredArgsConstructor
 public class CotizacionService {
+
+    /** Transiciones de estado permitidas para cotizaciones. */
+    private static final Map<String, Set<String>> TRANSICIONES_PERMITIDAS = new HashMap<>();
+    static {
+        TRANSICIONES_PERMITIDAS.put("BORRADOR", new HashSet<>(java.util.Arrays.asList("ENVIADA", "ANULADA")));
+        TRANSICIONES_PERMITIDAS.put("ENVIADA", new HashSet<>(java.util.Arrays.asList("EN_NEGOCIACION", "APROBADA", "RECHAZADA", "VENCIDA", "ANULADA")));
+        TRANSICIONES_PERMITIDAS.put("EN_NEGOCIACION", new HashSet<>(java.util.Arrays.asList("APROBADA", "RECHAZADA", "VENCIDA", "ANULADA")));
+    }
 
     private static final Logger log =
             LoggerFactory.getLogger(CotizacionService.class);
@@ -291,10 +301,19 @@ public class CotizacionService {
 
         EstadoCotizacion nuevoEstado = buscarEstado(codigoEstado);
 
+        String codigoActual = cotizacion.getEstadoCotizacion() != null
+                ? cotizacion.getEstadoCotizacion().getCodigoEstado() : null;
+
         if (Boolean.TRUE.equals(
                 cotizacion.getEstadoCotizacion().getEsFinal())) {
             throw new BusinessException(
                     "No se puede cambiar el estado de una cotización ya finalizada");
+        }
+
+        Set<String> permitidos = TRANSICIONES_PERMITIDAS.get(codigoActual);
+        if (permitidos == null || !permitidos.contains(codigoEstado)) {
+            throw new BusinessException(
+                    "Transición de estado no permitida: " + codigoActual + " -> " + codigoEstado);
         }
 
         cotizacion.setEstadoCotizacion(nuevoEstado);
