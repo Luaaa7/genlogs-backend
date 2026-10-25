@@ -20,12 +20,20 @@ public interface ClienteRepository extends JpaRepository<Cliente, Long> {
      * (ya en minúsculas y con % a los lados; "%" = sin filtro). Ordenados por razón social.
      */
     @Query("""
-           SELECT c FROM Cliente c JOIN c.tercero t
+           SELECT c FROM Cliente c JOIN FETCH c.tercero t
            WHERE c.situacion = 'ACTIVO' AND c.status = 'A'
              AND (LOWER(t.razonSocial) LIKE :patron OR t.numeroDocumento LIKE :patron)
            ORDER BY t.razonSocial
            """)
     List<Cliente> buscarActivos(@Param("patron") String patron, Pageable pageable);
+
+    /** Total de clientes que coinciden con buscarActivos (para paginar en el frontend). */
+    @Query("""
+           SELECT COUNT(c) FROM Cliente c JOIN c.tercero t
+           WHERE c.situacion = 'ACTIVO' AND c.status = 'A'
+             AND (LOWER(t.razonSocial) LIKE :patron OR t.numeroDocumento LIKE :patron)
+           """)
+    long contarActivos(@Param("patron") String patron);
 
     // --- Soporte para DashboardController ---
     long countBySituacionAndStatus(String situacion, String status);
