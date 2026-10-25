@@ -140,4 +140,20 @@ public interface CotizacionRepository extends JpaRepository<Cotizacion, Long> {
             "LEFT JOIN vw_cotizacion_totales v ON v.id_cotizacion = c.id_cotizacion " +
             "WHERE c.status = 'A' AND e.es_final = false", nativeQuery = true)
     BigDecimal sumTotalPendiente();
+
+    /** Monto pendiente agrupado por moneda (PEN, USD...). No se suman monedas distintas. */
+    public interface MonedaMontoProjection {
+        String getMoneda();
+        BigDecimal getMonto();
+    }
+
+    @Query(value = "SELECT m.codigo_moneda AS moneda, COALESCE(SUM(v.total), 0) AS monto " +
+            "FROM cotizacion c " +
+            "JOIN estado_cotizacion e ON e.id_estado_cotizacion = c.id_estado_cotizacion " +
+            "JOIN moneda m ON m.id_moneda = c.id_moneda " +
+            "LEFT JOIN vw_cotizacion_totales v ON v.id_cotizacion = c.id_cotizacion " +
+            "WHERE c.status = 'A' AND e.es_final = false " +
+            "GROUP BY m.codigo_moneda " +
+            "ORDER BY COALESCE(SUM(v.total), 0) DESC", nativeQuery = true)
+    List<MonedaMontoProjection> sumTotalPendientePorMoneda();
 }
