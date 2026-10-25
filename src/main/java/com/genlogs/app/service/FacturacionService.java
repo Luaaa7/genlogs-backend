@@ -10,7 +10,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import com.genlogs.app.model.Tercero;
 import com.genlogs.app.service.pdf.PdfGenerationService;
+import com.genlogs.app.util.PdfUtils;
 import com.genlogs.app.service.pdf.PdfGenerationService.FacturacionPdfData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -217,30 +219,44 @@ public class FacturacionService {
         BigDecimal total = calcularTotal(idFacturacion);
         BigDecimal igv = total.subtract(subtotal);
         BigDecimal pagado = f.getMontoPagado() != null ? f.getMontoPagado() : BigDecimal.ZERO;
-        String simbolo = f.getMoneda() != null ? f.getMoneda().getSimbolo() : "S/";
 
         List<String[]> filas = new ArrayList<>();
         for (DetalleFacturacion d : lineas) {
-            String descripcion = d.getProducto() != null ? d.getProducto().getNombreProducto()
-                    : d.getServicio() != null ? d.getServicio().getNombreServicio()
-                    : d.getDescripcionPersonalizada() != null ? d.getDescripcionPersonalizada() : "-";
+            // Igual que la pantalla: si la línea tiene descripción propia, se usa esa.
+            String descripcion = d.getDescripcionPersonalizada() != null && !d.getDescripcionPersonalizada().isBlank()
+                    ? d.getDescripcionPersonalizada()
+                    : d.getProducto() != null ? d.getProducto().getNombreProducto()
+                    : d.getServicio() != null ? d.getServicio().getNombreServicio() : "-";
             BigDecimal cant = d.getCantidad() != null ? d.getCantidad() : BigDecimal.ZERO;
             BigDecimal precio = d.getPrecioUnitario() != null ? d.getPrecioUnitario() : BigDecimal.ZERO;
             BigDecimal desc = d.getDescuentoUnitario() != null ? d.getDescuentoUnitario() : BigDecimal.ZERO;
             BigDecimal importe = cant.multiply(precio.subtract(desc)).setScale(2, RoundingMode.HALF_UP);
-            filas.add(new String[] { descripcion, cant.toPlainString(), precio.toPlainString(), importe.toPlainString() });
+            filas.add(new String[] {
+                    descripcion,
+                    PdfUtils.formatearCantidad(cant),
+                    PdfUtils.formatearMonto(precio),
+                    PdfUtils.formatearMonto(importe)
+            });
         }
 
         String numeroComprobante = (f.getSerieComprobante() != null ? f.getSerieComprobante() : "") + "-" + (f.getNumeroComprobante() != null ? f.getNumeroComprobante() : "");
         String tipoComprobante = f.getTipoComprobante() != null ? f.getTipoComprobante().getNombreTipo() : "Comprobante";
 
+        Tercero tercero = f.getOrdenCompra() != null && f.getOrdenCompra().getCotizacion() != null
+                && f.getOrdenCompra().getCotizacion().getCliente() != null
+                ? f.getOrdenCompra().getCotizacion().getCliente().getTercero()
+                : null;
+
         FacturacionPdfData data = new FacturacionPdfData(
                 tipoComprobante,
                 numeroComprobante,
                 obtenerNombreCliente(f),
+                PdfUtils.documentoTercero(tercero),
+                PdfUtils.direccionTercero(tercero),
                 f.getFechaEmision(),
                 f.getFechaVencimiento(),
-                simbolo,
+                f.getCondicionPago() != null ? f.getCondicionPago().getNombreCondicion() : null,
+                PdfUtils.codigoMoneda(f.getMoneda()),
                 filas,
                 subtotal,
                 igv,

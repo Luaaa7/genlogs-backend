@@ -1,9 +1,16 @@
 package com.genlogs.app.util;
 
+import com.genlogs.app.model.Moneda;
+import com.genlogs.app.model.Tercero;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
+import java.util.Locale;
 
 /**
  * Utilidades compartidas para generación de PDFs con PDFBox.
@@ -13,6 +20,53 @@ public final class PdfUtils {
 
     private PdfUtils() {
         // Utility class
+    }
+
+    // ------------------------------------------------------------------
+    // Formato de números (igual que la pantalla: 1,234.50)
+    // ------------------------------------------------------------------
+
+    private static DecimalFormat formato(String patron) {
+        return new DecimalFormat(patron, DecimalFormatSymbols.getInstance(Locale.US));
+    }
+
+    /** Importe con 2 decimales y separador de miles: 1560 -> "1,560.00". */
+    public static String formatearMonto(BigDecimal valor) {
+        BigDecimal v = valor != null ? valor : BigDecimal.ZERO;
+        return formato("#,##0.00").format(v.setScale(2, RoundingMode.HALF_UP));
+    }
+
+    /** Cantidad sin ceros de relleno: 2.000 -> "2", 2.500 -> "2.5". */
+    public static String formatearCantidad(BigDecimal valor) {
+        BigDecimal v = valor != null ? valor : BigDecimal.ZERO;
+        return formato("#,##0.###").format(v.stripTrailingZeros());
+    }
+
+    /** Código ISO de la moneda ("USD", "PEN"), como en la pantalla. Nunca "$". */
+    public static String codigoMoneda(Moneda moneda) {
+        if (moneda == null) {
+            return "PEN";
+        }
+        if (moneda.getCodigoMoneda() != null && !moneda.getCodigoMoneda().isBlank()) {
+            return moneda.getCodigoMoneda().trim();
+        }
+        return moneda.getSimbolo() != null ? moneda.getSimbolo() : "PEN";
+    }
+
+    /** "RUC 20114915026" (o el tipo que corresponda); vacío si no hay documento. */
+    public static String documentoTercero(Tercero tercero) {
+        if (tercero == null || tercero.getNumeroDocumento() == null || tercero.getNumeroDocumento().isBlank()) {
+            return "";
+        }
+        String tipo = tercero.getTipoDocumento() != null && tercero.getTipoDocumento().getCodigoTipo() != null
+                ? tercero.getTipoDocumento().getCodigoTipo().trim() + " "
+                : "";
+        return tipo + tercero.getNumeroDocumento().trim();
+    }
+
+    /** Dirección del tercero; vacío si no tiene. */
+    public static String direccionTercero(Tercero tercero) {
+        return tercero != null && tercero.getDireccion() != null ? tercero.getDireccion().trim() : "";
     }
 
     /**

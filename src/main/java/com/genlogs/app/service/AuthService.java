@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import com.genlogs.app.dto.LoginRequest;
 import com.genlogs.app.dto.LoginResponse;
 import com.genlogs.app.exception.BusinessException;
+import com.genlogs.app.exception.CredencialesInvalidasException;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.UsuarioRepository;
 import com.genlogs.app.security.JwtUtil;
@@ -52,7 +53,7 @@ public class AuthService {
             if (usuario != null) {
                 registrarIntentoFallido(usuario);
             }
-            throw new BusinessException("Usuario o contraseña incorrectos");
+            throw new CredencialesInvalidasException();
         } catch (DisabledException ex) {
             throw new BusinessException("El usuario está inactivo. Contacta al administrador.");
         } catch (LockedException ex) {
@@ -61,11 +62,11 @@ public class AuthService {
             if (usuario != null) {
                 registrarIntentoFallido(usuario);
             }
-            throw new BusinessException("Usuario o contraseña incorrectos");
+            throw new CredencialesInvalidasException();
         }
 
         if (usuario == null) {
-            throw new BusinessException("Usuario o contraseña incorrectos");
+            throw new CredencialesInvalidasException();
         }
 
         if (Boolean.TRUE.equals(usuario.getBloqueado())) {
