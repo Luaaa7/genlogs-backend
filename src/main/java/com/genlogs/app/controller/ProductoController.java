@@ -1,5 +1,6 @@
 package com.genlogs.app.controller;
 
+import org.springframework.security.access.prepost.PreAuthorize;
 import com.genlogs.app.dto.DocumentoAdjuntoRequest;
 import com.genlogs.app.dto.ImagenAdjuntaRequest;
 import com.genlogs.app.dto.PageResponseDto;
@@ -26,7 +27,7 @@ public class ProductoController {
     private final ProductoService productoService;
 
     @PostMapping
-    // Pendiente: restringir con @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
     public ResponseEntity<ProductoResponse> registrar(@Valid @RequestBody ProductoRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(productoService.registrar(request));
     }

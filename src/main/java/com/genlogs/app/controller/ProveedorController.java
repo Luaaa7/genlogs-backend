@@ -6,6 +6,7 @@ import com.genlogs.app.service.ProveedorService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,7 +20,7 @@ public class ProveedorController {
     private final ProveedorService proveedorService;
 
     @PostMapping
-    // Pendiente: restringir con @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
     public ResponseEntity<Proveedor> registrar(@Valid @RequestBody ProveedorRequest request) {
         Proveedor proveedor = proveedorService.registrar(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(proveedor);
