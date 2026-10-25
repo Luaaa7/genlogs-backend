@@ -4,7 +4,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -20,6 +19,7 @@ import org.apache.poi.ss.usermodel.Font;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import com.genlogs.app.util.PdfUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -187,7 +187,7 @@ public class ReporteService {
                     razonSocialDe(c.getCliente()),
                     c.getFechaCotizacion() != null ? c.getFechaCotizacion().format(FMT) : "",
                     c.getEstadoCotizacion() != null ? c.getEstadoCotizacion().getNombreEstado() : "",
-                    c.getMoneda() != null ? c.getMoneda().getSimbolo() : "",
+                    PdfUtils.codigoMoneda(c.getMoneda()),
                     formatoMonto(total),
             };
         }
@@ -297,7 +297,7 @@ public class ReporteService {
 
     /** Montos con 2 decimales, igual que en el archivo descargable. */
     private String formatoMonto(BigDecimal valor) {
-        return valor == null ? "0.00" : valor.setScale(2, RoundingMode.HALF_UP).toPlainString();
+        return PdfUtils.formatearMonto(valor);
     }
 
     // ------------------------------------------------------------------

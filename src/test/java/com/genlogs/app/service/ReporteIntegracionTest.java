@@ -366,7 +366,7 @@ class ReporteIntegracionTest {
         assertEquals("ACME S.A.C.", fila.get(1));
         assertEquals("25/08/2026", fila.get(2));
         assertEquals("Borrador", fila.get(3));
-        assertEquals("S/", fila.get(4));
+        assertEquals("PEN", fila.get(4));
         assertEquals("236.00", fila.get(5));
     }
 
