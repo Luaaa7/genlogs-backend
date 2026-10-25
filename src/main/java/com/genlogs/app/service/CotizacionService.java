@@ -64,6 +64,7 @@ import com.genlogs.app.model.Tercero;
 import com.genlogs.app.service.pdf.PdfGenerationService;
 import com.genlogs.app.util.PdfUtils;
 import com.genlogs.app.service.pdf.PdfGenerationService.CotizacionPdfData;
+import com.genlogs.app.service.pdf.PdfGenerationService.LineaPdf;
 
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
@@ -490,48 +491,47 @@ public class CotizacionService {
                 .findTotalesByCotizacion(idCotizacion)
                 .orElse(null);
 
-        List<String[]> filas = new ArrayList<>();
+        String moneda = PdfUtils.codigoMoneda(cotizacion.getMoneda());
 
+        // Cada línea con su detalle (marca, descripción, código) como en las cotizaciones de GENLOGS.
+        List<LineaPdf> filas = new ArrayList<>();
         for (CotizacionDetalle detalle : lineas) {
-            // Igual que la pantalla: si la línea tiene descripción propia, se usa esa.
-            String descripcion = detalle.getDescripcionPersonalizada() != null
-                    && !detalle.getDescripcionPersonalizada().isBlank()
-                            ? detalle.getDescripcionPersonalizada()
-                            : detalle.getProducto() != null
-                                    ? detalle.getProducto().getNombreProducto()
-                                    : detalle.getServicio() != null
-                                            ? detalle.getServicio().getNombreServicio()
-                                            : "-";
-
-            BigDecimal importe = detalle.getImporteLinea() != null
-                    ? detalle.getImporteLinea()
-                    : calcularImporteLinea(detalle);
-
-            filas.add(new String[] {
-                    descripcion,
-                    PdfUtils.formatearCantidad(detalle.getCantidad()),
-                    PdfUtils.formatearMonto(detalle.getPrecioUnitario()),
-                    PdfUtils.formatearMonto(importe)
-            });
+            filas.add(PdfGenerationService.linea(
+                    detalle.getProducto(),
+                    detalle.getServicio(),
+                    detalle.getUnidadMedida(),
+                    detalle.getDescripcionPersonalizada(),
+                    detalle.getCantidad(),
+                    detalle.getPrecioUnitario(),
+                    detalle.getDescuentoUnitario(),
+                    detalle.getImporteLinea() != null
+                            ? detalle.getImporteLinea()
+                            : calcularImporteLinea(detalle),
+                    moneda));
         }
 
         Tercero tercero = cotizacion.getCliente() != null
                 ? cotizacion.getCliente().getTercero()
                 : null;
+        Usuario vendedor = cotizacion.getUsuarioVendedor();
 
         CotizacionPdfData data = new CotizacionPdfData(
                 cotizacion.getCodigoCotizacion() != null
                         ? cotizacion.getCodigoCotizacion()
                         : "Borrador",
+                cotizacion.getFechaCotizacion(),
+                cotizacion.getFechaValidez(),
                 obtenerNombreCliente(cotizacion),
                 PdfUtils.documentoTercero(tercero),
                 PdfUtils.direccionTercero(tercero),
-                cotizacion.getFechaCotizacion(),
-                cotizacion.getFechaValidez(),
+                cotizacion.getContacto() != null
+                        ? cotizacion.getContacto().getNombres()
+                        : null,
                 cotizacion.getCondicionPago() != null
                         ? cotizacion.getCondicionPago().getNombreCondicion()
                         : null,
-                PdfUtils.codigoMoneda(cotizacion.getMoneda()),
+                moneda,
+                PdfUtils.nombreMoneda(cotizacion.getMoneda()),
                 filas,
                 totales != null && totales.getSubtotal() != null
                         ? totales.getSubtotal()
@@ -541,7 +541,10 @@ public class CotizacionService {
                         : BigDecimal.ZERO,
                 totales != null && totales.getTotal() != null
                         ? totales.getTotal()
-                        : BigDecimal.ZERO
+                        : BigDecimal.ZERO,
+                cotizacion.getObservaciones(),
+                vendedor != null ? vendedor.getNombres() : null,
+                vendedor != null ? vendedor.getCorreo() : null
         );
 
         return pdfGenerationService.generarPdfCotizacion(data);

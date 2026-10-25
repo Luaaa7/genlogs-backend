@@ -14,6 +14,7 @@ import com.genlogs.app.model.Tercero;
 import com.genlogs.app.service.pdf.PdfGenerationService;
 import com.genlogs.app.util.PdfUtils;
 import com.genlogs.app.service.pdf.PdfGenerationService.FacturacionPdfData;
+import com.genlogs.app.service.pdf.PdfGenerationService.LineaPdf;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -220,48 +221,51 @@ public class FacturacionService {
         BigDecimal igv = total.subtract(subtotal);
         BigDecimal pagado = f.getMontoPagado() != null ? f.getMontoPagado() : BigDecimal.ZERO;
 
-        List<String[]> filas = new ArrayList<>();
+        String moneda = PdfUtils.codigoMoneda(f.getMoneda());
+
+        // Misma tabla que la cotización: título y debajo marca, descripción y código.
+        List<LineaPdf> filas = new ArrayList<>();
         for (DetalleFacturacion d : lineas) {
-            // Igual que la pantalla: si la línea tiene descripción propia, se usa esa.
-            String descripcion = d.getDescripcionPersonalizada() != null && !d.getDescripcionPersonalizada().isBlank()
-                    ? d.getDescripcionPersonalizada()
-                    : d.getProducto() != null ? d.getProducto().getNombreProducto()
-                    : d.getServicio() != null ? d.getServicio().getNombreServicio() : "-";
-            BigDecimal cant = d.getCantidad() != null ? d.getCantidad() : BigDecimal.ZERO;
-            BigDecimal precio = d.getPrecioUnitario() != null ? d.getPrecioUnitario() : BigDecimal.ZERO;
-            BigDecimal desc = d.getDescuentoUnitario() != null ? d.getDescuentoUnitario() : BigDecimal.ZERO;
-            BigDecimal importe = cant.multiply(precio.subtract(desc)).setScale(2, RoundingMode.HALF_UP);
-            filas.add(new String[] {
-                    descripcion,
-                    PdfUtils.formatearCantidad(cant),
-                    PdfUtils.formatearMonto(precio),
-                    PdfUtils.formatearMonto(importe)
-            });
+            filas.add(PdfGenerationService.linea(
+                    d.getProducto(),
+                    d.getServicio(),
+                    null, // el detalle de factura no guarda unidad: se usa la del producto/servicio
+                    d.getDescripcionPersonalizada(),
+                    d.getCantidad(),
+                    d.getPrecioUnitario(),
+                    d.getDescuentoUnitario(),
+                    null, // importe = cantidad x (precio - descuento)
+                    moneda));
         }
 
         String numeroComprobante = (f.getSerieComprobante() != null ? f.getSerieComprobante() : "") + "-" + (f.getNumeroComprobante() != null ? f.getNumeroComprobante() : "");
         String tipoComprobante = f.getTipoComprobante() != null ? f.getTipoComprobante().getNombreTipo() : "Comprobante";
 
-        Tercero tercero = f.getOrdenCompra() != null && f.getOrdenCompra().getCotizacion() != null
-                && f.getOrdenCompra().getCotizacion().getCliente() != null
-                ? f.getOrdenCompra().getCotizacion().getCliente().getTercero()
+        OrdenCompra oc = f.getOrdenCompra();
+        Tercero tercero = oc != null && oc.getCotizacion() != null
+                && oc.getCotizacion().getCliente() != null
+                ? oc.getCotizacion().getCliente().getTercero()
                 : null;
 
         FacturacionPdfData data = new FacturacionPdfData(
                 tipoComprobante,
                 numeroComprobante,
+                f.getFechaEmision(),
+                f.getFechaVencimiento(),
                 obtenerNombreCliente(f),
                 PdfUtils.documentoTercero(tercero),
                 PdfUtils.direccionTercero(tercero),
-                f.getFechaEmision(),
-                f.getFechaVencimiento(),
+                oc != null ? oc.getNumeroOrdenCompra() : null,
+                oc != null && oc.getCotizacion() != null ? oc.getCotizacion().getCodigoCotizacion() : null,
                 f.getCondicionPago() != null ? f.getCondicionPago().getNombreCondicion() : null,
-                PdfUtils.codigoMoneda(f.getMoneda()),
+                moneda,
+                PdfUtils.nombreMoneda(f.getMoneda()),
                 filas,
                 subtotal,
                 igv,
                 total,
-                pagado
+                pagado,
+                f.getObservaciones()
         );
 
         return pdfGenerationService.generarPdfFacturacion(data);

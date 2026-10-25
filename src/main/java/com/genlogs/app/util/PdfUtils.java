@@ -10,6 +10,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 
 /**
@@ -51,6 +53,35 @@ public final class PdfUtils {
             return moneda.getCodigoMoneda().trim();
         }
         return moneda.getSimbolo() != null ? moneda.getSimbolo() : "PEN";
+    }
+
+    private static final DateTimeFormatter FECHA_LARGA =
+            DateTimeFormatter.ofPattern("d 'de' MMMM 'de' yyyy", Locale.forLanguageTag("es-PE"));
+
+    /** "21 de octubre de 2026" (como en las cotizaciones de GENLOGS); "-" si no hay fecha. */
+    public static String fechaLarga(LocalDate fecha) {
+        return fecha != null ? fecha.format(FECHA_LARGA) : "-";
+    }
+
+    /** Cantidad del ítem con dos dígitos si es entera: 3 -> "03", 12 -> "12", 2.5 -> "2.5". */
+    public static String cantidadItem(BigDecimal valor) {
+        BigDecimal v = (valor != null ? valor : BigDecimal.ZERO).stripTrailingZeros();
+        if (v.scale() <= 0 && v.compareTo(BigDecimal.valueOf(100)) < 0 && v.signum() >= 0) {
+            return String.format("%02d", v.intValue());
+        }
+        return formatearCantidad(v);
+    }
+
+    /** "DÓLARES AMERICANOS", "SOLES"…: el nombre de la moneda en mayúsculas. */
+    public static String nombreMoneda(Moneda moneda) {
+        if (moneda == null) return "SOLES";
+        String codigo = codigoMoneda(moneda);
+        return switch (codigo) {
+            case "USD" -> "DÓLARES AMERICANOS";
+            case "PEN" -> "SOLES";
+            case "EUR" -> "EUROS";
+            default -> moneda.getNombreMoneda() != null ? moneda.getNombreMoneda().toUpperCase(Locale.ROOT) : codigo;
+        };
     }
 
     /** "RUC 20114915026" (o el tipo que corresponda); vacío si no hay documento. */
