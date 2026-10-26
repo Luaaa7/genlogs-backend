@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -31,18 +32,21 @@ public class CondicionPagoController {
         return ResponseEntity.ok(condicionPagoService.buscarPorId(id));
     }
 
+    @PreAuthorize("hasRole('ADMINISTRADOR')")
     @PostMapping
     public ResponseEntity<CondicionPago> registrar(@Valid @RequestBody CondicionPago nueva) {
         CondicionPago creada = condicionPagoService.registrar(nueva);
         return ResponseEntity.status(HttpStatus.CREATED).body(creada);
     }
 
+    @PreAuthorize("hasRole('ADMINISTRADOR')")
     @PutMapping("/{id}")
     public ResponseEntity<CondicionPago> actualizar(@PathVariable Integer id,
                                                      @Valid @RequestBody CondicionPago datos) {
         return ResponseEntity.ok(condicionPagoService.actualizar(id, datos));
     }
 
+    @PreAuthorize("hasRole('ADMINISTRADOR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Integer id) {
         condicionPagoService.desactivar(id);

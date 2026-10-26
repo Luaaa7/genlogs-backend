@@ -25,13 +25,29 @@ public class ArchivoController {
         this.cloudinaryService = cloudinaryService;
     }
 
+    private static final java.util.Set<String> TIPOS_PERMITIDOS = java.util.Set.of(
+            "image/jpeg", "image/png", "image/webp", "image/gif",
+            "application/pdf",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+
+    private static final java.util.List<String> EXTENSIONES_PROHIBIDAS = java.util.List.of(
+            ".exe", ".bat", ".cmd", ".sh", ".js", ".html", ".htm", ".svg", ".php", ".jar", ".msi");
+
     @PostMapping(value = "/upload", consumes = "multipart/form-data")
     public ResponseEntity<ArchivoSubidoResponse> subir(@RequestParam("file") MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new BusinessException("El archivo está vacío");
         }
 
-        String tipo = file.getContentType() != null ? file.getContentType() : "application/octet-stream";
+        String tipo = file.getContentType() != null ? file.getContentType().toLowerCase() : "";
+        String nombre = file.getOriginalFilename() != null ? file.getOriginalFilename().toLowerCase() : "";
+        // Solo imágenes y documentos de trabajo: nada de .exe, .html, .js, etc.
+        if (!TIPOS_PERMITIDOS.contains(tipo) || EXTENSIONES_PROHIBIDAS.stream().anyMatch(nombre::endsWith)) {
+            throw new BusinessException("Tipo de archivo no permitido. Sube imágenes (JPG, PNG, WEBP) o documentos (PDF, Word, Excel).");
+        }
         String url = tipo.startsWith("image/")
                 ? cloudinaryService.subirImagen(file, CARPETA)
                 : cloudinaryService.subirDocumento(file, CARPETA);

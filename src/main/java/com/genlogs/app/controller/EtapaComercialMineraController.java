@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -30,18 +31,21 @@ public class EtapaComercialMineraController {
         return ResponseEntity.ok(etapaComercialMineraService.buscarPorId(id));
     }
 
+    @PreAuthorize("hasRole('ADMINISTRADOR')")
     @PostMapping
     public ResponseEntity<EtapaComercialMinera> registrar(@Valid @RequestBody EtapaComercialMinera nueva) {
         EtapaComercialMinera creada = etapaComercialMineraService.registrar(nueva);
         return ResponseEntity.status(HttpStatus.CREATED).body(creada);
     }
 
+    @PreAuthorize("hasRole('ADMINISTRADOR')")
     @PutMapping("/{id}")
     public ResponseEntity<EtapaComercialMinera> actualizar(@PathVariable Integer id,
                                                             @Valid @RequestBody EtapaComercialMinera datos) {
         return ResponseEntity.ok(etapaComercialMineraService.actualizar(id, datos));
     }
 
+    @PreAuthorize("hasRole('ADMINISTRADOR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Integer id) {
         etapaComercialMineraService.desactivar(id);
