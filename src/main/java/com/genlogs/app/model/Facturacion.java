@@ -70,4 +70,9 @@ public class Facturacion extends Auditable {
     
     @Column(name = "observaciones", columnDefinition = "TEXT")
     private String observaciones;
+
+    /** % de IGV con que se emitió (18.00). Un cambio de tasa no altera facturas anteriores. */
+    @Column(name = "porcentaje_igv", nullable = false, precision = 5, scale = 2)
+    @Builder.Default
+    private BigDecimal porcentajeIgv = new BigDecimal("18.00");
 }

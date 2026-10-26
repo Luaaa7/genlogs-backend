@@ -5,6 +5,7 @@ import com.genlogs.app.model.Servicio;
 import com.genlogs.app.model.UnidadMedida;
 import com.genlogs.app.repository.ProductoImagenRepository;
 import com.genlogs.app.repository.ServicioImagenRepository;
+import com.genlogs.app.service.TasaIgvService;
 import com.genlogs.app.util.PdfUtils;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -44,7 +45,7 @@ import java.util.regex.Pattern;
  * de las cotizaciones que la empresa arma en Word:
  * logo arriba en cada página, título centrado y subrayado, "Señores / RUC",
  * tabla con bordes (ITEM, CANT, U/M, DESCRIPCIÓN, P. UNITARIO, TOTAL),
- * "TOTAL, COTIZACIÓN … MÁS 18% I.G.V.", condiciones, observaciones,
+ * "TOTAL, COTIZACIÓN … MÁS 18% I.G.V." (con el % de cada documento), condiciones, observaciones,
  * "Atentamente," y la dirección y correos de la empresa al pie de cada página.
  */
 @Service
@@ -152,6 +153,8 @@ public class PdfGenerationService {
             BigDecimal subtotal,
             BigDecimal igv,
             BigDecimal total,
+            /** % de IGV de la cotización (18.00). */
+            BigDecimal porcentajeIgv,
             String observaciones,
             String vendedorNombre,
             String vendedorCorreo
@@ -176,6 +179,8 @@ public class PdfGenerationService {
             BigDecimal igv,
             BigDecimal total,
             BigDecimal pagado,
+            /** % de IGV de la factura (18.00). */
+            BigDecimal porcentajeIgv,
             String observaciones
     ) {}
 
@@ -275,13 +280,13 @@ public class PdfGenerationService {
 
             lz.espacio(16);
             lz.asegurar(130); // el total y las condiciones van juntos en la misma página
-            lz.lineaTexto(negrita, 11, "TOTAL, COTIZACIÓN " + d.moneda() + " " + PdfUtils.formatearMonto(d.subtotal()) + " MÁS 18% I.G.V.", NEGRO);
+            lz.lineaTexto(negrita, 11, "TOTAL, COTIZACIÓN " + d.moneda() + " " + PdfUtils.formatearMonto(d.subtotal()) + " MÁS " + TasaIgvService.comoTexto(d.porcentajeIgv()) + " I.G.V.", NEGRO);
             lz.espacio(12);
 
             List<String[]> condiciones = new ArrayList<>();
             agregarSiHay(condiciones, "Forma de pago", d.condicionPago());
             condiciones.add(new String[] { "Moneda", valor(d.monedaNombre()) });
-            condiciones.add(new String[] { "I.G.V. (18%)", d.moneda() + " " + PdfUtils.formatearMonto(d.igv()) });
+            condiciones.add(new String[] { "I.G.V. (" + TasaIgvService.comoTexto(d.porcentajeIgv()) + ")", d.moneda() + " " + PdfUtils.formatearMonto(d.igv()) });
             condiciones.add(new String[] { "Total con I.G.V.", d.moneda() + " " + PdfUtils.formatearMonto(d.total()) });
             condiciones.add(new String[] { "Validez de la oferta", PdfUtils.fechaLarga(d.fechaValidez()) });
             lz.etiquetas(condiciones, 125f, 10.5f, false);
@@ -325,12 +330,12 @@ public class PdfGenerationService {
 
             lz.espacio(16);
             lz.asegurar(140); // el total y el resumen van juntos en la misma página
-            lz.lineaTexto(negrita, 11, "TOTAL A PAGAR " + d.moneda() + " " + PdfUtils.formatearMonto(total) + " (INCLUYE 18% I.G.V.)", NEGRO);
+            lz.lineaTexto(negrita, 11, "TOTAL A PAGAR " + d.moneda() + " " + PdfUtils.formatearMonto(total) + " (INCLUYE " + TasaIgvService.comoTexto(d.porcentajeIgv()) + " I.G.V.)", NEGRO);
             lz.espacio(12);
 
             List<String[]> condiciones = new ArrayList<>();
             condiciones.add(new String[] { "Subtotal", d.moneda() + " " + PdfUtils.formatearMonto(d.subtotal()) });
-            condiciones.add(new String[] { "I.G.V. (18%)", d.moneda() + " " + PdfUtils.formatearMonto(d.igv()) });
+            condiciones.add(new String[] { "I.G.V. (" + TasaIgvService.comoTexto(d.porcentajeIgv()) + ")", d.moneda() + " " + PdfUtils.formatearMonto(d.igv()) });
             condiciones.add(new String[] { "Total", d.moneda() + " " + PdfUtils.formatearMonto(total) });
             condiciones.add(new String[] { "Pagado", d.moneda() + " " + PdfUtils.formatearMonto(pagado) });
             condiciones.add(new String[] { "Saldo pendiente", d.moneda() + " " + PdfUtils.formatearMonto(total.subtract(pagado)) });

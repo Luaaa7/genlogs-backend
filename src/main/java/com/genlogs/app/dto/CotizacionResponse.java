@@ -63,6 +63,8 @@ public class CotizacionResponse {
     private BigDecimal subtotal;
     private BigDecimal igv;
     private BigDecimal total;
+    /** % de IGV de esta cotización (18.00). */
+    private BigDecimal porcentajeIgv;
 
     /**
      * Código de la moneda (p. ej. "PEN"). El frontend lo tipa como Moneda y lo
