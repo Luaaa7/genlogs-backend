@@ -116,6 +116,7 @@ public class CotizacionService {
     private final UnidadMedidaRepository unidadMedidaRepository;
     private final CloudinaryService cloudinaryService;
     private final MailService mailService;
+    private final TasaIgvService tasaIgvService;
 
     /**
      * Permite controlar transacciones explícitas en operaciones que deben
@@ -252,6 +253,8 @@ public class CotizacionService {
                 .fechaCotizacion(LocalDate.now())
                 .fechaValidez(LocalDate.now().plusDays(15))
                 .observaciones(request.getObservaciones())
+                // La tasa que rige hoy queda guardada en la cotización.
+                .porcentajeIgv(tasaIgvService.porcentajeVigente())
                 .build();
 
         cotizacion.setUserCreate(vendedor.getNombreUsuario());
@@ -542,6 +545,7 @@ public class CotizacionService {
                 totales != null && totales.getTotal() != null
                         ? totales.getTotal()
                         : BigDecimal.ZERO,
+                cotizacion.getPorcentajeIgv(),
                 cotizacion.getObservaciones(),
                 vendedor != null ? vendedor.getNombres() : null,
                 vendedor != null ? vendedor.getCorreo() : null
@@ -573,6 +577,8 @@ public class CotizacionService {
                 .fechaCotizacion(LocalDate.now())
                 .fechaValidez(LocalDate.now().plusDays(15))
                 .observaciones(original.getObservaciones())
+                // La copia es un documento nuevo: usa la tasa que rige hoy.
+                .porcentajeIgv(tasaIgvService.porcentajeVigente())
                 .build();
 
         copia.setUserCreate(usuario.getNombreUsuario());
@@ -1175,6 +1181,7 @@ public class CotizacionService {
                         .subtotal(subtotal)
                         .igv(igv)
                         .total(total)
+                        .porcentajeIgv(c.getPorcentajeIgv())
                         // El campo moneda utiliza el código ISO.
                         .moneda(codigoMoneda)
                         .monedaCodigo(codigoMoneda)

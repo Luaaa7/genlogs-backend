@@ -1,5 +1,6 @@
 package com.genlogs.app.model;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 import jakarta.persistence.Column;
@@ -68,9 +69,14 @@ public class Cotizacion extends Auditable {
     private SectorEconomico sectorEconomico;
 
     // [ALINEADO A BD V8] La tabla "cotizacion" NO tiene columna "total":
-    // los totales (subtotal, IGV 18%, total) se calculan en la vista
+    // los totales (subtotal, IGV, total) se calculan en la vista
     // vw_cotizacion_totales a partir de cotizacion_detalle.importe_linea.
     // Ver CotizacionRepository.findTotalesByCotizacion(...).
+
+    /** % de IGV con que se creó la cotización (18.00). La vista lo usa para el IGV y el total. */
+    @Column(name = "porcentaje_igv", nullable = false, precision = 5, scale = 2)
+    @Builder.Default
+    private BigDecimal porcentajeIgv = new BigDecimal("18.00");
 
     @Column(name = "observaciones", columnDefinition = "TEXT")
     private String observaciones;

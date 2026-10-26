@@ -24,6 +24,8 @@ public class FacturacionResponse {
     private LocalDate fechaEmision;
     private LocalDate fechaVencimiento;
     private BigDecimal total;
+    /** % de IGV de esta factura (18.00). */
+    private BigDecimal porcentajeIgv;
     private BigDecimal montoPagado;
     private BigDecimal saldoPendiente;
     private String moneda;

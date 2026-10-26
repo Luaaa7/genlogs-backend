@@ -68,6 +68,7 @@ public class FacturacionService {
     private final ServicioRepository servicioRepository;
     private final UsuarioRepository usuarioRepository;
     private final PdfGenerationService pdfGenerationService;
+    private final TasaIgvService tasaIgvService;
 
     private static final Logger log = LoggerFactory.getLogger(FacturacionService.class);
 
@@ -148,6 +149,9 @@ public class FacturacionService {
                         ? request.getFechaVencimiento()
                         : LocalDate.now().plusDays(condicionPago.getDiasCredito() != null ? condicionPago.getDiasCredito() : 0))
                 .montoPagado(BigDecimal.ZERO)
+                // La tasa que rige en la fecha de emisión queda guardada en la factura.
+                .porcentajeIgv(tasaIgvService.porcentajeVigente(
+                        request.getFechaEmision() != null ? request.getFechaEmision() : LocalDate.now()))
                 .build();
         facturacion.setUserCreate(usuario.getNombreUsuario());
         facturacion.setProcessCreate("ALTA_FACTURACION");
@@ -184,7 +188,7 @@ public class FacturacionService {
     public FacturacionResponse registrarPago(Long idFacturacion, RegistrarPagoRequest request) {
         Facturacion facturacion = obtenerOLanzar(idFacturacion);
 
-        BigDecimal total = calcularTotal(facturacion.getIdFacturacion());
+        BigDecimal total = calcularTotal(facturacion);
         BigDecimal nuevoPagado = facturacion.getMontoPagado().add(request.getMontoPagado());
 
         if (nuevoPagado.compareTo(total) > 0) {
@@ -217,7 +221,7 @@ public class FacturacionService {
         Facturacion f = obtenerOLanzar(idFacturacion);
         List<DetalleFacturacion> lineas = detalleFacturacionRepository.findByFacturacion(idFacturacion);
         BigDecimal subtotal = calcularSubtotal(idFacturacion);
-        BigDecimal total = calcularTotal(idFacturacion);
+        BigDecimal total = calcularTotal(f);
         BigDecimal igv = total.subtract(subtotal);
         BigDecimal pagado = f.getMontoPagado() != null ? f.getMontoPagado() : BigDecimal.ZERO;
 
@@ -265,6 +269,7 @@ public class FacturacionService {
                 igv,
                 total,
                 pagado,
+                f.getPorcentajeIgv(),
                 f.getObservaciones()
         );
 
@@ -348,8 +353,6 @@ public class FacturacionService {
         return linea;
     }
 
-    private static final BigDecimal FACTOR_IGV = new BigDecimal("1.18");
-
     /** Suma cada línea con la misma fórmula del GENERATED de la BD (sin IGV). */
     private BigDecimal calcularSubtotal(Long idFacturacion) {
         return detalleFacturacionRepository.findByFacturacion(idFacturacion).stream()
@@ -364,11 +367,12 @@ public class FacturacionService {
     }
 
     /**
-     * Total con IGV 18%, igual que vw_facturacion_totales.total
+     * Total con el IGV de la factura (porcentaje_igv), igual que vw_facturacion_totales.total
      * (la tabla "facturacion" no guarda el total, solo monto_pagado).
      */
-    private BigDecimal calcularTotal(Long idFacturacion) {
-        return calcularSubtotal(idFacturacion).multiply(FACTOR_IGV).setScale(2, RoundingMode.HALF_UP);
+    private BigDecimal calcularTotal(Facturacion f) {
+        BigDecimal factor = BigDecimal.ONE.add(TasaIgvService.comoFactor(f.getPorcentajeIgv()));
+        return calcularSubtotal(f.getIdFacturacion()).multiply(factor).setScale(2, RoundingMode.HALF_UP);
     }
 
     private void actualizarAuditoria(Facturacion facturacion, String proceso) {
@@ -390,7 +394,7 @@ public class FacturacionService {
     }
 
     private FacturacionResponse toResponse(Facturacion f) {
-        BigDecimal total = calcularTotal(f.getIdFacturacion());
+        BigDecimal total = calcularTotal(f);
         BigDecimal pagado = f.getMontoPagado() != null ? f.getMontoPagado() : BigDecimal.ZERO;
         String clienteNombre = obtenerNombreCliente(f);
         return FacturacionResponse.builder()
@@ -407,6 +411,7 @@ public class FacturacionService {
                 .fechaEmision(f.getFechaEmision())
                 .fechaVencimiento(f.getFechaVencimiento())
                 .total(total)
+                .porcentajeIgv(f.getPorcentajeIgv())
                 .montoPagado(pagado)
                 .saldoPendiente(total.subtract(pagado))
                 .moneda(f.getMoneda() != null ? f.getMoneda().getSimbolo() : "S/")
