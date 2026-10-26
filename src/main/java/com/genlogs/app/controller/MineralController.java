@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -28,17 +29,20 @@ public class MineralController {
         return ResponseEntity.ok(mineralService.buscarPorId(id));
     }
 
+    @PreAuthorize("hasRole('ADMINISTRADOR')")
     @PostMapping
     public ResponseEntity<Mineral> registrar(@Valid @RequestBody Mineral nuevo) {
         Mineral creado = mineralService.registrar(nuevo);
         return ResponseEntity.status(HttpStatus.CREATED).body(creado);
     }
 
+    @PreAuthorize("hasRole('ADMINISTRADOR')")
     @PutMapping("/{id}")
     public ResponseEntity<Mineral> actualizar(@PathVariable Integer id, @Valid @RequestBody Mineral datos) {
         return ResponseEntity.ok(mineralService.actualizar(id, datos));
     }
 
+    @PreAuthorize("hasRole('ADMINISTRADOR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Integer id) {
         mineralService.desactivar(id);

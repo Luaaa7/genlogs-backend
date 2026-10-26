@@ -62,8 +62,8 @@ public class SecurityConfig {
                 // Health check público para monitoreo de Render
                 .requestMatchers("/", "/health", "/api/health").permitAll()
                 .requestMatchers("/api/auth/**").permitAll()
-                .requestMatchers("/api/catalogo/**", "/api/catalogos/**").permitAll()
-                .requestMatchers("/api/empresas-mineras/**").permitAll()
+                // Público SOLO para consultar (catálogo web y mapa). Crear/editar/borrar exige sesión.
+                .requestMatchers(HttpMethod.GET, "/api/catalogo/**", "/api/catalogos/**", "/api/empresas-mineras/**").permitAll()
                 .anyRequest().authenticated()
             )
             .authenticationProvider(authenticationProvider())
@@ -84,4 +84,3 @@ public class SecurityConfig {
         return config.getAuthenticationManager();
     }
 }
-

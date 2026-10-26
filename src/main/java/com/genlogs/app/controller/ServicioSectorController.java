@@ -5,6 +5,7 @@ import com.genlogs.app.service.ServicioSectorService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -22,6 +23,7 @@ public class ServicioSectorController {
         return ResponseEntity.ok(servicioSectorService.listarPorServicio(idServicio));
     }
 
+    @PreAuthorize("hasRole('ADMINISTRADOR')")
     @PostMapping("/{idSectorEconomico}")
     public ResponseEntity<ServicioSector> asociar(@PathVariable Long idServicio,
                                                    @PathVariable Integer idSectorEconomico) {
@@ -29,6 +31,7 @@ public class ServicioSectorController {
         return ResponseEntity.status(HttpStatus.CREATED).body(creada);
     }
 
+    @PreAuthorize("hasRole('ADMINISTRADOR')")
     @DeleteMapping("/{idSectorEconomico}")
     public ResponseEntity<Void> desasociar(@PathVariable Long idServicio,
                                             @PathVariable Integer idSectorEconomico) {

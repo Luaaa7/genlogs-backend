@@ -153,6 +153,8 @@ public class UsuarioService {
                 .nombres(usuario.getNombres())
                 .correo(usuario.getCorreo())
                 .nombreRol(usuario.getRol().getNombreRol())
+                .idRol(usuario.getRol().getIdRol())
+                .iniciales(usuario.getIniciales())
                 .bloqueado(usuario.getBloqueado())
                 .build();
     }

@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -31,18 +32,21 @@ public class UnidadMedidaController {
         return ResponseEntity.ok(unidadMedidaService.buscarPorId(id));
     }
 
+    @PreAuthorize("hasRole('ADMINISTRADOR')")
     @PostMapping
     public ResponseEntity<UnidadMedida> registrar(@Valid @RequestBody UnidadMedida nueva) {
         UnidadMedida creada = unidadMedidaService.registrar(nueva);
         return ResponseEntity.status(HttpStatus.CREATED).body(creada);
     }
 
+    @PreAuthorize("hasRole('ADMINISTRADOR')")
     @PutMapping("/{id}")
     public ResponseEntity<UnidadMedida> actualizar(@PathVariable Integer id,
                                                     @Valid @RequestBody UnidadMedida datos) {
         return ResponseEntity.ok(unidadMedidaService.actualizar(id, datos));
     }
 
+    @PreAuthorize("hasRole('ADMINISTRADOR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Integer id) {
         unidadMedidaService.desactivar(id);
