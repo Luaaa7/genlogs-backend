@@ -3,6 +3,8 @@ package com.genlogs.app.service.pdf;
 import com.genlogs.app.model.Producto;
 import com.genlogs.app.model.Servicio;
 import com.genlogs.app.model.UnidadMedida;
+import com.genlogs.app.repository.ProductoImagenRepository;
+import com.genlogs.app.repository.ServicioImagenRepository;
 import com.genlogs.app.util.PdfUtils;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -24,10 +26,17 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 /**
@@ -89,6 +98,23 @@ public class PdfGenerationService {
     private byte[] logoBytes;
     private boolean logoCargado;
 
+    /** Fotos de los repuestos/servicios: se buscan por id y se descargan de su URL (Cloudinary). */
+    private final ProductoImagenRepository productoImagenRepository;
+    private final ServicioImagenRepository servicioImagenRepository;
+    private final HttpClient http = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(5))
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .build();
+
+    private static final int MAX_IMAGENES = 12;
+    private static final int MAX_BYTES_IMAGEN = 8 * 1024 * 1024;
+
+    public PdfGenerationService(ProductoImagenRepository productoImagenRepository,
+                                ServicioImagenRepository servicioImagenRepository) {
+        this.productoImagenRepository = productoImagenRepository;
+        this.servicioImagenRepository = servicioImagenRepository;
+    }
+
     // ════════════════════════════════════════════════════════════════════
     // DTOs
     // ════════════════════════════════════════════════════════════════════
@@ -97,6 +123,7 @@ public class PdfGenerationService {
      * Una fila de la tabla de ítems.
      * {@code detalles}: pares {etiqueta, valor} que van debajo del título en la
      * descripción, p. ej. {"MARCA", "Siemens"}, {"CÓDIGO GENLOGS", "GLB-00001"}.
+     * {@code idProducto}/{@code idServicio}: para buscar la foto que va al final de la cotización.
      */
     public record LineaPdf(
             String cantidad,
@@ -104,7 +131,9 @@ public class PdfGenerationService {
             String titulo,
             List<String[]> detalles,
             String precioUnitario,
-            String importe
+            String importe,
+            Long idProducto,
+            Long idServicio
     ) {}
 
     /** DTO para datos de cotización. */
@@ -216,7 +245,9 @@ public class PdfGenerationService {
                 titulo,
                 detalles,
                 PdfUtils.formatearMonto(precioUnitario),
-                PdfUtils.formatearMonto(imp));
+                PdfUtils.formatearMonto(imp),
+                producto != null ? producto.getIdProducto() : null,
+                servicio != null ? servicio.getIdServicio() : null);
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -257,6 +288,9 @@ public class PdfGenerationService {
 
             lz.observaciones(d.observaciones());
             lz.firma(d.vendedorNombre(), "Área Comercial", d.vendedorCorreo());
+
+            // Como en las cotizaciones de GENLOGS: las fotos de lo ofertado van al final.
+            lz.anexoImagenes(imagenesDe(d.lineas()));
 
             return lz.terminar(out);
         } catch (IOException e) {
@@ -500,6 +534,34 @@ public class PdfGenerationService {
             }
         }
 
+        /** Fotos al final: una página nueva, cada foto centrada con su ítem encima. */
+        void anexoImagenes(List<ImagenItem> imagenes) throws IOException {
+            if (imagenes.isEmpty()) return;
+            nuevaPagina();
+            float anchoMax = ANCHO_UTIL * 0.8f;
+            float altoMax = (Y_CONTENIDO - Y_MINIMO) / 2f - 34f; // entran dos por página
+            for (ImagenItem img : imagenes) {
+                PDImageXObject imagen;
+                try {
+                    imagen = PDImageXObject.createFromByteArray(doc, img.bytes(), "item-" + img.item());
+                } catch (IOException | IllegalArgumentException e) {
+                    log.warn("Imagen del ítem {} no se pudo leer: {}", img.item(), e.getMessage());
+                    continue;
+                }
+                float escala = Math.min(anchoMax / imagen.getWidth(), altoMax / imagen.getHeight());
+                escala = Math.min(escala, 1.5f); // no agrandar demasiado las fotos chicas
+                float w = imagen.getWidth() * escala;
+                float h = imagen.getHeight() * escala;
+                asegurar(h + 34f);
+                String rotulo = "ITEM " + img.item() + " - " + img.titulo();
+                textoCentrado(cs, negrita, 9.5f, ANCHO_PAGINA / 2, y,
+                        PdfUtils.ajustarTexto(rotulo, negrita, 9.5f, ANCHO_UTIL));
+                y -= 10f;
+                cs.drawImage(imagen, (ANCHO_PAGINA - w) / 2, y - h, w, h);
+                y -= h + 24f;
+            }
+        }
+
         // ── Tabla de ítems con bordes ────────────────────────────────────
 
         void tablaItems(List<LineaPdf> lineas, String subtotal) throws IOException {
@@ -697,6 +759,83 @@ public class PdfGenerationService {
             }
             doc.save(out);
             return out.toByteArray();
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // Fotos de los ítems
+    // ════════════════════════════════════════════════════════════════════
+
+    private record ImagenItem(int item, String titulo, byte[] bytes) {}
+
+    /** Foto principal de cada repuesto/servicio (o la primera que tenga), descargada de su URL. */
+    private List<ImagenItem> imagenesDe(List<LineaPdf> lineas) {
+        List<ImagenItem> out = new ArrayList<>();
+        int item = 10;
+        for (LineaPdf l : lineas) {
+            if (out.size() >= MAX_IMAGENES) break;
+            String url = urlImagen(l);
+            byte[] bytes = url != null ? descargar(url) : null;
+            if (bytes != null) out.add(new ImagenItem(item, l.titulo(), bytes));
+            item += 10;
+        }
+        return out;
+    }
+
+    private String urlImagen(LineaPdf l) {
+        try {
+            if (l.idProducto() != null) {
+                return productoImagenRepository
+                        .findByProducto_IdProductoAndEsPrincipalTrueAndStatus(l.idProducto(), "A")
+                        .map(i -> i.getUrlImagen())
+                        .or(() -> productoImagenRepository.findByProducto_IdProductoAndStatus(l.idProducto(), "A")
+                                .stream().map(i -> i.getUrlImagen()).filter(Objects::nonNull).findFirst())
+                        .orElse(null);
+            }
+            if (l.idServicio() != null) {
+                return servicioImagenRepository.findByServicio_IdServicio(l.idServicio()).stream()
+                        .filter(i -> !"I".equals(i.getStatus()))
+                        .sorted(Comparator.comparing(i -> !Boolean.TRUE.equals(i.getEsPrincipal())))
+                        .map(i -> i.getUrlImagen())
+                        .filter(Objects::nonNull)
+                        .findFirst()
+                        .orElse(null);
+            }
+        } catch (RuntimeException e) {
+            log.warn("No se pudo buscar la imagen del ítem: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Descarga la imagen. PDFBox lee JPG/PNG/GIF/BMP pero no WebP; a las de
+     * Cloudinary se les pide en JPG y a máximo 1000 px de ancho para que el PDF no pese.
+     * Si falla (sin internet, URL rota, formato raro), el PDF sale igual sin esa foto.
+     */
+    private byte[] descargar(String url) {
+        if (url == null || !(url.startsWith("http://") || url.startsWith("https://"))) return null;
+        String destino = url;
+        if (url.contains("res.cloudinary.com") && url.contains("/upload/") && !url.contains("/upload/f_jpg")) {
+            destino = url.replaceFirst("/upload/", "/upload/f_jpg,q_80,w_1000,c_limit/");
+        }
+        try {
+            HttpRequest req = HttpRequest.newBuilder(URI.create(destino.replace(" ", "%20")))
+                    .timeout(Duration.ofSeconds(8))
+                    .GET()
+                    .build();
+            HttpResponse<byte[]> res = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
+            if (res.statusCode() / 100 != 2 || res.body() == null || res.body().length == 0
+                    || res.body().length > MAX_BYTES_IMAGEN) {
+                log.warn("Imagen no disponible ({}): {}", res.statusCode(), destino);
+                return null;
+            }
+            return res.body();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (IOException | IllegalArgumentException e) {
+            log.warn("No se pudo descargar la imagen {}: {}", destino, e.getMessage());
+            return null;
         }
     }
 
