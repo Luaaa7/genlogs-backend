@@ -1,5 +1,6 @@
 package com.genlogs.app.controller;
 
+import com.genlogs.app.dto.ServicioRequest;
 import com.genlogs.app.model.Servicio;
 import com.genlogs.app.service.ServicioService;
 import jakarta.validation.Valid;
@@ -36,14 +37,14 @@ public class ServicioController {
     }
 
     @PostMapping
-    public ResponseEntity<Servicio> registrar(@Valid @RequestBody Servicio nuevo) {
+    public ResponseEntity<Servicio> registrar(@Valid @RequestBody ServicioRequest nuevo) {
         Servicio creado = servicioService.registrar(nuevo);
         return ResponseEntity.status(HttpStatus.CREATED).body(creado);
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<Servicio> actualizar(@PathVariable Long id,
-                                                @Valid @RequestBody Servicio datos) {
+                                                @Valid @RequestBody ServicioRequest datos) {
         return ResponseEntity.ok(servicioService.actualizar(id, datos));
     }
 

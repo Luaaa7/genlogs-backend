@@ -1,5 +1,6 @@
 package com.genlogs.app.service;
 
+import com.genlogs.app.dto.ServicioRequest;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
 import com.genlogs.app.model.CategoriaServicio;
@@ -46,14 +47,21 @@ public class ServicioService {
     }
 
     @Transactional
-    public Servicio registrar(Servicio nuevo) {
-        if (servicioRepository.existsByCodigoServicioIgnoreCase(nuevo.getCodigoServicio())) {
-            throw new BusinessException("Ya existe un servicio con el código: " + nuevo.getCodigoServicio());
+    public Servicio registrar(ServicioRequest request) {
+        if (servicioRepository.existsByCodigoServicioIgnoreCase(request.getCodigoServicio())) {
+            throw new BusinessException("Ya existe un servicio con el código: " + request.getCodigoServicio());
         }
-        nuevo.setCategoriaServicio(resolverCategoria(nuevo.getCategoriaServicio()));
-        nuevo.setUnidadMedida(resolverUnidadMedida(nuevo.getUnidadMedida()));
-        if (nuevo.getVisibleWeb() == null) {
+        Servicio nuevo = new Servicio();
+        nuevo.setCodigoServicio(request.getCodigoServicio());
+        nuevo.setNombreServicio(request.getNombreServicio());
+        nuevo.setDescripcion(request.getDescripcion());
+        nuevo.setCategoriaServicio(resolverCategoriaPorId(request.getIdCategoriaServicio()));
+        nuevo.setUnidadMedida(resolverUnidadMedidaPorId(request.getIdUnidadMedida()));
+        nuevo.setDuracionEstimadaHoras(request.getDuracionEstimadaHoras());
+        if (request.getVisibleWeb() == null) {
             nuevo.setVisibleWeb(true);
+        } else {
+            nuevo.setVisibleWeb(request.getVisibleWeb());
         }
         nuevo.setStatus("A");
         nuevo.setUserCreate(usuarioActual());
@@ -63,14 +71,16 @@ public class ServicioService {
     }
 
     @Transactional
-    public Servicio actualizar(Long id, Servicio datos) {
+    public Servicio actualizar(Long id, ServicioRequest datos) {
         Servicio existente = buscarPorId(id);
-        existente.setCategoriaServicio(resolverCategoria(datos.getCategoriaServicio()));
-        existente.setUnidadMedida(resolverUnidadMedida(datos.getUnidadMedida()));
+        existente.setCategoriaServicio(resolverCategoriaPorId(datos.getIdCategoriaServicio()));
+        existente.setUnidadMedida(resolverUnidadMedidaPorId(datos.getIdUnidadMedida()));
         existente.setCodigoServicio(datos.getCodigoServicio());
         existente.setNombreServicio(datos.getNombreServicio());
         existente.setDuracionEstimadaHoras(datos.getDuracionEstimadaHoras());
-        existente.setVisibleWeb(datos.getVisibleWeb());
+        if (datos.getVisibleWeb() != null) {
+            existente.setVisibleWeb(datos.getVisibleWeb());
+        }
         existente.setDescripcion(datos.getDescripcion());
         existente.setUserUpdate(usuarioActual());
         existente.setProcessUpdate("EDICION_SERVICIO");
@@ -90,19 +100,19 @@ public class ServicioService {
 
     // ------------------------------------------------------------------
 
-    private CategoriaServicio resolverCategoria(CategoriaServicio ref) {
-        if (ref == null || ref.getIdCategoriaServicio() == null) {
+    private CategoriaServicio resolverCategoriaPorId(Integer id) {
+        if (id == null) {
             throw new BusinessException("Debe indicar la categoría del servicio");
         }
-        return categoriaServicioRepository.findById(ref.getIdCategoriaServicio())
+        return categoriaServicioRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Categoría de servicio no existe"));
     }
 
-    private UnidadMedida resolverUnidadMedida(UnidadMedida ref) {
-        if (ref == null || ref.getIdUnidadMedida() == null) {
+    private UnidadMedida resolverUnidadMedidaPorId(Integer id) {
+        if (id == null) {
             throw new BusinessException("Debe indicar la unidad de medida del servicio");
         }
-        return unidadMedidaRepository.findById(ref.getIdUnidadMedida())
+        return unidadMedidaRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Unidad de medida no existe"));
     }
 
