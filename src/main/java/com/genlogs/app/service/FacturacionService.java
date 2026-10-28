@@ -331,6 +331,16 @@ public class FacturacionService {
             throw new BusinessException("No se puede cambiar el estado de una facturación ya finalizada");
         }
 
+        // Pago parcial y Pagada salen de "Registrar pago" (así el saldo siempre cuadra).
+        String codigo = nuevoEstado.getCodigoEstado();
+        if ("PARCIAL".equalsIgnoreCase(codigo) || "PAGADA".equalsIgnoreCase(codigo)) {
+            throw new BusinessException("Los estados Pago parcial y Pagada se ponen solos al registrar un pago.");
+        }
+        BigDecimal pagado = facturacion.getMontoPagado() != null ? facturacion.getMontoPagado() : BigDecimal.ZERO;
+        if ("ANULADA".equalsIgnoreCase(codigo) && pagado.compareTo(BigDecimal.ZERO) > 0) {
+            throw new BusinessException("No se puede anular un comprobante que ya tiene pagos registrados.");
+        }
+
         facturacion.setEstadoFacturacion(nuevoEstado);
         actualizarAuditoria(facturacion, "CAMBIO_ESTADO_FACTURACION");
 
