@@ -86,6 +86,7 @@ public class FacturacionService {
     private final TasaIgvService tasaIgvService;
     private final CloudinaryService cloudinaryService;
     private final SunatService sunatService;
+    private final com.genlogs.app.repository.CotizacionDetalleRepository cotizacionDetalleRepository;
     private final MailService mailService;
     /** Para preparar el correo en una transacción y enviarlo fuera de ella. */
     private final TransactionTemplate transactionTemplate;
@@ -261,6 +262,59 @@ public class FacturacionService {
         facturacion.setSunatFechaEnvio(LocalDateTime.now());
         facturacion = facturacionRepository.save(facturacion);
         return toResponse(facturacion);
+    }
+
+    /**
+     * Al marcar una orden como ATENDIDA se emite sola su factura (o boleta si el
+     * cliente no tiene RUC), con los ítems de la cotización. Si la orden ya tiene un
+     * comprobante vigente, no hace nada y devuelve null.
+     */
+    @Transactional
+    public FacturacionResponse emitirDesdeOrden(Long idOrdenCompra) {
+        if (facturacionRepository.existsByOrdenCompra_IdOrdenCompraAndEstadoFacturacion_CodigoEstadoNot(idOrdenCompra, "ANULADA")) {
+            return null;
+        }
+        OrdenCompra orden = ordenCompraRepository.findById(idOrdenCompra)
+                .orElseThrow(() -> new ResourceNotFoundException("Orden de compra no encontrada"));
+        com.genlogs.app.model.Cotizacion cot = orden.getCotizacion();
+        if (cot == null) {
+            throw new BusinessException("La orden no tiene cotización de origen.");
+        }
+
+        Tercero t = cot.getCliente() != null ? cot.getCliente().getTercero() : null;
+        boolean conRuc = t != null && t.getTipoDocumento() != null
+                && "RUC".equalsIgnoreCase(t.getTipoDocumento().getCodigoTipo());
+        String codigoTipo = conRuc ? "FACTURA" : "BOLETA";
+        TipoComprobante tipo = tipoComprobanteRepository.findAll().stream()
+                .filter(x -> codigoTipo.equalsIgnoreCase(x.getCodigoTipo()))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException("No existe el tipo de comprobante " + codigoTipo));
+
+        List<DetalleFacturacionRequest> lineas = new ArrayList<>();
+        for (com.genlogs.app.model.CotizacionDetalle d : cotizacionDetalleRepository.findByCotizacion(cot.getIdCotizacion())) {
+            if (d.getProducto() == null && d.getServicio() == null) {
+                continue; // la factura necesita producto o servicio del catálogo
+            }
+            DetalleFacturacionRequest l = new DetalleFacturacionRequest();
+            l.setIdProducto(d.getProducto() != null ? d.getProducto().getIdProducto() : null);
+            l.setIdServicio(d.getProducto() == null && d.getServicio() != null ? d.getServicio().getIdServicio() : null);
+            l.setDescripcionPersonalizada(d.getDescripcionPersonalizada());
+            l.setCantidad(d.getCantidad());
+            l.setPrecioUnitario(d.getPrecioUnitario());
+            l.setDescuentoUnitario(d.getDescuentoUnitario());
+            lineas.add(l);
+        }
+        if (lineas.isEmpty()) {
+            throw new BusinessException("La cotización no tiene ítems del catálogo para facturar.");
+        }
+
+        EmitirFacturaRequest req = new EmitirFacturaRequest();
+        req.setIdOrdenCompra(idOrdenCompra);
+        req.setIdTipoComprobante(tipo.getIdTipoComprobante());
+        req.setIdCondicionPago((orden.getCondicionPago() != null ? orden.getCondicionPago() : cot.getCondicionPago()).getIdCondicionPago());
+        req.setIdMoneda(cot.getMoneda().getIdMoneda());
+        req.setLineas(lineas);
+        return emitir(req);
     }
 
     /**

@@ -7,6 +7,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 @Getter @Builder @NoArgsConstructor @AllArgsConstructor
 public class OrdenCompraResponse {
@@ -26,4 +27,11 @@ public class OrdenCompraResponse {
     // órdenes de compra, así que se calculan vía CotizacionRepository.
     private BigDecimal total;
     private String moneda;
+
+    /** Al pasar a ATENDIDA: código del comprobante que se emitió solo (F001-00000008). */
+    @Setter
+    private String comprobanteEmitido;
+    /** Al pasar a ATENDIDA: por qué no se pudo emitir solo (para hacerlo a mano). */
+    @Setter
+    private String avisoComprobante;
 }

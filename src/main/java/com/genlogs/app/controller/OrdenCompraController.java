@@ -19,6 +19,11 @@ import com.genlogs.app.dto.OrdenCompraRequest;
 import com.genlogs.app.dto.OrdenCompraResponse;
 import com.genlogs.app.dto.PaginaResponse;
 import com.genlogs.app.service.OrdenCompraService;
+import com.genlogs.app.service.FacturacionService;
+import com.genlogs.app.dto.FacturacionResponse;
+import com.genlogs.app.exception.BusinessException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -28,7 +33,10 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class OrdenCompraController {
 
+    private static final Logger log = LoggerFactory.getLogger(OrdenCompraController.class);
+
     private final OrdenCompraService ordenCompraService;
+    private final FacturacionService facturacionService;
 
     @GetMapping
     public ResponseEntity<PaginaResponse<OrdenCompraResponse>> listar(
@@ -62,7 +70,23 @@ public class OrdenCompraController {
     @PatchMapping("/{id}/estado")
     public ResponseEntity<OrdenCompraResponse> cambiarEstado(
             @PathVariable Long id, @Valid @RequestBody CambiarEstadoOrdenCompraRequest request) {
-        return ResponseEntity.ok(ordenCompraService.cambiarEstado(id, request));
+        OrdenCompraResponse respuesta = ordenCompraService.cambiarEstado(id, request);
+        // Atendida => se emite sola la factura (o boleta). Va después de guardar el estado
+        // (otra transacción): si la emisión falla, la orden igual queda atendida y se avisa.
+        if ("ATENDIDA".equalsIgnoreCase(respuesta.getEstadoCodigo())) {
+            try {
+                FacturacionResponse comprobante = facturacionService.emitirDesdeOrden(id);
+                if (comprobante != null) {
+                    respuesta.setComprobanteEmitido(comprobante.getCodigoComprobante());
+                }
+            } catch (BusinessException e) {
+                respuesta.setAvisoComprobante(e.getMessage());
+            } catch (Exception e) {
+                log.warn("No se pudo emitir solo el comprobante de la orden {}: {}", id, e.getMessage());
+                respuesta.setAvisoComprobante("No se pudo emitir el comprobante automáticamente. Emítelo desde la cotización.");
+            }
+        }
+        return ResponseEntity.ok(respuesta);
     }
 
     @PostMapping(value = "/{id}/archivo", consumes = "multipart/form-data")

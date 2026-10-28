@@ -23,6 +23,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.genlogs.app.service.OrdenCompraService;
 import com.genlogs.app.dto.AdjuntoCotizacionResponse;
 import com.genlogs.app.dto.CambiarEstadoCotizacionRequest;
 import com.genlogs.app.dto.CotizacionDetalleResponse;
@@ -44,7 +48,10 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class CotizacionController {
 
+    private static final Logger log = LoggerFactory.getLogger(CotizacionController.class);
+
     private final CotizacionService cotizacionService;
+    private final OrdenCompraService ordenCompraService;
 
     /**
      * Lista blanca de campos de ordenamiento del listado.
@@ -173,7 +180,17 @@ public class CotizacionController {
     @PatchMapping("/{id}/estado")
     public ResponseEntity<CotizacionResponse> cambiarEstado(
             @PathVariable Long id, @Valid @RequestBody CambiarEstadoCotizacionRequest request) {
-        return ResponseEntity.ok(cotizacionService.cambiarEstado(id, request));
+        CotizacionResponse respuesta = cotizacionService.cambiarEstado(id, request);
+        // Aprobada => se registra sola su orden de compra. Va después de guardar el estado
+        // (otra transacción): si la orden fallara, la aprobación igual queda.
+        if ("APROBADA".equalsIgnoreCase(respuesta.getEstadoCodigo())) {
+            try {
+                ordenCompraService.crearAutomatica(id);
+            } catch (Exception e) {
+                log.warn("No se pudo registrar sola la orden de la cotización {}: {}", id, e.getMessage());
+            }
+        }
+        return ResponseEntity.ok(respuesta);
     }
 
     @PostMapping(value = "/{id}/adjuntos", consumes = "multipart/form-data")
