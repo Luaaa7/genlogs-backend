@@ -1,4 +1,3 @@
-
 package com.genlogs.app.service;
 
 import java.time.LocalDateTime;
@@ -95,6 +94,63 @@ public class ProveedorService {
         proveedor.setUserCreate(usuarioActual());
         proveedor.setProcessCreate("ALTA_PROVEEDOR");
 
+        return proveedorRepository.save(proveedor);
+    }
+
+    /**
+     * Edita los datos del tercero del proveedor (documento, razón social,
+     * distrito, dirección, teléfono, correo). El tercero es el mismo para el
+     * rol de cliente, así que el cambio también se ve allí.
+     */
+    @Transactional
+    public Proveedor actualizar(Long idProveedor, ProveedorRequest request) {
+        Proveedor proveedor = buscarPorId(idProveedor);
+
+        if (request == null || request.getIdTipoDocumento() == null) {
+            throw new BusinessException("Debe seleccionar un tipo de documento");
+        }
+        if (request.getNumeroDocumento() == null || request.getNumeroDocumento().isBlank()) {
+            throw new BusinessException("El número de documento es obligatorio");
+        }
+        if (request.getIdDistrito() == null) {
+            throw new BusinessException("Debe seleccionar un distrito para el proveedor");
+        }
+
+        TipoDocumento tipoDocumento = tipoDocumentoRepository
+                .findById(request.getIdTipoDocumento())
+                .orElseThrow(() -> new ResourceNotFoundException("Tipo de documento no existe"));
+        String numeroDocumento = request.getNumeroDocumento().trim();
+        validarLongitudDocumento(tipoDocumento, numeroDocumento);
+
+        Tercero tercero = proveedor.getTercero();
+
+        // Si cambió el documento, no puede ser el de otro tercero ya registrado.
+        terceroRepository
+                .findByTipoDocumento_IdTipoDocumentoAndNumeroDocumento(request.getIdTipoDocumento(), numeroDocumento)
+                .filter(otro -> !otro.getIdTercero().equals(tercero.getIdTercero()))
+                .ifPresent(otro -> {
+                    throw new BusinessException("Ya existe otro cliente o proveedor con ese documento");
+                });
+
+        Distrito distrito = distritoRepository
+                .findById(request.getIdDistrito())
+                .orElseThrow(() -> new ResourceNotFoundException("Distrito no existe"));
+
+        tercero.setTipoDocumento(tipoDocumento);
+        tercero.setNumeroDocumento(numeroDocumento);
+        tercero.setRazonSocial(request.getRazonSocial() != null ? request.getRazonSocial().trim() : tercero.getRazonSocial());
+        tercero.setDistrito(distrito);
+        tercero.setDireccion(request.getDireccion());
+        tercero.setTelefono(request.getTelefono());
+        tercero.setCorreo(request.getCorreo());
+        tercero.setUserUpdate(usuarioActual());
+        tercero.setProcessUpdate("EDITAR_PROVEEDOR");
+        tercero.setDateUpdate(LocalDateTime.now());
+        terceroRepository.save(tercero);
+
+        proveedor.setUserUpdate(usuarioActual());
+        proveedor.setProcessUpdate("EDITAR_PROVEEDOR");
+        proveedor.setDateUpdate(LocalDateTime.now());
         return proveedorRepository.save(proveedor);
     }
 
@@ -223,4 +279,3 @@ public class ProveedorService {
         return authentication.getName();
     }
 }
-

@@ -26,6 +26,13 @@ public class ProveedorController {
         return ResponseEntity.status(HttpStatus.CREATED).body(proveedor);
     }
 
+    @PutMapping("/{idProveedor}")
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
+    public ResponseEntity<Proveedor> actualizar(@PathVariable Long idProveedor,
+                                                @Valid @RequestBody ProveedorRequest request) {
+        return ResponseEntity.ok(proveedorService.actualizar(idProveedor, request));
+    }
+
     @GetMapping("/{idProveedor}")
     public ResponseEntity<Proveedor> buscarPorId(@PathVariable Long idProveedor) {
         return ResponseEntity.ok(proveedorService.buscarPorId(idProveedor));
