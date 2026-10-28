@@ -106,7 +106,28 @@ public class CloudinaryService {
         return publicId;
     }
 
-    
+    /**
+     * Arma un public_id legible y único para un documento: "a1b2c3d4-nombre-original.pdf".
+     * Se limpian los caracteres raros y se conserva la extensión del archivo original.
+     */
+    private String nombreConExtension(String nombreOriginal) {
+        String nombre = nombreOriginal == null ? "" : nombreOriginal;
+        nombre = nombre.substring(Math.max(nombre.lastIndexOf('/'), nombre.lastIndexOf('\\')) + 1);
+        int punto = nombre.lastIndexOf('.');
+        String base = punto > 0 ? nombre.substring(0, punto) : nombre;
+        String extension = punto > 0 ? nombre.substring(punto + 1).toLowerCase() : "";
+        base = base.replaceAll("[^A-Za-z0-9_-]+", "_");
+        if (base.length() > 60) {
+            base = base.substring(0, 60);
+        }
+        if (base.isBlank()) {
+            base = "documento";
+        }
+        extension = extension.replaceAll("[^a-z0-9]", "");
+        String sufijo = java.util.UUID.randomUUID().toString().substring(0, 8);
+        return sufijo + "-" + base + (extension.isEmpty() ? "" : "." + extension);
+    }
+
     private String subir(MultipartFile archivo, String carpeta, String resourceType) {
         if (archivo == null || archivo.isEmpty()) {
             throw new BusinessException("El archivo está vacío o no es válido");
@@ -118,11 +139,15 @@ public class CloudinaryService {
         }
 
         try {
-            Map<?, ?> resultado = cloudinary.uploader().upload(
-                    archivo.getBytes(),
-                    ObjectUtils.asMap(
-                            "folder", carpeta,
-                            "resource_type", resourceType));
+            Map<String, Object> opciones = new java.util.HashMap<>();
+            opciones.put("folder", carpeta);
+            opciones.put("resource_type", resourceType);
+            if (TIPO_DOCUMENTO.equals(resourceType)) {
+                // Los documentos "raw" no llevan extensión automática: se fija en el public_id
+                // para que la URL termine en .pdf y el navegador pueda abrirla.
+                opciones.put("public_id", nombreConExtension(archivo.getOriginalFilename()));
+            }
+            Map<?, ?> resultado = cloudinary.uploader().upload(archivo.getBytes(), opciones);
 
             Object secureUrl = resultado.get("secure_url");
 
