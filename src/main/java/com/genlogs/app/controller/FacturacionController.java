@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.genlogs.app.dto.CambiarEstadoFacturacionRequest;
 import com.genlogs.app.dto.DetalleFacturacionResponse;
@@ -78,6 +79,12 @@ public class FacturacionController {
     public ResponseEntity<FacturacionResponse> registrarPago(
             @PathVariable Long id, @Valid @RequestBody RegistrarPagoRequest request) {
         return ResponseEntity.ok(facturacionService.registrarPago(id, request));
+    }
+
+    @PostMapping(value = "/{id}/archivo", consumes = "multipart/form-data")
+    public ResponseEntity<FacturacionResponse> agregarArchivo(
+            @PathVariable Long id, @RequestParam("archivo") MultipartFile archivo) {
+        return ResponseEntity.ok(facturacionService.agregarArchivo(id, archivo));
     }
 
     @GetMapping("/{id}/pdf")

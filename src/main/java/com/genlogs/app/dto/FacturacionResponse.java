@@ -30,4 +30,6 @@ public class FacturacionResponse {
     private BigDecimal saldoPendiente;
     private String moneda;
     private String estado;
+    /** URL del documento de SUNAT subido (null si aún no se adjunta). */
+    private String urlArchivo;
 }

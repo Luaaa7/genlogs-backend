@@ -22,6 +22,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.genlogs.app.dto.CambiarEstadoFacturacionRequest;
 import com.genlogs.app.dto.DetalleFacturacionRequest;
@@ -69,6 +70,7 @@ public class FacturacionService {
     private final UsuarioRepository usuarioRepository;
     private final PdfGenerationService pdfGenerationService;
     private final TasaIgvService tasaIgvService;
+    private final CloudinaryService cloudinaryService;
 
     private static final Logger log = LoggerFactory.getLogger(FacturacionService.class);
 
@@ -393,6 +395,35 @@ public class FacturacionService {
                 .orElseThrow(() -> new ResourceNotFoundException("Usuario autenticado no encontrado"));
     }
 
+    /** Sube el documento emitido por SUNAT y lo asocia a la facturación (reemplaza el anterior). */
+    public FacturacionResponse agregarArchivo(Long idFacturacion, MultipartFile archivo) {
+        Facturacion existente = facturacionRepository.findById(idFacturacion)
+                .orElseThrow(() -> new ResourceNotFoundException("Facturación no encontrada"));
+        String urlAnterior = existente.getUrlArchivo();
+
+        // Subida HTTP fuera de la transacción de BD
+        String urlNueva = cloudinaryService.subirDocumento(archivo, "genlogs/facturacion");
+
+        FacturacionResponse response = guardarArchivoFacturacion(idFacturacion, urlNueva);
+
+        if (urlAnterior != null && !urlAnterior.isBlank()) {
+            cloudinaryService.eliminarPorUrl(urlAnterior, CloudinaryService.TIPO_DOCUMENTO);
+        }
+        return response;
+    }
+
+    @Transactional
+    public FacturacionResponse guardarArchivoFacturacion(Long idFacturacion, String url) {
+        Facturacion facturacion = facturacionRepository.findById(idFacturacion)
+                .orElseThrow(() -> new ResourceNotFoundException("Facturación no encontrada"));
+        facturacion.setUrlArchivo(url);
+        Usuario usuario = usuarioActual();
+        facturacion.setUserUpdate(usuario.getNombreUsuario());
+        facturacion.setProcessUpdate("ADJUNTAR_ARCHIVO_FACTURACION");
+        facturacion.setDateUpdate(LocalDateTime.now());
+        return toResponse(facturacionRepository.save(facturacion));
+    }
+
     private FacturacionResponse toResponse(Facturacion f) {
         BigDecimal total = calcularTotal(f);
         BigDecimal pagado = f.getMontoPagado() != null ? f.getMontoPagado() : BigDecimal.ZERO;
@@ -416,6 +447,7 @@ public class FacturacionService {
                 .saldoPendiente(total.subtract(pagado))
                 .moneda(f.getMoneda() != null ? f.getMoneda().getSimbolo() : "S/")
                 .estado(f.getEstadoFacturacion() != null ? f.getEstadoFacturacion().getNombreEstado() : null)
+                .urlArchivo(f.getUrlArchivo())
                 .build();
     }
 
