@@ -114,6 +114,52 @@ public class OrdenCompraService {
         return toResponse(ordenCompra);
     }
 
+    /**
+     * Al aprobar una cotización se registra sola su orden de compra (estado RECIBIDA),
+     * con el siguiente número correlativo (0031-10). Si ya tiene una, no hace nada.
+     */
+    @Transactional
+    public OrdenCompraResponse crearAutomatica(Long idCotizacion) {
+        Cotizacion cotizacion = cotizacionRepository.findById(idCotizacion)
+                .orElseThrow(() -> new ResourceNotFoundException("Cotización no encontrada"));
+        if (!"APROBADA".equals(cotizacion.getEstadoCotizacion().getCodigoEstado())
+                || ordenCompraRepository.existsByCotizacion_IdCotizacionAndStatus(idCotizacion, "A")) {
+            return null;
+        }
+        EstadoOrdenCompra estadoInicial = estadoOrdenCompraRepository.findByCodigoEstado("RECIBIDA")
+                .orElseThrow(() -> new BusinessException("No existe el estado RECIBIDA configurado"));
+        Usuario usuario = usuarioActual();
+
+        OrdenCompra ordenCompra = OrdenCompra.builder()
+                .cotizacion(cotizacion)
+                .estadoOrdenCompra(estadoInicial)
+                .condicionPago(cotizacion.getCondicionPago())
+                .numeroOrdenCompra(siguienteNumero())
+                .observaciones("Registrada automáticamente al aprobar la cotización "
+                        + cotizacion.getCodigoCotizacion() + ".")
+                .build();
+        ordenCompra.setUserCreate(usuario.getNombreUsuario());
+        ordenCompra.setProcessCreate("ALTA_AUTOMATICA_ORDEN_COMPRA");
+        return toResponse(ordenCompraRepository.save(ordenCompra));
+    }
+
+    /** Siguiente número con el formato de las órdenes (0031-10): correlativo de 4 dígitos + "-10". */
+    private String siguienteNumero() {
+        java.util.regex.Pattern formato = java.util.regex.Pattern.compile("^(\\d{4})-\\d+$");
+        int mayor = ordenCompraRepository.todosLosNumeros().stream()
+                .map(n -> n == null ? null : formato.matcher(n.trim()))
+                .filter(m -> m != null && m.matches())
+                .mapToInt(m -> Integer.parseInt(m.group(1)))
+                .max()
+                .orElse(0);
+        String numero = String.format("%04d-10", mayor + 1);
+        while (ordenCompraRepository.findByNumeroOrdenCompra(numero).isPresent()) {
+            mayor++;
+            numero = String.format("%04d-10", mayor + 1);
+        }
+        return numero;
+    }
+
     @Transactional
     public OrdenCompraResponse cambiarEstado(Long idOrdenCompra, CambiarEstadoOrdenCompraRequest request) {
         OrdenCompra ordenCompra = obtenerOLanzar(idOrdenCompra);
