@@ -11,6 +11,20 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import com.genlogs.app.model.Tercero;
+import com.genlogs.app.dto.EmitirFacturaRequest;
+import com.genlogs.app.dto.EnviarCotizacionRequest;
+import com.genlogs.app.dto.EnviarCotizacionResponse;
+import com.genlogs.app.dto.SunatConfigResponse;
+import com.genlogs.app.service.pdf.PdfMarcaAgua;
+import com.genlogs.app.service.sunat.ComprobanteSunat;
+import com.genlogs.app.service.sunat.ResultadoEmisionSunat;
+import com.genlogs.app.service.sunat.SunatService;
+import org.springframework.transaction.support.TransactionTemplate;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import com.genlogs.app.service.pdf.PdfGenerationService;
 import com.genlogs.app.util.PdfUtils;
 import com.genlogs.app.service.pdf.PdfGenerationService.FacturacionPdfData;
@@ -71,6 +85,10 @@ public class FacturacionService {
     private final PdfGenerationService pdfGenerationService;
     private final TasaIgvService tasaIgvService;
     private final CloudinaryService cloudinaryService;
+    private final SunatService sunatService;
+    private final MailService mailService;
+    /** Para preparar el correo en una transacción y enviarlo fuera de ella. */
+    private final TransactionTemplate transactionTemplate;
 
     private static final Logger log = LoggerFactory.getLogger(FacturacionService.class);
 
@@ -166,6 +184,140 @@ public class FacturacionService {
         }
 
         return toResponse(facturacion);
+    }
+
+    /** Modo de emisión y series configuradas (para la pantalla). */
+    public SunatConfigResponse configuracionSunat() {
+        return new SunatConfigResponse(
+                sunatService.modo(),
+                sunatService.esSimulado(),
+                sunatService.serie("FACTURA", "F"),
+                sunatService.serie("BOLETA", "B"));
+    }
+
+    /**
+     * Emite el comprobante desde GENLOGS: el sistema pone la serie y el siguiente
+     * número, lo manda al emisor configurado (SUNAT_MODO) y guarda la respuesta.
+     * Si el emisor lo rechaza, no se guarda nada (rollback) y se informa el motivo.
+     */
+    @Transactional
+    public FacturacionResponse emitir(EmitirFacturaRequest request) {
+        OrdenCompra ordenCompra = ordenCompraRepository.findById(request.getIdOrdenCompra())
+                .orElseThrow(() -> new ResourceNotFoundException("Orden de compra no encontrada"));
+        TipoComprobante tipoComprobante = tipoComprobanteRepository.findById(request.getIdTipoComprobante())
+                .orElseThrow(() -> new ResourceNotFoundException("Tipo de comprobante no encontrado"));
+        CondicionPago condicionPago = condicionPagoRepository.findById(request.getIdCondicionPago())
+                .orElseThrow(() -> new ResourceNotFoundException("Condición de pago no encontrada"));
+        Moneda moneda = monedaRepository.findById(request.getIdMoneda())
+                .orElseThrow(() -> new ResourceNotFoundException("Moneda no encontrada"));
+        EstadoFacturacion estadoInicial = estadoFacturacionRepository.findByCodigoEstado("EMITIDA")
+                .orElseThrow(() -> new BusinessException("No existe el estado EMITIDA configurado"));
+
+        String tipoCodigo = tipoComprobante.getCodigoTipo();
+        if (!"FACTURA".equalsIgnoreCase(tipoCodigo) && !"BOLETA".equalsIgnoreCase(tipoCodigo)) {
+            throw new BusinessException("Desde GENLOGS solo se emiten facturas y boletas. "
+                    + "Las notas de crédito o débito regístralas con el documento de SUNAT.");
+        }
+
+        String serie = sunatService.serie(tipoCodigo, tipoComprobante.getSeriePrefijo());
+        String numero = siguienteNumero(serie);
+        LocalDate fechaEmision = request.getFechaEmision() != null ? request.getFechaEmision() : LocalDate.now();
+        Usuario usuario = usuarioActual();
+
+        Facturacion facturacion = Facturacion.builder()
+                .ordenCompra(ordenCompra)
+                .tipoComprobante(tipoComprobante)
+                .estadoFacturacion(estadoInicial)
+                .condicionPago(condicionPago)
+                .moneda(moneda)
+                .serieComprobante(serie)
+                .numeroComprobante(numero)
+                .fechaEmision(fechaEmision)
+                .fechaVencimiento(request.getFechaVencimiento() != null
+                        ? request.getFechaVencimiento()
+                        : fechaEmision.plusDays(condicionPago.getDiasCredito() != null ? condicionPago.getDiasCredito() : 0))
+                .montoPagado(BigDecimal.ZERO)
+                .porcentajeIgv(tasaIgvService.porcentajeVigente(fechaEmision))
+                .build();
+        facturacion.setUserCreate(usuario.getNombreUsuario());
+        facturacion.setProcessCreate("EMISION_FACTURACION");
+        facturacion = facturacionRepository.save(facturacion);
+
+        List<DetalleFacturacion> lineas = new ArrayList<>();
+        for (DetalleFacturacionRequest lineaReq : request.getLineas()) {
+            lineas.add(detalleFacturacionRepository.save(
+                    construirLinea(facturacion, lineaReq, usuario.getNombreUsuario())));
+        }
+
+        ResultadoEmisionSunat resultado = sunatService.emitir(armarComprobante(facturacion, lineas));
+        if (!resultado.aceptado()) {
+            // La excepción deshace la factura y sus líneas: no queda un número "quemado".
+            throw new BusinessException("SUNAT rechazó el comprobante: " + resultado.mensaje());
+        }
+
+        facturacion.setSunatModo(sunatService.modo());
+        facturacion.setSunatEstado(resultado.estado());
+        facturacion.setSunatMensaje(resultado.mensaje());
+        facturacion.setSunatFechaEnvio(LocalDateTime.now());
+        facturacion = facturacionRepository.save(facturacion);
+        return toResponse(facturacion);
+    }
+
+    /**
+     * Envía el comprobante al correo del cliente. Adjunta el documento de SUNAT
+     * si se subió; si no, el PDF que genera el sistema (con marca de agua si es simulado).
+     * Igual que en cotizaciones: los datos se preparan en una transacción y el
+     * correo (HTTP) sale fuera de ella.
+     */
+    public EnviarCotizacionResponse enviar(Long idFacturacion, EnviarCotizacionRequest request) {
+        if (request == null || request.getCorreoDestinatario() == null || request.getCorreoDestinatario().isBlank()) {
+            return EnviarCotizacionResponse.builder().success(false).mensaje("El correo destinatario es obligatorio.").build();
+        }
+
+        DatosEnvio datos = transactionTemplate.execute(status -> {
+            Facturacion f = obtenerOLanzar(idFacturacion);
+            if ("ANULADA".equalsIgnoreCase(f.getEstadoFacturacion() != null ? f.getEstadoFacturacion().getCodigoEstado() : null)) {
+                throw new BusinessException("No se puede enviar un comprobante anulado.");
+            }
+            String codigo = f.getSerieComprobante() + "-" + f.getNumeroComprobante();
+            return new DatosEnvio(
+                    codigo,
+                    obtenerNombreCliente(f),
+                    cuerpoCorreo(f, codigo, request, true),
+                    cuerpoCorreo(f, codigo, request, false),
+                    f.getUrlArchivo(),
+                    generarPdf(idFacturacion));
+        });
+        if (datos == null) {
+            return EnviarCotizacionResponse.builder().success(false).mensaje("No se pudo preparar el comprobante.").build();
+        }
+
+        // El documento de SUNAT tiene prioridad; si no se puede bajar, va el PDF del sistema.
+        byte[] adjunto = datos.urlDocumento() != null && !datos.urlDocumento().isBlank()
+                ? descargar(datos.urlDocumento())
+                : null;
+        if (adjunto == null) {
+            adjunto = datos.pdfSistema();
+        }
+
+        String destino = request.getCorreoDestinatario().trim();
+        boolean enviado = mailService.enviarCorreo(
+                destino,
+                datos.cliente(),
+                request.getAsunto() != null && !request.getAsunto().isBlank()
+                        ? request.getAsunto().trim()
+                        : "Comprobante " + datos.codigo() + " - GenLogs",
+                datos.html(),
+                datos.texto(),
+                datos.codigo() + ".pdf",
+                adjunto);
+
+        return EnviarCotizacionResponse.builder()
+                .success(enviado)
+                .mensaje(enviado
+                        ? "Comprobante enviado a " + destino
+                        : "No se pudo enviar el correo. Intenta de nuevo o revisa la configuración de correo.")
+                .build();
     }
 
     @Transactional
@@ -275,7 +427,143 @@ public class FacturacionService {
                 f.getObservaciones()
         );
 
-        return pdfGenerationService.generarPdfFacturacion(data);
+        byte[] pdf = pdfGenerationService.generarPdfFacturacion(data);
+        if ("SIMULADO".equalsIgnoreCase(f.getSunatModo())) {
+            pdf = PdfMarcaAgua.aplicar(pdf, "SIMULACIÓN", "SIN VALOR TRIBUTARIO - NO ENVIADA A SUNAT");
+        }
+        return pdf;
+    }
+
+    // ------------------------------------------------------------------
+    // Emisión y envío
+    // ------------------------------------------------------------------
+
+    /** Siguiente correlativo de la serie, con 8 dígitos (00000001). */
+    private String siguienteNumero(String serie) {
+        long mayor = facturacionRepository.numerosPorSerie(serie).stream()
+                .filter(n -> n != null && n.matches("\\d{1,8}"))
+                .mapToLong(Long::parseLong)
+                .max()
+                .orElse(0L);
+        if (mayor >= 99_999_999L) {
+            throw new BusinessException("La serie " + serie + " ya no tiene números disponibles.");
+        }
+        return String.format("%08d", mayor + 1);
+    }
+
+    private ComprobanteSunat armarComprobante(Facturacion f, List<DetalleFacturacion> lineas) {
+        Tercero t = terceroDe(f);
+        BigDecimal subtotal = BigDecimal.ZERO;
+        List<ComprobanteSunat.Linea> items = new ArrayList<>();
+        for (DetalleFacturacion d : lineas) {
+            BigDecimal cant = d.getCantidad() != null ? d.getCantidad() : BigDecimal.ZERO;
+            BigDecimal precio = d.getPrecioUnitario() != null ? d.getPrecioUnitario() : BigDecimal.ZERO;
+            BigDecimal desc = d.getDescuentoUnitario() != null ? d.getDescuentoUnitario() : BigDecimal.ZERO;
+            BigDecimal valor = precio.subtract(desc);
+            BigDecimal importe = cant.multiply(valor).setScale(2, RoundingMode.HALF_UP);
+            subtotal = subtotal.add(importe);
+            String descripcion = d.getDescripcionPersonalizada() != null && !d.getDescripcionPersonalizada().isBlank()
+                    ? d.getDescripcionPersonalizada()
+                    : d.getProducto() != null ? d.getProducto().getNombreProducto()
+                    : d.getServicio() != null ? d.getServicio().getNombreServicio() : "Ítem";
+            // Códigos de unidad de SUNAT: NIU = unidad (bienes), ZZ = servicio.
+            items.add(new ComprobanteSunat.Linea(descripcion, d.getServicio() != null ? "ZZ" : "NIU", cant, valor, importe));
+        }
+        BigDecimal igv = subtotal.multiply(TasaIgvService.comoFactor(f.getPorcentajeIgv())).setScale(2, RoundingMode.HALF_UP);
+
+        return new ComprobanteSunat(
+                f.getTipoComprobante().getCodigoTipo(),
+                f.getSerieComprobante(),
+                f.getNumeroComprobante(),
+                f.getFechaEmision(),
+                f.getFechaVencimiento(),
+                sunatService.rucEmisor(),
+                t != null && t.getTipoDocumento() != null ? t.getTipoDocumento().getCodigoTipo() : null,
+                t != null ? t.getNumeroDocumento() : null,
+                t != null ? t.getRazonSocial() : null,
+                t != null ? t.getDireccion() : null,
+                t != null ? t.getCorreo() : null,
+                f.getMoneda() != null ? f.getMoneda().getCodigoMoneda() : "PEN",
+                f.getCondicionPago() != null ? f.getCondicionPago().getNombreCondicion() : null,
+                f.getPorcentajeIgv(),
+                subtotal,
+                igv,
+                subtotal.add(igv),
+                items);
+    }
+
+    private Tercero terceroDe(Facturacion f) {
+        OrdenCompra oc = f.getOrdenCompra();
+        return oc != null && oc.getCotizacion() != null && oc.getCotizacion().getCliente() != null
+                ? oc.getCotizacion().getCliente().getTercero()
+                : null;
+    }
+
+    private String cuerpoCorreo(Facturacion f, String codigo, EnviarCotizacionRequest request, boolean html) {
+        String mensaje = request.getMensaje() != null ? request.getMensaje().trim() : "";
+        String tipo = f.getTipoComprobante() != null ? f.getTipoComprobante().getNombreTipo() : "Comprobante";
+        String moneda = PdfUtils.codigoMoneda(f.getMoneda());
+        String total = moneda + " " + PdfUtils.formatearMonto(calcularTotal(f));
+        String vence = f.getFechaVencimiento() != null ? f.getFechaVencimiento().format(FMT_FECHA) : "-";
+        String emitida = f.getFechaEmision() != null ? f.getFechaEmision().format(FMT_FECHA) : "-";
+        boolean simulado = "SIMULADO".equalsIgnoreCase(f.getSunatModo());
+
+        if (!html) {
+            return (mensaje.isEmpty() ? "" : mensaje + "\n\n")
+                    + tipo + " " + codigo + " — " + obtenerNombreCliente(f) + "\n"
+                    + "Emitida: " + emitida + " · Vence: " + vence + "\n"
+                    + (request.isIncluirDetalles() ? "Total: " + total + "\n" : "")
+                    + (simulado ? "\nDocumento de prueba (simulación): no tiene valor tributario.\n" : "")
+                    + "\nAdjuntamos el comprobante en PDF.\n\nGenLogs S.A.C. - General Logistic Solutions";
+        }
+        return "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:22px;color:#1F2937;max-width:560px;\">"
+                + (mensaje.isEmpty() ? "" : "<p style=\"margin:0 0 18px 0;\">" + escaparHtml(mensaje).replace("\n", "<br>") + "</p>")
+                + "<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"border:1px solid #E5E7EB;border-radius:8px;margin:0 0 18px 0;\">"
+                + fila(escaparHtml(tipo), escaparHtml(codigo))
+                + fila("Cliente", escaparHtml(obtenerNombreCliente(f)))
+                + fila("Emitida", emitida)
+                + fila("Vence", vence)
+                + (request.isIncluirDetalles() ? fila("Total", "<strong>" + escaparHtml(total) + "</strong>") : "")
+                + "</table>"
+                + (simulado ? "<p style=\"margin:0 0 18px 0;color:#B91C1C;\"><strong>Documento de prueba (simulación):</strong> no tiene valor tributario.</p>" : "")
+                + "<p style=\"margin:0 0 18px 0;\">Adjuntamos el comprobante en PDF.</p>"
+                + "<p style=\"margin:0;font-size:12px;color:#6B7280;\">GenLogs S.A.C. · General Logistic Solutions</p>"
+                + "</div>";
+    }
+
+    private static String fila(String etiqueta, String valorHtml) {
+        return "<tr><td style=\"padding:6px 14px;color:#6B7280;\">" + etiqueta + "</td>"
+                + "<td style=\"padding:6px 14px;\">" + valorHtml + "</td></tr>";
+    }
+
+    private static String escaparHtml(String s) {
+        return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
+    }
+
+    private static final HttpClient HTTP = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .build();
+
+    /** Baja el documento de SUNAT subido a Cloudinary; null si no se puede. */
+    private byte[] descargar(String url) {
+        try {
+            HttpResponse<byte[]> r = HTTP.send(
+                    HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(20)).GET().build(),
+                    HttpResponse.BodyHandlers.ofByteArray());
+            if (r.statusCode() == 200 && r.body() != null && r.body().length > 0) {
+                return r.body();
+            }
+            log.warn("No se pudo bajar el documento {} (HTTP {}): se adjunta el PDF del sistema", url, r.statusCode());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            log.warn("No se pudo bajar el documento {}: {}", url, e.getMessage());
+        }
+        return null;
+    }
+
+    private record DatosEnvio(String codigo, String cliente, String html, String texto, String urlDocumento, byte[] pdfSistema) {
     }
 
     
@@ -448,6 +736,10 @@ public class FacturacionService {
                 .moneda(f.getMoneda() != null ? f.getMoneda().getSimbolo() : "S/")
                 .estado(f.getEstadoFacturacion() != null ? f.getEstadoFacturacion().getNombreEstado() : null)
                 .urlArchivo(f.getUrlArchivo())
+                .sunatModo(f.getSunatModo())
+                .sunatEstado(f.getSunatEstado())
+                .sunatMensaje(f.getSunatMensaje())
+                .clienteEmail(terceroDe(f) != null ? terceroDe(f).getCorreo() : null)
                 .build();
     }
 
