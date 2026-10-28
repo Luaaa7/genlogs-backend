@@ -16,6 +16,9 @@ import com.genlogs.app.model.Facturacion;
 public interface FacturacionRepository extends JpaRepository<Facturacion, Long> {
     Optional<Facturacion> findBySerieComprobanteAndNumeroComprobante(String serie, String numero);
 
+    /** true si la orden tiene algún comprobante que no esté anulado. */
+    boolean existsByOrdenCompra_IdOrdenCompraAndEstadoFacturacion_CodigoEstadoNot(Long idOrdenCompra, String codigoEstado);
+
     /** Números ya usados en una serie, para dar el siguiente correlativo al emitir. */
     @Query("SELECT f.numeroComprobante FROM Facturacion f WHERE f.serieComprobante = :serie")
     List<String> numerosPorSerie(@Param("serie") String serie);

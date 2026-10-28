@@ -25,6 +25,7 @@ import com.genlogs.app.model.OrdenCompra;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.CondicionPagoRepository;
 import com.genlogs.app.repository.CotizacionRepository;
+import com.genlogs.app.repository.FacturacionRepository;
 import com.genlogs.app.repository.EstadoOrdenCompraRepository;
 import com.genlogs.app.repository.OrdenCompraRepository;
 import com.genlogs.app.repository.UsuarioRepository;
@@ -41,6 +42,7 @@ public class OrdenCompraService {
     private final CondicionPagoRepository condicionPagoRepository;
     private final UsuarioRepository usuarioRepository;
     private final CloudinaryService cloudinaryService;
+    private final FacturacionRepository facturacionRepository;
 
     @Transactional(readOnly = true)
     public PaginaResponse<OrdenCompraResponse> listar(String estadoCodigo, Long idCotizacion, int page, int size) {
@@ -119,8 +121,21 @@ public class OrdenCompraService {
         EstadoOrdenCompra nuevoEstado = estadoOrdenCompraRepository.findByCodigoEstado(request.getCodigoEstado())
                 .orElseThrow(() -> new ResourceNotFoundException("Estado no encontrado: " + request.getCodigoEstado()));
 
-        if (Boolean.TRUE.equals(ordenCompra.getEstadoOrdenCompra().getEsFinal())) {
-            throw new BusinessException("No se puede cambiar el estado de una orden de compra ya finalizada");
+        // Atendida y Anulada son finales: solo un ADMINISTRADOR puede corregirlas
+        // (por ejemplo, si se marcó por error).
+        if (Boolean.TRUE.equals(ordenCompra.getEstadoOrdenCompra().getEsFinal()) && !esAdministrador()) {
+            throw new BusinessException(
+                    "La orden ya está " + ordenCompra.getEstadoOrdenCompra().getNombreEstado().toLowerCase()
+                            + ". Solo un administrador puede corregir su estado.");
+        }
+
+        // Una orden que ya tiene factura vigente no puede anularse ni volver atrás:
+        // primero hay que anular la factura.
+        boolean conFactura = facturacionRepository
+                .existsByOrdenCompra_IdOrdenCompraAndEstadoFacturacion_CodigoEstadoNot(idOrdenCompra, "ANULADA");
+        if (conFactura && !"ATENDIDA".equalsIgnoreCase(nuevoEstado.getCodigoEstado())) {
+            throw new BusinessException(
+                    "Esta orden ya tiene una factura. Para cambiar su estado, primero anula la factura.");
         }
 
         ordenCompra.setEstadoOrdenCompra(nuevoEstado);
@@ -135,6 +150,12 @@ public class OrdenCompraService {
 
         ordenCompra = ordenCompraRepository.save(ordenCompra);
         return toResponse(ordenCompra);
+    }
+
+    private static boolean esAdministrador() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMINISTRADOR".equals(a.getAuthority()));
     }
 
     public OrdenCompraResponse agregarArchivo(Long idOrdenCompra, MultipartFile archivo) {
