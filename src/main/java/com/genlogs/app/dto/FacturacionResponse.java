@@ -32,4 +32,10 @@ public class FacturacionResponse {
     private String estado;
     /** URL del documento de SUNAT subido (null si aún no se adjunta). */
     private String urlArchivo;
+    /** SIMULADO / PROVEEDOR, o null si se registró una factura ya emitida en SUNAT. */
+    private String sunatModo;
+    private String sunatEstado;
+    private String sunatMensaje;
+    /** Correo del cliente, para precargar "Enviar al cliente". */
+    private String clienteEmail;
 }

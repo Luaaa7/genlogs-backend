@@ -18,6 +18,10 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.genlogs.app.dto.CambiarEstadoFacturacionRequest;
 import com.genlogs.app.dto.DetalleFacturacionResponse;
+import com.genlogs.app.dto.EmitirFacturaRequest;
+import com.genlogs.app.dto.EnviarCotizacionRequest;
+import com.genlogs.app.dto.EnviarCotizacionResponse;
+import com.genlogs.app.dto.SunatConfigResponse;
 import com.genlogs.app.dto.FacturacionRequest;
 import com.genlogs.app.dto.FacturacionResponse;
 import com.genlogs.app.dto.PaginaResponse;
@@ -67,6 +71,25 @@ public class FacturacionController {
     @PostMapping
     public ResponseEntity<FacturacionResponse> crear(@Valid @RequestBody FacturacionRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(facturacionService.crear(request));
+    }
+
+    /** Modo de emisión (SIMULADO / PROVEEDOR) y series, para mostrarlo en pantalla. */
+    @GetMapping("/sunat")
+    public ResponseEntity<SunatConfigResponse> configuracionSunat() {
+        return ResponseEntity.ok(facturacionService.configuracionSunat());
+    }
+
+    /** Emite desde GENLOGS: el sistema pone serie y número y lo manda al emisor configurado. */
+    @PostMapping("/emitir")
+    public ResponseEntity<FacturacionResponse> emitir(@Valid @RequestBody EmitirFacturaRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(facturacionService.emitir(request));
+    }
+
+    /** Envía el comprobante al cliente por correo con el PDF adjunto. */
+    @PostMapping("/{id}/enviar")
+    public ResponseEntity<EnviarCotizacionResponse> enviar(
+            @PathVariable Long id, @Valid @RequestBody EnviarCotizacionRequest request) {
+        return ResponseEntity.ok(facturacionService.enviar(id, request));
     }
 
     @PatchMapping("/{id}/estado")

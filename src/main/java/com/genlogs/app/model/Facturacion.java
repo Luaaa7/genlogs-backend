@@ -75,6 +75,23 @@ public class Facturacion extends Auditable {
     @Column(name = "url_archivo", columnDefinition = "TEXT")
     private String urlArchivo;
 
+    /**
+     * Cómo se emitió: SIMULADO (emisión de prueba, sin valor tributario), PROVEEDOR (real, por OSE/PSE)
+     * o null si se registró una factura que ya se había emitido en el portal de SUNAT.
+     */
+    @Column(name = "sunat_modo", length = 20)
+    private String sunatModo;
+
+    /** Respuesta de SUNAT (o de la simulación): ACEPTADA / RECHAZADA. */
+    @Column(name = "sunat_estado", length = 20)
+    private String sunatEstado;
+
+    @Column(name = "sunat_mensaje", columnDefinition = "TEXT")
+    private String sunatMensaje;
+
+    @Column(name = "sunat_fecha_envio")
+    private java.time.LocalDateTime sunatFechaEnvio;
+
     /** % de IGV con que se emitió (18.00). Un cambio de tasa no altera facturas anteriores. */
     @Column(name = "porcentaje_igv", nullable = false, precision = 5, scale = 2)
     @Builder.Default

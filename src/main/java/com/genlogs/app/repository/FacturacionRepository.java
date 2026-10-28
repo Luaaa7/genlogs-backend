@@ -16,6 +16,10 @@ import com.genlogs.app.model.Facturacion;
 public interface FacturacionRepository extends JpaRepository<Facturacion, Long> {
     Optional<Facturacion> findBySerieComprobanteAndNumeroComprobante(String serie, String numero);
 
+    /** Números ya usados en una serie, para dar el siguiente correlativo al emitir. */
+    @Query("SELECT f.numeroComprobante FROM Facturacion f WHERE f.serieComprobante = :serie")
+    List<String> numerosPorSerie(@Param("serie") String serie);
+
     @Query("SELECT f FROM Facturacion f WHERE f.ordenCompra.cotizacion.cliente.idCliente = :idCliente AND f.status = 'A' ORDER BY f.fechaEmision DESC")
     List<Facturacion> findByCliente(@Param("idCliente") Long idCliente);
 
