@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -24,6 +25,7 @@ public class ServicioImagenController {
         return ResponseEntity.ok(servicioImagenService.listarPorServicio(idServicio));
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
     @PostMapping(consumes = "multipart/form-data")
     public ResponseEntity<Void> subirImagen(@PathVariable Long idServicio,
                                            @RequestParam("archivo") MultipartFile archivo,
@@ -32,6 +34,7 @@ public class ServicioImagenController {
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
     @PostMapping(consumes = "application/json")
     public ResponseEntity<ServicioImagen> registrar(@PathVariable Long idServicio,
                                                     @Valid @RequestBody ServicioImagen nueva) {
@@ -39,6 +42,7 @@ public class ServicioImagenController {
         return ResponseEntity.status(HttpStatus.CREATED).body(creada);
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
     @DeleteMapping("/{idServicioImagen}")
     public ResponseEntity<Void> eliminar(@PathVariable Long idServicio,
                                           @PathVariable Long idServicioImagen) {

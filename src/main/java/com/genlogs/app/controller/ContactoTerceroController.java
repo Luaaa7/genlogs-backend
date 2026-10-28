@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -32,6 +33,7 @@ public class ContactoTerceroController {
         return ResponseEntity.ok(contactoTerceroService.listarPorTercero(idTercero));
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
     @PostMapping("/terceros/{idTercero}/contactos")
     public ResponseEntity<ContactoTerceroResponse> crear(
             @PathVariable Long idTercero, @Valid @RequestBody ContactoTerceroRequest request) {
@@ -39,12 +41,14 @@ public class ContactoTerceroController {
                 .body(contactoTerceroService.crear(idTercero, request));
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
     @PutMapping("/contactos/{idContacto}")
     public ResponseEntity<ContactoTerceroResponse> actualizar(
             @PathVariable Long idContacto, @Valid @RequestBody ContactoTerceroRequest request) {
         return ResponseEntity.ok(contactoTerceroService.actualizar(idContacto, request));
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
     @DeleteMapping("/contactos/{idContacto}")
     public ResponseEntity<Void> eliminar(@PathVariable Long idContacto) {
         contactoTerceroService.eliminar(idContacto);

@@ -12,6 +12,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -84,6 +85,7 @@ public class CotizacionController {
      * (estadoCotizacion, clienteId, moneda, page, size, sortBy, sortDir)
      * coinciden con CotizacionesFilterParams del frontend.
      */
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
     @GetMapping
     public ResponseEntity<PaginaResponse<CotizacionResponse>> listar(
             @RequestParam(required = false) String estadoCotizacion,
@@ -125,16 +127,19 @@ public class CotizacionController {
         return Sort.by(direction, atributo);
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
     @GetMapping("/{id}")
     public ResponseEntity<CotizacionResponse> buscarPorId(@PathVariable Long id) {
         return ResponseEntity.ok(cotizacionService.buscarPorId(id));
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
     @GetMapping("/codigo/{codigo}")
     public ResponseEntity<CotizacionResponse> buscarPorCodigo(@PathVariable String codigo) {
         return ResponseEntity.ok(cotizacionService.buscarPorCodigo(codigo));
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
     @GetMapping("/cliente/{idCliente}")
     public ResponseEntity<PaginaResponse<CotizacionResponse>> listarPorCliente(
             @PathVariable Long idCliente,
@@ -145,16 +150,19 @@ public class CotizacionController {
         return ResponseEntity.ok(cotizacionService.listar(null, idCliente, null, pageable));
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
     @GetMapping("/{id}/lineas")
     public ResponseEntity<List<CotizacionDetalleResponse>> listarLineas(@PathVariable Long id) {
         return ResponseEntity.ok(cotizacionService.listarLineas(id));
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
     @GetMapping("/{id}/seguimiento")
     public ResponseEntity<List<SeguimientoCotizacionResponse>> listarSeguimiento(@PathVariable Long id) {
         return ResponseEntity.ok(cotizacionService.listarSeguimiento(id));
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
     @GetMapping("/{id}/adjuntos")
     public ResponseEntity<List<AdjuntoCotizacionResponse>> listarAdjuntos(@PathVariable Long id) {
         return ResponseEntity.ok(cotizacionService.listarAdjuntos(id));
@@ -167,16 +175,19 @@ public class CotizacionController {
      * literal "estadisticas" sobre la variable {id}, así que no hay riesgo
      * de que "estadisticas" se intente parsear como Long.
      */
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
     @GetMapping("/estadisticas")
     public ResponseEntity<EstadisticasCotizacionResponse> obtenerEstadisticas() {
         return ResponseEntity.ok(cotizacionService.obtenerEstadisticas());
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
     @PostMapping
     public ResponseEntity<CotizacionResponse> crear(@Valid @RequestBody CotizacionRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(cotizacionService.crear(request));
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO')")
     @PatchMapping("/{id}/estado")
     public ResponseEntity<CotizacionResponse> cambiarEstado(
             @PathVariable Long id, @Valid @RequestBody CambiarEstadoCotizacionRequest request) {
@@ -193,18 +204,21 @@ public class CotizacionController {
         return ResponseEntity.ok(respuesta);
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
     @PostMapping(value = "/{id}/adjuntos", consumes = "multipart/form-data")
     public ResponseEntity<AdjuntoCotizacionResponse> agregarAdjunto(
             @PathVariable Long id, @RequestParam("archivo") MultipartFile archivo) {
         return ResponseEntity.status(HttpStatus.CREATED).body(cotizacionService.agregarAdjunto(id, archivo));
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
     @DeleteMapping("/{idCotizacion}/adjuntos/{idAdjunto}")
     public ResponseEntity<Void> eliminarAdjunto(@PathVariable Long idCotizacion, @PathVariable Long idAdjunto) {
         cotizacionService.eliminarAdjunto(idCotizacion, idAdjunto);
         return ResponseEntity.noContent().build();
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
     @PostMapping("/{id}/enviar")
     public ResponseEntity<EnviarCotizacionResponse> enviar(
             @PathVariable Long id, @Valid @RequestBody EnviarCotizacionRequest request) {
@@ -212,6 +226,7 @@ public class CotizacionController {
     }
 
     // Alias /pdf para compatibilidad total con frontend
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
     @GetMapping(value = {"/{id}/descargar-pdf", "/{id}/pdf"})
     public ResponseEntity<byte[]> descargarPdf(@PathVariable Long id) {
         byte[] pdf = cotizacionService.descargarPdf(id);
@@ -221,6 +236,7 @@ public class CotizacionController {
                 .body(pdf);
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
     @PostMapping("/{id}/duplicar")
     public ResponseEntity<CotizacionResponse> duplicar(@PathVariable Long id) {
         return ResponseEntity.status(HttpStatus.CREATED).body(cotizacionService.duplicar(id));

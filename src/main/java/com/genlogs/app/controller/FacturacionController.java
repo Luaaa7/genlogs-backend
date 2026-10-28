@@ -6,6 +6,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -68,6 +69,7 @@ public class FacturacionController {
         return ResponseEntity.ok(facturacionService.listarDetalle(id));
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','CONTADOR_GENERAL')")
     @PostMapping
     public ResponseEntity<FacturacionResponse> crear(@Valid @RequestBody FacturacionRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(facturacionService.crear(request));
@@ -80,30 +82,35 @@ public class FacturacionController {
     }
 
     /** Emite desde GENLOGS: el sistema pone serie y número y lo manda al emisor configurado. */
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','CONTADOR_GENERAL')")
     @PostMapping("/emitir")
     public ResponseEntity<FacturacionResponse> emitir(@Valid @RequestBody EmitirFacturaRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(facturacionService.emitir(request));
     }
 
     /** Envía el comprobante al cliente por correo con el PDF adjunto. */
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','CONTADOR_GENERAL')")
     @PostMapping("/{id}/enviar")
     public ResponseEntity<EnviarCotizacionResponse> enviar(
             @PathVariable Long id, @Valid @RequestBody EnviarCotizacionRequest request) {
         return ResponseEntity.ok(facturacionService.enviar(id, request));
     }
 
+    @PreAuthorize("hasRole('ADMINISTRADOR')")
     @PatchMapping("/{id}/estado")
     public ResponseEntity<FacturacionResponse> cambiarEstado(
             @PathVariable Long id, @Valid @RequestBody CambiarEstadoFacturacionRequest request) {
         return ResponseEntity.ok(facturacionService.cambiarEstado(id, request));
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','CONTADOR_GENERAL')")
     @PatchMapping("/{id}/pago")
     public ResponseEntity<FacturacionResponse> registrarPago(
             @PathVariable Long id, @Valid @RequestBody RegistrarPagoRequest request) {
         return ResponseEntity.ok(facturacionService.registrarPago(id, request));
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','CONTADOR_GENERAL')")
     @PostMapping(value = "/{id}/archivo", consumes = "multipart/form-data")
     public ResponseEntity<FacturacionResponse> agregarArchivo(
             @PathVariable Long id, @RequestParam("archivo") MultipartFile archivo) {

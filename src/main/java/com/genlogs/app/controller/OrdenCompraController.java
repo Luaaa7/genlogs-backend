@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -38,6 +39,7 @@ public class OrdenCompraController {
     private final OrdenCompraService ordenCompraService;
     private final FacturacionService facturacionService;
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
     @GetMapping
     public ResponseEntity<PaginaResponse<OrdenCompraResponse>> listar(
             @RequestParam(required = false) String estadoCodigo,
@@ -47,26 +49,31 @@ public class OrdenCompraController {
         return ResponseEntity.ok(ordenCompraService.listar(estadoCodigo, idCotizacion, page, size));
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
     @GetMapping("/{id}")
     public ResponseEntity<OrdenCompraResponse> buscarPorId(@PathVariable Long id) {
         return ResponseEntity.ok(ordenCompraService.buscarPorId(id));
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
     @GetMapping("/numero/{numero}")
     public ResponseEntity<OrdenCompraResponse> buscarPorNumero(@PathVariable String numero) {
         return ResponseEntity.ok(ordenCompraService.buscarPorNumero(numero));
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
     @GetMapping("/cliente/{idCliente}")
     public ResponseEntity<List<OrdenCompraResponse>> listarPorCliente(@PathVariable Long idCliente) {
         return ResponseEntity.ok(ordenCompraService.listarPorCliente(idCliente));
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO')")
     @PostMapping
     public ResponseEntity<OrdenCompraResponse> crear(@Valid @RequestBody OrdenCompraRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(ordenCompraService.crear(request));
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO')")
     @PatchMapping("/{id}/estado")
     public ResponseEntity<OrdenCompraResponse> cambiarEstado(
             @PathVariable Long id, @Valid @RequestBody CambiarEstadoOrdenCompraRequest request) {
@@ -89,6 +96,7 @@ public class OrdenCompraController {
         return ResponseEntity.ok(respuesta);
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO')")
     @PostMapping(value = "/{id}/archivo", consumes = "multipart/form-data")
     public ResponseEntity<OrdenCompraResponse> agregarArchivo(
             @PathVariable Long id, @RequestParam("archivo") MultipartFile archivo) {

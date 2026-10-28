@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -35,18 +36,21 @@ public class ServicioController {
         return ResponseEntity.ok(servicioService.buscarPorId(id));
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
     @PostMapping
     public ResponseEntity<Servicio> registrar(@Valid @RequestBody Servicio nuevo) {
         Servicio creado = servicioService.registrar(nuevo);
         return ResponseEntity.status(HttpStatus.CREATED).body(creado);
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
     @PutMapping("/{id}")
     public ResponseEntity<Servicio> actualizar(@PathVariable Long id,
                                                 @Valid @RequestBody Servicio datos) {
         return ResponseEntity.ok(servicioService.actualizar(id, datos));
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Long id) {
         servicioService.desactivar(id);
