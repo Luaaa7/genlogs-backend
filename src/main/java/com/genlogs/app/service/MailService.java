@@ -5,6 +5,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Base64;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -88,6 +89,15 @@ public class MailService {
      * {@link #enviarRecuperacion(String, String, String)}.</p>
      */
     public boolean enviarCorreo(String destino, String nombreDestino, String asunto, String htmlContent, String textContent) {
+        return enviarCorreo(destino, nombreDestino, asunto, htmlContent, textContent, null, null);
+    }
+
+    /**
+     * Igual que el anterior, con un archivo adjunto (p. ej. el PDF de la cotización).
+     * Si {@code adjunto} es null o vacío, el correo sale sin adjunto.
+     */
+    public boolean enviarCorreo(String destino, String nombreDestino, String asunto, String htmlContent, String textContent,
+                                String nombreAdjunto, byte[] adjunto) {
         if (apiKey == null || apiKey.isBlank() || fromEmail == null || fromEmail.isBlank()) {
             log.warn("BREVO_API_KEY o MAIL_FROM_EMAIL no configuradas. No se envió el correo '{}' a {}.", asunto, destino);
             return false;
@@ -108,12 +118,16 @@ public class MailService {
                 + "\"subject\":" + jsonString(asunto) + ","
                 + "\"htmlContent\":" + jsonString(htmlContent) + ","
                 + "\"textContent\":" + jsonString(textContent)
+                + (adjunto != null && adjunto.length > 0
+                        ? ",\"attachment\":[{\"name\":" + jsonString(nombreAdjunto != null ? nombreAdjunto : "adjunto.pdf")
+                          + ",\"content\":\"" + Base64.getEncoder().encodeToString(adjunto) + "\"}]"
+                        : "")
                 + "}";
 
         try {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create("https://api.brevo.com/v3/smtp/email"))
-                    .timeout(Duration.ofSeconds(15))
+                    .timeout(Duration.ofSeconds(30))
                     .header("api-key", apiKey)
                     .header("accept", "application/json")
                     .header("Content-Type", "application/json")

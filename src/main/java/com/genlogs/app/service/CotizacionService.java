@@ -411,7 +411,9 @@ public class CotizacionService {
                     obtenerNombreCliente(cotizacion),
                     construirCuerpoCorreo(cotizacion, request, false),
                     construirCuerpoCorreo(cotizacion, request, true),
-                    usuarioActual());
+                    usuarioActual(),
+                    nombreArchivoPdf(cotizacion),
+                    descargarPdf(idCotizacion));
         });
 
         if (datos == null) {
@@ -425,12 +427,15 @@ public class CotizacionService {
         String destinatarioLimpio =
                 request.getCorreoDestinatario().trim();
 
+        // El PDF de la cotización va adjunto, igual que el que se descarga.
         boolean enviado = mailService.enviarCorreo(
                 destinatarioLimpio,
                 datos.nombreCliente(),
                 request.getAsunto(),
                 datos.cuerpoHtml(),
-                datos.cuerpoTexto());
+                datos.cuerpoTexto(),
+                datos.nombrePdf(),
+                datos.pdf());
 
         if (enviado) {
             Usuario usuario = datos.usuario();
@@ -1361,49 +1366,62 @@ public class CotizacionService {
                         ? totales.getTotal()
                         : BigDecimal.ZERO;
 
-        // "USD 4,209.30" / "PEN 9,569.80": mismo formato que la pantalla y el PDF.
         String totalStr = PdfUtils.formatearMonto(total);
-
         String simbolo = PdfUtils.codigoMoneda(c.getMoneda());
 
-        StringBuilder sb = new StringBuilder();
-
-        if (request.getMensaje() != null
-                && !request.getMensaje().isBlank()) {
-
-            sb.append(request.getMensaje())
-                    .append(html ? "<br><br>" : "\n\n");
-        }
-
-        sb.append("Cotización ")
-                .append(c.getCodigoCotizacion())
-                .append(" — ")
-                .append(obtenerNombreCliente(c));
-
-        sb.append(html ? "<br>" : "\n");
-
+        String codigo = c.getCodigoCotizacion() != null ? c.getCodigoCotizacion() : "-";
+        String cliente = obtenerNombreCliente(c);
         String fechaCot = c.getFechaCotizacion() != null
                 ? c.getFechaCotizacion().format(FMT_FECHA)
                 : "-";
-
         String fechaVal = c.getFechaValidez() != null
                 ? c.getFechaValidez().format(FMT_FECHA)
                 : "-";
+        String mensaje = request.getMensaje() != null ? request.getMensaje().trim() : "";
 
-        sb.append("Fecha: ")
-                .append(fechaCot)
-                .append(" · Válida hasta: ")
-                .append(fechaVal);
-
-        if (request.isIncluirDetalles()) {
-            sb.append(html ? "<br>" : "\n")
-                    .append("Total: ")
-                    .append(simbolo)
-                    .append(" ")
-                    .append(totalStr);
+        if (!html) {
+            StringBuilder sb = new StringBuilder();
+            if (!mensaje.isEmpty()) {
+                sb.append(mensaje).append("\n\n");
+            }
+            sb.append("Cotización ").append(codigo).append(" — ").append(cliente).append("\n")
+                    .append("Fecha: ").append(fechaCot).append(" · Válida hasta: ").append(fechaVal);
+            if (request.isIncluirDetalles()) {
+                sb.append("\nTotal: ").append(simbolo).append(" ").append(totalStr);
+            }
+            sb.append("\n\nAdjuntamos la cotización en PDF.\n\nGenLogs S.A.C. - General Logistic Solutions");
+            return sb.toString();
         }
 
-        return sb.toString();
+        // HTML: el mensaje lo escribe el usuario, así que se escapa y se respetan sus saltos de línea.
+        StringBuilder filas = new StringBuilder()
+                .append(filaCorreo("Cotización", escaparHtml(codigo)))
+                .append(filaCorreo("Cliente", escaparHtml(cliente)))
+                .append(filaCorreo("Fecha", fechaCot))
+                .append(filaCorreo("Válida hasta", fechaVal));
+        if (request.isIncluirDetalles()) {
+            filas.append(filaCorreo("Total", "<strong>" + escaparHtml(simbolo + " " + totalStr) + "</strong>"));
+        }
+
+        return "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:22px;color:#1F2937;max-width:560px;\">"
+                + (mensaje.isEmpty() ? "" : "<p style=\"margin:0 0 18px 0;\">" + escaparHtml(mensaje).replace("\n", "<br>") + "</p>")
+                + "<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" "
+                + "style=\"border:1px solid #E5E7EB;border-radius:8px;margin:0 0 18px 0;\">" + filas + "</table>"
+                + "<p style=\"margin:0 0 18px 0;\">Adjuntamos la cotización en PDF.</p>"
+                + "<p style=\"margin:0;font-size:12px;color:#6B7280;\">GenLogs S.A.C. · General Logistic Solutions</p>"
+                + "</div>";
+    }
+
+    private static String filaCorreo(String etiqueta, String valorHtml) {
+        return "<tr><td style=\"padding:6px 14px;color:#6B7280;\">" + etiqueta + "</td>"
+                + "<td style=\"padding:6px 14px;\">" + valorHtml + "</td></tr>";
+    }
+
+    private static String escaparHtml(String s) {
+        if (s == null) {
+            return "";
+        }
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 
     private String obtenerNombreCliente(Cotizacion c) {
@@ -1514,6 +1532,16 @@ public class CotizacionService {
             String nombreCliente,
             String cuerpoTexto,
             String cuerpoHtml,
-            Usuario usuario) {
+            Usuario usuario,
+            String nombrePdf,
+            byte[] pdf) {
+    }
+
+    /** "Cotizacion-20261028-01ADM.pdf" (sin tildes ni espacios para los clientes de correo). */
+    private static String nombreArchivoPdf(Cotizacion c) {
+        String codigo = c.getCodigoCotizacion() != null && !c.getCodigoCotizacion().isBlank()
+                ? c.getCodigoCotizacion()
+                : String.valueOf(c.getIdCotizacion());
+        return "Cotizacion-" + codigo.replaceAll("[^A-Za-z0-9_-]", "") + ".pdf";
     }
 }
