@@ -27,6 +27,13 @@ public class ClienteController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
+    @PutMapping("/{idCliente}")
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
+    public ResponseEntity<ClienteResponse> actualizar(@PathVariable Long idCliente,
+                                                      @Valid @RequestBody ClienteRequest request) {
+        return ResponseEntity.ok(clienteService.actualizar(idCliente, request));
+    }
+
     @GetMapping("/{idCliente}")
     public ResponseEntity<ClienteResponse> buscarPorId(@PathVariable Long idCliente) {
         return ResponseEntity.ok(clienteService.buscarPorId(idCliente));

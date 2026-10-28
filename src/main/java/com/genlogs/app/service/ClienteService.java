@@ -73,6 +73,55 @@ public class ClienteService {
         return toResponse(cliente);
     }
 
+    /**
+     * Edita un cliente: los datos del tercero (documento, razón social, distrito,
+     * dirección, teléfono, correo) y el sector económico. Como el tercero es el
+     * mismo para el rol de proveedor, el cambio también se ve allí.
+     */
+    @Transactional
+    public ClienteResponse actualizar(Long idCliente, ClienteRequest request) {
+        Cliente cliente = clienteRepository.findById(idCliente)
+                .orElseThrow(() -> new ResourceNotFoundException("Cliente no encontrado"));
+
+        TipoDocumento tipoDocumento = tipoDocumentoRepository.findById(request.getIdTipoDocumento())
+                .orElseThrow(() -> new ResourceNotFoundException("Tipo de documento no existe"));
+        String numeroDocumento = request.getNumeroDocumento().trim();
+        validarLongitudDocumento(tipoDocumento, numeroDocumento);
+
+        Tercero tercero = cliente.getTercero();
+
+        // Si cambió el documento, no puede ser el de otro tercero ya registrado.
+        terceroRepository
+                .findByTipoDocumento_IdTipoDocumentoAndNumeroDocumento(request.getIdTipoDocumento(), numeroDocumento)
+                .filter(otro -> !otro.getIdTercero().equals(tercero.getIdTercero()))
+                .ifPresent(otro -> {
+                    throw new BusinessException("Ya existe otro cliente o proveedor con ese documento");
+                });
+
+        Distrito distrito = distritoRepository.findById(request.getIdDistrito())
+                .orElseThrow(() -> new ResourceNotFoundException("Distrito no existe"));
+        SectorEconomico sector = sectorEconomicoRepository.findById(request.getIdSectorEconomico())
+                .orElseThrow(() -> new ResourceNotFoundException("Sector económico no existe"));
+
+        tercero.setTipoDocumento(tipoDocumento);
+        tercero.setNumeroDocumento(numeroDocumento);
+        tercero.setRazonSocial(request.getRazonSocial().trim());
+        tercero.setDistrito(distrito);
+        tercero.setDireccion(request.getDireccion());
+        tercero.setTelefono(request.getTelefono());
+        tercero.setCorreo(request.getCorreo());
+        tercero.setUserUpdate(usuarioActual());
+        tercero.setProcessUpdate("EDITAR_CLIENTE");
+        tercero.setDateUpdate(LocalDateTime.now());
+        terceroRepository.save(tercero);
+
+        cliente.setSectorEconomico(sector);
+        cliente.setUserUpdate(usuarioActual());
+        cliente.setProcessUpdate("EDITAR_CLIENTE");
+        cliente.setDateUpdate(LocalDateTime.now());
+        return toResponse(clienteRepository.save(cliente));
+    }
+
     @Transactional(readOnly = true)
     public ClienteResponse buscarPorId(Long idCliente) {
         Cliente cliente = clienteRepository.findById(idCliente)
@@ -173,6 +222,8 @@ public class ClienteService {
                 .idCliente(cliente.getIdCliente())
                 .idTercero(t.getIdTercero())
                 .tipoDocumento(t.getTipoDocumento().getCodigoTipo())
+                .idTipoDocumento(t.getTipoDocumento().getIdTipoDocumento())
+                .idDistrito(t.getDistrito() != null ? t.getDistrito().getIdDistrito() : null)
                 .numeroDocumento(t.getNumeroDocumento())
                 .razonSocial(t.getRazonSocial())
                 .direccion(t.getDireccion())
@@ -180,6 +231,8 @@ public class ClienteService {
                 .correo(t.getCorreo())
                 .sectorEconomico(cliente.getSectorEconomico() != null
                         ? cliente.getSectorEconomico().getNombreSector() : null)
+                .idSectorEconomico(cliente.getSectorEconomico() != null
+                        ? cliente.getSectorEconomico().getIdSectorEconomico() : null)
                 .situacion(cliente.getSituacion())
                 .esTambienProveedor(tambienProveedor)
                 .build();

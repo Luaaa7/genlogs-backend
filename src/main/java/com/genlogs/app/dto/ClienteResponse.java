@@ -13,12 +13,15 @@ public class ClienteResponse {
     private Long idCliente;
     private Long idTercero;
     private String tipoDocumento;      // codigo_tipo: RUC / DNI / CE / PAS
+    private Integer idTipoDocumento;
+    private Integer idDistrito;        // para que el formulario de edición muestre el distrito
     private String numeroDocumento;
     private String razonSocial;
     private String direccion;
     private String telefono;
     private String correo;
     private String sectorEconomico;
+    private Integer idSectorEconomico;
     private String situacion;
     private Boolean esTambienProveedor; // true si el mismo tercero también tiene rol de proveedor
 }
