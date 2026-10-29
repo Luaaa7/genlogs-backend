@@ -319,7 +319,7 @@ public class FacturacionService {
 
     /**
      * Envía el comprobante al correo del cliente. Adjunta el documento de SUNAT
-     * si se subió; si no, el PDF que genera el sistema (con marca de agua si es simulado).
+     * si se subió; si no, el PDF que genera el sistema.
      * Igual que en cotizaciones: los datos se preparan en una transacción y el
      * correo (HTTP) sale fuera de ella.
      */
@@ -493,7 +493,8 @@ public class FacturacionService {
 
         byte[] pdf = pdfGenerationService.generarPdfFacturacion(data);
         if ("SIMULADO".equalsIgnoreCase(f.getSunatModo())) {
-            pdf = PdfMarcaAgua.aplicar(pdf, "SIMULACIÓN", "SIN VALOR TRIBUTARIO - NO ENVIADA A SUNAT");
+            // Sin marca de agua: solo una nota pequeña al pie, para no presentarlo como factura real.
+            pdf = PdfMarcaAgua.notaPie(pdf, "Representación interna del comprobante · Sin valor tributario");
         }
         return pdf;
     }
@@ -570,14 +571,12 @@ public class FacturacionService {
         String total = moneda + " " + PdfUtils.formatearMonto(calcularTotal(f));
         String vence = f.getFechaVencimiento() != null ? f.getFechaVencimiento().format(FMT_FECHA) : "-";
         String emitida = f.getFechaEmision() != null ? f.getFechaEmision().format(FMT_FECHA) : "-";
-        boolean simulado = "SIMULADO".equalsIgnoreCase(f.getSunatModo());
 
         if (!html) {
             return (mensaje.isEmpty() ? "" : mensaje + "\n\n")
                     + tipo + " " + codigo + " — " + obtenerNombreCliente(f) + "\n"
                     + "Emitida: " + emitida + " · Vence: " + vence + "\n"
                     + (request.isIncluirDetalles() ? "Total: " + total + "\n" : "")
-                    + (simulado ? "\nDocumento de prueba (simulación): no tiene valor tributario.\n" : "")
                     + "\nAdjuntamos el comprobante en PDF.\n\nGenLogs S.A.C. - General Logistic Solutions";
         }
         return "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:22px;color:#1F2937;max-width:560px;\">"
@@ -589,7 +588,6 @@ public class FacturacionService {
                 + fila("Vence", vence)
                 + (request.isIncluirDetalles() ? fila("Total", "<strong>" + escaparHtml(total) + "</strong>") : "")
                 + "</table>"
-                + (simulado ? "<p style=\"margin:0 0 18px 0;color:#B91C1C;\"><strong>Documento de prueba (simulación):</strong> no tiene valor tributario.</p>" : "")
                 + "<p style=\"margin:0 0 18px 0;\">Adjuntamos el comprobante en PDF.</p>"
                 + "<p style=\"margin:0;font-size:12px;color:#6B7280;\">GenLogs S.A.C. · General Logistic Solutions</p>"
                 + "</div>";

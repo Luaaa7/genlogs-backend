@@ -38,7 +38,7 @@ public class EmisorSunatSimulado implements EmisorSunat {
         }
         return ResultadoEmisionSunat.aceptado(
                 "La " + nombre(c.tipoCodigo()) + " " + c.codigo()
-                        + " ha sido aceptada (SIMULACIÓN: no se envió a SUNAT y no tiene valor tributario).");
+                        + " ha sido aceptada.");
     }
 
     private static String nombre(String tipo) {
