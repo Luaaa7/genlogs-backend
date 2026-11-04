@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.jdbc.Sql;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.genlogs.app.dto.ReportePreviewResponse;
@@ -84,6 +85,7 @@ import com.genlogs.app.repository.UsuarioRepository;
  */
 @SpringBootTest
 @ActiveProfiles("test")
+@Sql("/schema.sql")
 @Transactional
 class ReporteIntegracionTest {
 

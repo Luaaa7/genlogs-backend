@@ -14,6 +14,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.jdbc.Sql;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.genlogs.app.dto.CotizacionResponse;
@@ -45,6 +46,7 @@ import com.genlogs.app.service.CotizacionService;
  */
 @SpringBootTest
 @ActiveProfiles("test")
+@Sql("/schema.sql")
 @Transactional
 class CotizacionIntegracionTest {
 
