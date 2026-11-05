@@ -20,7 +20,11 @@ public class ProductoRequest {
     @NotNull(message = "Debe indicar la unidad de medida")
     private Integer idUnidadMedida;
 
-    @NotBlank(message = "El código del producto es obligatorio")
+    /**
+     * Opcional. Al registrar, si llega vacío se genera automáticamente
+     * (GLB-000001, GLB-000002...). Al actualizar, si llega vacío se conserva
+     * el código actual.
+     */
     @Size(max = 30)
     private String codigoProducto;
 

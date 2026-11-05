@@ -23,7 +23,7 @@ import com.genlogs.app.model.ProductoProveedorId;
 import com.genlogs.app.model.ProductoSector;
 import com.genlogs.app.model.ProductoSectorId;
 import com.genlogs.app.model.Proveedor;
-import com.genlogs.app.model.SectorEconomico; // la crea Mell
+import com.genlogs.app.model.SectorEconomico; 
 import com.genlogs.app.model.TipoDocumentoProducto;
 import com.genlogs.app.model.UnidadMedida; // [PENDIENTE] catálogo general, aún sin asignar en el equipo
 import com.genlogs.app.repository.CaracteristicaTecnicaRepository;
@@ -37,7 +37,7 @@ import com.genlogs.app.repository.ProductoProveedorRepository;
 import com.genlogs.app.repository.ProductoRepository;
 import com.genlogs.app.repository.ProductoSectorRepository;
 import com.genlogs.app.repository.ProveedorRepository;
-import com.genlogs.app.repository.SectorEconomicoRepository; // la crea Mell
+import com.genlogs.app.repository.SectorEconomicoRepository; 
 import com.genlogs.app.repository.UnidadMedidaRepository; // [PENDIENTE], igual que UnidadMedida
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -58,6 +58,10 @@ public class ProductoService {
 
     private static final String CARPETA_IMAGENES   = "genlogs/productos/imagenes";
     private static final String CARPETA_DOCUMENTOS = "genlogs/productos/documentos";
+
+    /** Formato del código autogenerado: GLB-000001, GLB-000002... */
+    private static final String PREFIJO_CODIGO = "GLB-";
+    private static final int DIGITOS_CODIGO = 6;
 
     /**
      * Orden global del catálogo: ASCENDENTE POR CÓDIGO y, como segundo
@@ -97,15 +101,19 @@ public class ProductoService {
 
     @Transactional
     public ProductoResponse registrar(ProductoRequest request) {
-        if (productoRepository.findByCodigoProducto(request.getCodigoProducto()).isPresent()) {
-            throw new BusinessException("Ya existe un producto con el código " + request.getCodigoProducto());
+        String codigo = esVacio(request.getCodigoProducto())
+                ? generarSiguienteCodigo()
+                : request.getCodigoProducto().trim();
+
+        if (productoRepository.findByCodigoProducto(codigo).isPresent()) {
+            throw new BusinessException("Ya existe un producto con el código " + codigo);
         }
 
         Producto producto = Producto.builder()
                 .categoriaProducto(buscarCategoria(request.getIdCategoriaProducto()))
                 .marca(request.getIdMarca() != null ? buscarMarca(request.getIdMarca()) : null)
                 .unidadMedida(buscarUnidadMedida(request.getIdUnidadMedida()))
-                .codigoProducto(request.getCodigoProducto())
+                .codigoProducto(codigo)
                 .nombreProducto(request.getNombreProducto())
                 .procedencia(request.getProcedencia())
                 .visibleWeb(request.getVisibleWeb())
@@ -122,16 +130,21 @@ public class ProductoService {
     public ProductoResponse actualizar(Long idProducto, ProductoRequest request) {
         Producto producto = buscarProductoActivo(idProducto);
 
-        productoRepository.findByCodigoProducto(request.getCodigoProducto())
+        // Si no se envía código se conserva el actual.
+        String codigo = esVacio(request.getCodigoProducto())
+                ? producto.getCodigoProducto()
+                : request.getCodigoProducto().trim();
+
+        productoRepository.findByCodigoProducto(codigo)
                 .filter(otro -> !otro.getIdProducto().equals(idProducto))
                 .ifPresent(otro -> {
-                    throw new BusinessException("Ya existe otro producto con el código " + request.getCodigoProducto());
+                    throw new BusinessException("Ya existe otro producto con el código " + codigo);
                 });
 
         producto.setCategoriaProducto(buscarCategoria(request.getIdCategoriaProducto()));
         producto.setMarca(request.getIdMarca() != null ? buscarMarca(request.getIdMarca()) : null);
         producto.setUnidadMedida(buscarUnidadMedida(request.getIdUnidadMedida()));
-        producto.setCodigoProducto(request.getCodigoProducto());
+        producto.setCodigoProducto(codigo);
         producto.setNombreProducto(request.getNombreProducto());
         producto.setProcedencia(request.getProcedencia());
         producto.setVisibleWeb(request.getVisibleWeb());
@@ -140,6 +153,26 @@ public class ProductoService {
         producto.setProcessUpdate("ACTUALIZA_PRODUCTO");
 
         return toResponse(productoRepository.save(producto));
+    }
+
+    /**
+     * Calcula el siguiente código del catálogo: toma el mayor número usado con
+     * el prefijo GLB- (incluidos productos inactivos, porque el código es
+     * único en la BD) y le suma 1. Ejemplo: si el mayor es GLB-000031, devuelve
+     * GLB-000032. Los códigos con el prefijo pero sin número (ej. GLB-ABC) se
+     * ignoran.
+     */
+    @Transactional(readOnly = true)
+    public String generarSiguienteCodigo() {
+        long mayor = productoRepository
+                .buscarCodigosConPrefijo(PREFIJO_CODIGO, PageRequest.of(0, 50))
+                .stream()
+                .map(c -> c.substring(PREFIJO_CODIGO.length()))
+                .filter(sufijo -> sufijo.matches("\\d{1,18}"))
+                .mapToLong(Long::parseLong)
+                .max()
+                .orElse(0L);
+        return String.format("%s%0" + DIGITOS_CODIGO + "d", PREFIJO_CODIGO, mayor + 1);
     }
 
     @Transactional(readOnly = true)
@@ -549,6 +582,10 @@ public class ProductoService {
                 .imagenes(imagenes)
                 .documentos(documentos)
                 .build();
+    }
+
+    private static boolean esVacio(String texto) {
+        return texto == null || texto.isBlank();
     }
 
     private String usuarioActual() {

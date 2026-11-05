@@ -287,6 +287,37 @@ class ProductoIntegracionTest {
     }
 
     // ------------------------------------------------------------------
+    // Código autogenerado
+    // ------------------------------------------------------------------
+
+    @Test
+    void siguienteCodigo_cuentaTambienLosInactivos() {
+        // El mayor es GLB-000031 (inactivo); OTR-000001 no cuenta.
+        assertEquals("GLB-000032", productoService.generarSiguienteCodigo());
+    }
+
+    @Test
+    void siguienteCodigo_ignoraSufijosNoNumericosYSuperaSeisDigitos() {
+        for (String codigo : List.of("GLB-ABC", "GLB-1000000")) {
+            productoRepository.save(auditar(new Producto(), e -> {
+                e.setCodigoProducto(codigo);
+                e.setNombreProducto("Producto " + codigo);
+                e.setCategoriaProducto(categoriaGeneral);
+                e.setUnidadMedida(unidad);
+                e.setVisibleWeb(true);
+            }));
+        }
+
+        assertEquals("GLB-1000001", productoService.generarSiguienteCodigo());
+    }
+
+    @Test
+    void siguienteCodigo_sinProductosEmpiezaEnUno() {
+        productoRepository.deleteAll();
+        assertEquals("GLB-000001", productoService.generarSiguienteCodigo());
+    }
+
+    // ------------------------------------------------------------------
 
     private List<String> codigosDePagina(int pagina) {
         return productoService.listarPaginado(null, null, null, null, pagina, TAMANIO_PAGINA)

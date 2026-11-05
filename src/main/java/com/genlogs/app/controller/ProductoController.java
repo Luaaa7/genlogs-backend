@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/productos")
@@ -26,15 +27,21 @@ public class ProductoController {
     private final ProductoService productoService;
 
     @PostMapping
-    // @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')") // Gestionado por MethodSecurityConfig
+    // @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')") // lo agrega Luana con MethodSecurityConfig
     public ResponseEntity<ProductoResponse> registrar(@Valid @RequestBody ProductoRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(productoService.registrar(request));
     }
 
     @PutMapping("/{idProducto}")
     public ResponseEntity<ProductoResponse> actualizar(@PathVariable Long idProducto,
-                                                       @Valid @RequestBody ProductoRequest request) {
+                                                         @Valid @RequestBody ProductoRequest request) {
         return ResponseEntity.ok(productoService.actualizar(idProducto, request));
+    }
+
+    /** Código que se asignará al próximo producto (para mostrarlo en el formulario de alta). */
+    @GetMapping("/siguiente-codigo")
+    public ResponseEntity<Map<String, String>> siguienteCodigo() {
+        return ResponseEntity.ok(Map.of("codigoProducto", productoService.generarSiguienteCodigo()));
     }
 
     @GetMapping("/{idProducto}")
@@ -83,14 +90,14 @@ public class ProductoController {
 
     @PostMapping("/{idProducto}/caracteristicas")
     public ResponseEntity<Void> agregarCaracteristica(@PathVariable Long idProducto,
-                                                      @Valid @RequestBody ProductoCaracteristicaRequest request) {
+                                                        @Valid @RequestBody ProductoCaracteristicaRequest request) {
         productoService.agregarCaracteristica(idProducto, request);
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
     @DeleteMapping("/{idProducto}/caracteristicas/{idCaracteristica}")
     public ResponseEntity<Void> quitarCaracteristica(@PathVariable Long idProducto,
-                                                   @PathVariable Integer idCaracteristica) {
+                                                       @PathVariable Integer idCaracteristica) {
         productoService.quitarCaracteristica(idProducto, idCaracteristica);
         return ResponseEntity.noContent().build();
     }
@@ -101,8 +108,8 @@ public class ProductoController {
 
     @PostMapping(value = "/{idProducto}/imagenes", consumes = "multipart/form-data")
     public ResponseEntity<Void> subirImagen(@PathVariable Long idProducto,
-                                           @RequestParam("archivo") MultipartFile archivo,
-                                           @RequestParam(defaultValue = "false") boolean esPrincipal) {
+                                             @RequestParam("archivo") MultipartFile archivo,
+                                             @RequestParam(defaultValue = "false") boolean esPrincipal) {
         productoService.subirImagen(idProducto, archivo, esPrincipal);
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
@@ -110,7 +117,7 @@ public class ProductoController {
     /** Asocia una imagen ya subida a Cloudinary (flujo del frontend: upload + asociar URL). */
     @PostMapping(value = "/{idProducto}/imagenes", consumes = "application/json")
     public ResponseEntity<Void> asociarImagen(@PathVariable Long idProducto,
-                                              @Valid @RequestBody ImagenAdjuntaRequest request) {
+                                               @Valid @RequestBody ImagenAdjuntaRequest request) {
         productoService.agregarImagenPorUrl(idProducto, request);
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
