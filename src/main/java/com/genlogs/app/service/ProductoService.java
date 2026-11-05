@@ -358,6 +358,19 @@ public class ProductoService {
         documentoProductoRepository.save(documento);
     }
 
+    @Transactional
+    public void eliminarDocumento(Long idProducto, Long idDocumento) {
+        DocumentoProducto documento = documentoProductoRepository.findById(idDocumento)
+                .filter(d -> d.getProducto().getIdProducto().equals(idProducto))
+                .filter(d -> !"I".equals(d.getStatus()))
+                .orElseThrow(() -> new ResourceNotFoundException("Documento no encontrado para este producto"));
+        cloudinaryService.eliminarPorUrl(documento.getUrlDocumento(), CloudinaryService.TIPO_DOCUMENTO);
+        documento.setStatus("I");
+        documento.setUserUpdate(usuarioActual());
+        documento.setProcessUpdate("ELIMINAR_DOCUMENTO_PRODUCTO");
+        documentoProductoRepository.save(documento);
+    }
+
     // ------------------------------------------------------------------
     // Sectores económicos (filtros del catálogo web)
     // ------------------------------------------------------------------

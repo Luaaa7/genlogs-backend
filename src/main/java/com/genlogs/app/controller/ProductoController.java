@@ -148,6 +148,14 @@ public class ProductoController {
         return ResponseEntity.noContent().build();
     }
 
+    /** Ruta anidada que usa el frontend: valida que el documento pertenezca al producto. */
+    @DeleteMapping("/{idProducto}/documentos/{idDocumento}")
+    public ResponseEntity<Void> eliminarDocumentoDeProducto(@PathVariable Long idProducto,
+                                                            @PathVariable Long idDocumento) {
+        productoService.eliminarDocumento(idProducto, idDocumento);
+        return ResponseEntity.noContent().build();
+    }
+
     // ------------------------------------------------------------------
     // Sectores económicos
     // ------------------------------------------------------------------
