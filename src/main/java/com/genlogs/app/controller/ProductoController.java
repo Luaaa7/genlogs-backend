@@ -1,6 +1,5 @@
 package com.genlogs.app.controller;
 
-import org.springframework.security.access.prepost.PreAuthorize;
 import com.genlogs.app.dto.DocumentoAdjuntoRequest;
 import com.genlogs.app.dto.ImagenAdjuntaRequest;
 import com.genlogs.app.dto.PageResponseDto;
@@ -27,14 +26,14 @@ public class ProductoController {
     private final ProductoService productoService;
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
+    // @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')") // Gestionado por MethodSecurityConfig
     public ResponseEntity<ProductoResponse> registrar(@Valid @RequestBody ProductoRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(productoService.registrar(request));
     }
 
     @PutMapping("/{idProducto}")
     public ResponseEntity<ProductoResponse> actualizar(@PathVariable Long idProducto,
-                                                         @Valid @RequestBody ProductoRequest request) {
+                                                       @Valid @RequestBody ProductoRequest request) {
         return ResponseEntity.ok(productoService.actualizar(idProducto, request));
     }
 
@@ -84,14 +83,14 @@ public class ProductoController {
 
     @PostMapping("/{idProducto}/caracteristicas")
     public ResponseEntity<Void> agregarCaracteristica(@PathVariable Long idProducto,
-                                                        @Valid @RequestBody ProductoCaracteristicaRequest request) {
+                                                      @Valid @RequestBody ProductoCaracteristicaRequest request) {
         productoService.agregarCaracteristica(idProducto, request);
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
     @DeleteMapping("/{idProducto}/caracteristicas/{idCaracteristica}")
     public ResponseEntity<Void> quitarCaracteristica(@PathVariable Long idProducto,
-                                                       @PathVariable Integer idCaracteristica) {
+                                                   @PathVariable Integer idCaracteristica) {
         productoService.quitarCaracteristica(idProducto, idCaracteristica);
         return ResponseEntity.noContent().build();
     }
@@ -102,8 +101,8 @@ public class ProductoController {
 
     @PostMapping(value = "/{idProducto}/imagenes", consumes = "multipart/form-data")
     public ResponseEntity<Void> subirImagen(@PathVariable Long idProducto,
-                                             @RequestParam("archivo") MultipartFile archivo,
-                                             @RequestParam(defaultValue = "false") boolean esPrincipal) {
+                                           @RequestParam("archivo") MultipartFile archivo,
+                                           @RequestParam(defaultValue = "false") boolean esPrincipal) {
         productoService.subirImagen(idProducto, archivo, esPrincipal);
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
@@ -111,7 +110,7 @@ public class ProductoController {
     /** Asocia una imagen ya subida a Cloudinary (flujo del frontend: upload + asociar URL). */
     @PostMapping(value = "/{idProducto}/imagenes", consumes = "application/json")
     public ResponseEntity<Void> asociarImagen(@PathVariable Long idProducto,
-                                               @Valid @RequestBody ImagenAdjuntaRequest request) {
+                                              @Valid @RequestBody ImagenAdjuntaRequest request) {
         productoService.agregarImagenPorUrl(idProducto, request);
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
@@ -146,6 +145,14 @@ public class ProductoController {
     @DeleteMapping("/documentos/{idDocumento}")
     public ResponseEntity<Void> eliminarDocumento(@PathVariable Long idDocumento) {
         productoService.eliminarDocumento(idDocumento);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Ruta anidada que usa el frontend: valida que el documento pertenezca al producto. */
+    @DeleteMapping("/{idProducto}/documentos/{idDocumento}")
+    public ResponseEntity<Void> eliminarDocumentoDeProducto(@PathVariable Long idProducto,
+                                                            @PathVariable Long idDocumento) {
+        productoService.eliminarDocumento(idProducto, idDocumento);
         return ResponseEntity.noContent().build();
     }
 
