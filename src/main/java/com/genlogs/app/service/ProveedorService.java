@@ -20,6 +20,7 @@ import com.genlogs.app.repository.DistritoRepository;
 import com.genlogs.app.repository.ProveedorRepository;
 import com.genlogs.app.repository.TerceroRepository;
 import com.genlogs.app.repository.TipoDocumentoRepository;
+import com.genlogs.app.util.DatosTercero;
 
 import lombok.RequiredArgsConstructor;
 
@@ -66,7 +67,7 @@ public class ProveedorService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Tipo de documento no existe"));
 
-        validarLongitudDocumento(tipoDocumento, numeroDocumento);
+        DatosTercero.validarDocumento(tipoDocumento, numeroDocumento);
 
         final String documentoValidado = numeroDocumento;
 
@@ -120,7 +121,7 @@ public class ProveedorService {
                 .findById(request.getIdTipoDocumento())
                 .orElseThrow(() -> new ResourceNotFoundException("Tipo de documento no existe"));
         String numeroDocumento = request.getNumeroDocumento().trim();
-        validarLongitudDocumento(tipoDocumento, numeroDocumento);
+        DatosTercero.validarDocumento(tipoDocumento, numeroDocumento);
 
         Tercero tercero = proveedor.getTercero();
 
@@ -138,7 +139,9 @@ public class ProveedorService {
 
         tercero.setTipoDocumento(tipoDocumento);
         tercero.setNumeroDocumento(numeroDocumento);
-        tercero.setRazonSocial(request.getRazonSocial() != null ? request.getRazonSocial().trim() : tercero.getRazonSocial());
+        DatosTercero.aplicarNombre(tercero, tipoDocumento,
+                request.getRazonSocial() != null ? request.getRazonSocial() : tercero.getRazonSocial(),
+                request.getNombres(), request.getApellidoPaterno(), request.getApellidoMaterno());
         tercero.setDistrito(distrito);
         tercero.setDireccion(request.getDireccion());
         tercero.setTelefono(request.getTelefono());
@@ -215,48 +218,17 @@ public class ProveedorService {
                 .tipoDocumento(tipoDocumento)
                 .distrito(distrito)
                 .numeroDocumento(numeroDocumento)
-                .razonSocial(request.getRazonSocial())
                 .direccion(request.getDireccion())
                 .telefono(request.getTelefono())
                 .correo(request.getCorreo())
                 .build();
+        DatosTercero.aplicarNombre(tercero, tipoDocumento, request.getRazonSocial(),
+                request.getNombres(), request.getApellidoPaterno(), request.getApellidoMaterno());
 
         tercero.setUserCreate(usuarioActual());
         tercero.setProcessCreate("ALTA_PROVEEDOR");
 
         return terceroRepository.save(tercero);
-    }
-
-    /**
-     * Valida el formato del documento según el tipo seleccionado (misma regla
-     * que el trigger fn_tercero_valida_documento() en la BD): RUC y DNI con
-     * largo exacto; Pasaporte de 6 hasta el máximo, solo letras y números.
-     */
-    private void validarLongitudDocumento(
-            TipoDocumento tipoDocumento,
-            String numeroDocumento) {
-
-        if (tipoDocumento.getLongitudDocumento() == null
-                || tipoDocumento.getLongitudDocumento() <= 0) {
-            throw new BusinessException(
-                    "El tipo de documento tiene una longitud configurada inválida");
-        }
-
-        boolean numerico = Boolean.TRUE.equals(tipoDocumento.getSoloNumerico());
-        int largo = numeroDocumento.length();
-        int maximo = tipoDocumento.getLongitudDocumento();
-        if (numerico ? largo != maximo : (largo < 6 || largo > maximo || !numeroDocumento.matches("^[A-Za-z0-9]+$"))) {
-            throw new BusinessException(numerico
-                    ? String.format("El documento %s debe tener %d dígitos", tipoDocumento.getCodigoTipo(), maximo)
-                    : String.format("El documento %s debe tener de 6 a %d letras y números", tipoDocumento.getCodigoTipo(), maximo));
-        }
-
-        if (numerico && !numeroDocumento.matches("^[0-9]+$")) {
-            throw new BusinessException(
-                    "El documento "
-                            + tipoDocumento.getCodigoTipo()
-                            + " debe ser numérico");
-        }
     }
 
     /**

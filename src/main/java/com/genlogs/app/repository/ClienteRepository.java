@@ -17,23 +17,28 @@ public interface ClienteRepository extends JpaRepository<Cliente, Long> {
 
     /**
      * Clientes activos cuya razón social o número de documento contiene el patrón
-     * (ya en minúsculas y con % a los lados; "%" = sin filtro). Ordenados por razón social.
+     * (ya en minúsculas y con % a los lados; "%" = sin filtro), opcionalmente de un
+     * solo tipo de documento (null = todos). Ordenados por razón social.
      */
     @Query("""
            SELECT c FROM Cliente c JOIN FETCH c.tercero t
            WHERE c.situacion = 'ACTIVO' AND c.status = 'A'
-             AND (LOWER(t.razonSocial) LIKE :patron OR t.numeroDocumento LIKE :patron)
+             AND (LOWER(t.razonSocial) LIKE :patron OR LOWER(t.numeroDocumento) LIKE :patron)
+             AND (:idTipoDocumento IS NULL OR t.tipoDocumento.idTipoDocumento = :idTipoDocumento)
            ORDER BY t.razonSocial
            """)
-    List<Cliente> buscarActivos(@Param("patron") String patron, Pageable pageable);
+    List<Cliente> buscarActivos(@Param("patron") String patron,
+                                @Param("idTipoDocumento") Integer idTipoDocumento,
+                                Pageable pageable);
 
     /** Total de clientes que coinciden con buscarActivos (para paginar en el frontend). */
     @Query("""
            SELECT COUNT(c) FROM Cliente c JOIN c.tercero t
            WHERE c.situacion = 'ACTIVO' AND c.status = 'A'
-             AND (LOWER(t.razonSocial) LIKE :patron OR t.numeroDocumento LIKE :patron)
+             AND (LOWER(t.razonSocial) LIKE :patron OR LOWER(t.numeroDocumento) LIKE :patron)
+             AND (:idTipoDocumento IS NULL OR t.tipoDocumento.idTipoDocumento = :idTipoDocumento)
            """)
-    long contarActivos(@Param("patron") String patron);
+    long contarActivos(@Param("patron") String patron, @Param("idTipoDocumento") Integer idTipoDocumento);
 
     // --- Soporte para DashboardController ---
     long countBySituacionAndStatus(String situacion, String status);

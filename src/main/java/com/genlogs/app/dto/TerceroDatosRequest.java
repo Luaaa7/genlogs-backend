@@ -13,6 +13,9 @@ public class TerceroDatosRequest {
     private Integer idTipoDocumento;
     private String numeroDocumento;
     private String razonSocial;
+    private String nombres;
+    private String apellidoPaterno;
+    private String apellidoMaterno;
     private Integer idDistrito;
     private String direccion;
     private String telefono;
@@ -26,6 +29,15 @@ public class TerceroDatosRequest {
 
     public String getRazonSocial() { return razonSocial; }
     public void setRazonSocial(String razonSocial) { this.razonSocial = razonSocial; }
+
+    public String getNombres() { return nombres; }
+    public void setNombres(String nombres) { this.nombres = nombres; }
+
+    public String getApellidoPaterno() { return apellidoPaterno; }
+    public void setApellidoPaterno(String apellidoPaterno) { this.apellidoPaterno = apellidoPaterno; }
+
+    public String getApellidoMaterno() { return apellidoMaterno; }
+    public void setApellidoMaterno(String apellidoMaterno) { this.apellidoMaterno = apellidoMaterno; }
 
     public Integer getIdDistrito() { return idDistrito; }
     public void setIdDistrito(Integer idDistrito) { this.idDistrito = idDistrito; }

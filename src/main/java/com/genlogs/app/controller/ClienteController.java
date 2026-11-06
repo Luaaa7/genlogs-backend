@@ -48,14 +48,15 @@ public class ClienteController {
     public ResponseEntity<List<Cliente>> listarActivos(
             @RequestParam(required = false) String razonSocial,
             @RequestParam(required = false) String documento,
+            @RequestParam(required = false) Integer idTipoDocumento,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size) {
-        List<Cliente> clientes = clienteService.buscarActivos(razonSocial, documento, page, size);
+        List<Cliente> clientes = clienteService.buscarActivos(razonSocial, documento, idTipoDocumento, page, size);
         // Con paginación, el total va en una cabecera para no cambiar el formato
         // de la respuesta (otras pantallas siguen recibiendo una lista).
         if (size != null && size > 0) {
             return ResponseEntity.ok()
-                    .header("X-Total-Count", String.valueOf(clienteService.contarActivos(razonSocial, documento)))
+                    .header("X-Total-Count", String.valueOf(clienteService.contarActivos(razonSocial, documento, idTipoDocumento)))
                     .body(clientes);
         }
         return ResponseEntity.ok(clientes);

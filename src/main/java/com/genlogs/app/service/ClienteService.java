@@ -24,6 +24,7 @@ import com.genlogs.app.repository.ProveedorRepository;
 import com.genlogs.app.repository.SectorEconomicoRepository;
 import com.genlogs.app.repository.TerceroRepository;
 import com.genlogs.app.repository.TipoDocumentoRepository;
+import com.genlogs.app.util.DatosTercero;
 import lombok.RequiredArgsConstructor;
 
 @Service
@@ -47,7 +48,7 @@ public class ClienteService {
         TipoDocumento tipoDocumento = tipoDocumentoRepository.findById(request.getIdTipoDocumento())
                 .orElseThrow(() -> new ResourceNotFoundException("Tipo de documento no existe"));
 
-        validarLongitudDocumento(tipoDocumento, request.getNumeroDocumento());
+        DatosTercero.validarDocumento(tipoDocumento, request.getNumeroDocumento());
 
         Tercero tercero = terceroRepository
                 .findByTipoDocumento_IdTipoDocumentoAndNumeroDocumento(
@@ -86,7 +87,7 @@ public class ClienteService {
         TipoDocumento tipoDocumento = tipoDocumentoRepository.findById(request.getIdTipoDocumento())
                 .orElseThrow(() -> new ResourceNotFoundException("Tipo de documento no existe"));
         String numeroDocumento = request.getNumeroDocumento().trim();
-        validarLongitudDocumento(tipoDocumento, numeroDocumento);
+        DatosTercero.validarDocumento(tipoDocumento, numeroDocumento);
 
         Tercero tercero = cliente.getTercero();
 
@@ -105,7 +106,8 @@ public class ClienteService {
 
         tercero.setTipoDocumento(tipoDocumento);
         tercero.setNumeroDocumento(numeroDocumento);
-        tercero.setRazonSocial(request.getRazonSocial().trim());
+        DatosTercero.aplicarNombre(tercero, tipoDocumento, request.getRazonSocial(),
+                request.getNombres(), request.getApellidoPaterno(), request.getApellidoMaterno());
         tercero.setDistrito(distrito);
         tercero.setDireccion(request.getDireccion());
         tercero.setTelefono(request.getTelefono());
@@ -143,27 +145,29 @@ public class ClienteService {
 
     /**
      * Listado de clientes activos con búsqueda opcional por razón social o documento
-     * (el frontend manda el mismo texto en ambos parámetros) y límite de resultados.
+     * (el frontend manda el mismo texto en ambos parámetros), por tipo de documento
+     * (las pestañas RUC, DNI y Pasaporte; null = todos) y límite de resultados.
      * Sin `size` devuelve todos, como antes.
      */
     @Transactional(readOnly = true)
-    public List<Cliente> buscarActivos(String razonSocial, String documento, Integer page, Integer size) {
+    public List<Cliente> buscarActivos(String razonSocial, String documento, Integer idTipoDocumento,
+                                       Integer page, Integer size) {
         String texto = (razonSocial != null && !razonSocial.isBlank()) ? razonSocial
                 : (documento != null && !documento.isBlank()) ? documento : null;
         String patron = texto == null ? "%" : "%" + texto.trim().toLowerCase() + "%";
         Pageable pageable = (size != null && size > 0)
                 ? PageRequest.of(page == null ? 0 : Math.max(page, 0), Math.min(size, 500))
                 : Pageable.unpaged();
-        return clienteRepository.buscarActivos(patron, pageable);
+        return clienteRepository.buscarActivos(patron, idTipoDocumento, pageable);
     }
 
     /** Cuántos clientes devuelve buscarActivos sin límite (cabecera X-Total-Count). */
     @Transactional(readOnly = true)
-    public long contarActivos(String razonSocial, String documento) {
+    public long contarActivos(String razonSocial, String documento, Integer idTipoDocumento) {
         String texto = (razonSocial != null && !razonSocial.isBlank()) ? razonSocial
                 : (documento != null && !documento.isBlank()) ? documento : null;
         String patron = texto == null ? "%" : "%" + texto.trim().toLowerCase() + "%";
-        return clienteRepository.contarActivos(patron);
+        return clienteRepository.contarActivos(patron, idTipoDocumento);
     }
 
     @Transactional
@@ -188,35 +192,16 @@ public class ClienteService {
                 .tipoDocumento(tipoDocumento)
                 .distrito(distrito)
                 .numeroDocumento(request.getNumeroDocumento())
-                .razonSocial(request.getRazonSocial())
                 .direccion(request.getDireccion())
                 .telefono(request.getTelefono())
                 .correo(request.getCorreo())
                 .build();
+        DatosTercero.aplicarNombre(tercero, tipoDocumento, request.getRazonSocial(),
+                request.getNombres(), request.getApellidoPaterno(), request.getApellidoMaterno());
         tercero.setUserCreate(usuarioActual());
         tercero.setProcessCreate("ALTA_CLIENTE");
 
         return terceroRepository.save(tercero);
-    }
-
-    /**
-     * Misma regla que valida el trigger fn_tercero_valida_documento() en la BD:
-     * RUC y DNI (solo números) con largo exacto; Pasaporte de 6 hasta el
-     * máximo configurado, solo letras y números.
-     */
-    private void validarLongitudDocumento(TipoDocumento tipoDocumento, String numeroDocumento) {
-        boolean numerico = Boolean.TRUE.equals(tipoDocumento.getSoloNumerico());
-        int largo = numeroDocumento.length();
-        int maximo = tipoDocumento.getLongitudDocumento();
-        if (numerico ? largo != maximo : (largo < 6 || largo > maximo || !numeroDocumento.matches("^[A-Za-z0-9]+$"))) {
-            throw new BusinessException(numerico
-                    ? String.format("El documento %s debe tener %d dígitos", tipoDocumento.getCodigoTipo(), maximo)
-                    : String.format("El documento %s debe tener de 6 a %d letras y números", tipoDocumento.getCodigoTipo(), maximo));
-        }
-        if (numerico && !numeroDocumento.matches("^[0-9]+$")) {
-            throw new BusinessException(
-                    "El documento " + tipoDocumento.getCodigoTipo() + " debe ser numérico");
-        }
     }
 
     private ClienteResponse toResponse(Cliente cliente) {
@@ -233,6 +218,9 @@ public class ClienteService {
                 .idDistrito(t.getDistrito() != null ? t.getDistrito().getIdDistrito() : null)
                 .numeroDocumento(t.getNumeroDocumento())
                 .razonSocial(t.getRazonSocial())
+                .nombres(t.getNombres())
+                .apellidoPaterno(t.getApellidoPaterno())
+                .apellidoMaterno(t.getApellidoMaterno())
                 .direccion(t.getDireccion())
                 .telefono(t.getTelefono())
                 .correo(t.getCorreo())

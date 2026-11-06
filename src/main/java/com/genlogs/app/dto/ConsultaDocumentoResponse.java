@@ -6,11 +6,10 @@ import lombok.Getter;
 
 /**
  * Respuesta unificada de la consulta de RUC/DNI contra Factiliza (RF-08).
- * El frontend usa razonSocial y direccion para autocompletar el formulario
- * de registro de cliente/proveedor; el campo distrito no se autocompleta
- * porque Factiliza no devuelve el id_distrito propio del catálogo de
- * GenLogs (solo texto de ubigeo), así que ese campo lo sigue eligiendo el
- * usuario manualmente.
+ * El frontend la usa para autocompletar el formulario de cliente/proveedor:
+ * razón social o nombres y apellidos, dirección y distrito. El distrito se
+ * obtiene buscando el UBIGEO que devuelve Factiliza en el catálogo de
+ * GenLogs; si no se encuentra, idDistrito llega vacío y el usuario lo elige.
  */
 @Getter
 @Builder
@@ -22,9 +21,23 @@ public class ConsultaDocumentoResponse {
     /** "RUC" o "DNI", según la longitud del número consultado. */
     private String tipoDocumento;
 
+    /** Razón social (RUC) o nombre completo (DNI). */
     private String razonSocial;
 
+    /** Solo DNI: nombres y apellidos por separado. */
+    private String nombres;
+
+    private String apellidoPaterno;
+
+    private String apellidoMaterno;
+
     private String direccion;
+
+    /** UBIGEO de 6 dígitos del domicilio, si Factiliza lo devuelve. */
+    private String ubigeo;
+
+    /** Distrito del catálogo de GenLogs que corresponde al UBIGEO (o null). */
+    private Integer idDistrito;
 
     /**
      * true cuando no hay FACTILIZA_API_KEY configurada y la respuesta es
