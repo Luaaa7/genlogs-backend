@@ -5,7 +5,11 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.text.Normalizer;
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.slf4j.Logger;
@@ -62,6 +66,9 @@ public class FactilizaService {
     private final DistritoRepository distritoRepository;
     private final TerceroRepository terceroRepository;
     private final ConsultaDocumentoRepository consultaDocumentoRepository;
+
+    /** Distritos del catálogo por "DEPARTAMENTO|PROVINCIA|DISTRITO" (sin tildes); se arma una sola vez. */
+    private volatile Map<String, Integer> distritosPorNombre;
 
     public FactilizaService(DistritoRepository distritoRepository,
                             TerceroRepository terceroRepository,
@@ -199,7 +206,7 @@ public class FactilizaService {
                 .razonSocial(razonSocial)
                 .direccion(direccion)
                 .ubigeo(ubigeo)
-                .idDistrito(idDistritoDe(ubigeo))
+                .idDistrito(idDistritoDe(ubigeo, data))
                 .origen("FACTILIZA")
                 .simulado(false)
                 .build();
@@ -229,7 +236,7 @@ public class FactilizaService {
                 .apellidoMaterno(apMaterno)
                 .direccion(primero(data, "direccion"))
                 .ubigeo(ubigeo)
-                .idDistrito(idDistritoDe(ubigeo))
+                .idDistrito(idDistritoDe(ubigeo, data))
                 .origen("FACTILIZA")
                 .simulado(false)
                 .build();
@@ -303,14 +310,59 @@ public class FactilizaService {
         return null;
     }
 
-    /** Busca el distrito del catálogo de GenLogs con ese UBIGEO (null si no está). */
-    private Integer idDistritoDe(String ubigeo) {
-        if (ubigeo == null) {
+    /**
+     * Distrito del catálogo de GenLogs para autocompletar departamento,
+     * provincia y distrito. Primero por UBIGEO; si Factiliza no lo manda o no
+     * está en el catálogo, por los nombres "departamento", "provincia" y
+     * "distrito" de la respuesta (sin importar tildes ni mayúsculas).
+     */
+    private Integer idDistritoDe(String ubigeo, JsonNode data) {
+        if (ubigeo != null) {
+            Optional<Integer> porUbigeo = distritoRepository.findByUbigeo(ubigeo).map(Distrito::getIdDistrito);
+            if (porUbigeo.isPresent()) {
+                return porUbigeo.get();
+            }
+        }
+        if (data == null) {
             return null;
         }
-        return distritoRepository.findByUbigeo(ubigeo)
-                .map(Distrito::getIdDistrito)
-                .orElse(null);
+        String departamento = primero(data, "departamento");
+        String provincia = primero(data, "provincia");
+        String distrito = primero(data, "distrito");
+        if (departamento == null || provincia == null || distrito == null) {
+            return null;
+        }
+        return indiceDistritos().get(clave(departamento, provincia, distrito));
+    }
+
+    private Integer idDistritoDe(String ubigeo) {
+        return idDistritoDe(ubigeo, null);
+    }
+
+    private Map<String, Integer> indiceDistritos() {
+        Map<String, Integer> indice = distritosPorNombre;
+        if (indice == null) {
+            indice = new HashMap<>();
+            List<Distrito> todos = distritoRepository.listarConProvinciaYDepartamento();
+            for (Distrito d : todos) {
+                indice.putIfAbsent(clave(
+                        d.getProvincia().getDepartamento().getNombreDepartamento(),
+                        d.getProvincia().getNombreProvincia(),
+                        d.getNombreDistrito()), d.getIdDistrito());
+            }
+            distritosPorNombre = indice;
+        }
+        return indice;
+    }
+
+    private static String clave(String departamento, String provincia, String distrito) {
+        return normalizar(departamento) + "|" + normalizar(provincia) + "|" + normalizar(distrito);
+    }
+
+    private static String normalizar(String texto) {
+        String sinTildes = Normalizer.normalize(texto == null ? "" : texto, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "");
+        return sinTildes.toUpperCase().trim().replaceAll("\\s+", " ");
     }
 
     private String valorOVacio(String valor) {
@@ -321,7 +373,9 @@ public class FactilizaService {
         String razonSocial = tipo.equals("RUC")
                 ? "Empresa de Prueba S.A.C. (simulado)"
                 : "Nombre Apellido de Prueba (simulado)";
-        String direccion = tipo.equals("RUC") ? "Av. Simulación 123, Lima (simulado)" : null;
+        String direccion = tipo.equals("RUC") ? "Av. Simulación 123 (simulado)" : "Calle Simulación 456 (simulado)";
+        // UBIGEO de Ica, para que en modo de prueba también se llenen departamento, provincia y distrito.
+        String ubigeo = "110101";
 
         boolean esDni = tipo.equals("DNI");
         return ConsultaDocumentoResponse.builder()
@@ -332,6 +386,8 @@ public class FactilizaService {
                 .apellidoPaterno(esDni ? "Apellido" : null)
                 .apellidoMaterno(esDni ? "De Prueba" : null)
                 .direccion(direccion)
+                .ubigeo(ubigeo)
+                .idDistrito(idDistritoDe(ubigeo))
                 .origen("SIMULADO")
                 .simulado(true)
                 .build();
