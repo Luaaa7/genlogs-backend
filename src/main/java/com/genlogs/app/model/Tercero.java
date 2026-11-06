@@ -32,13 +32,23 @@ public class Tercero extends Auditable {
     @JoinColumn(name = "id_distrito", nullable = false)
     private Distrito distrito;
 
-    /** RUC (11 dígitos) o DNI (8 dígitos), validado en el service y por trigger en BD */
+    /** RUC (11 dígitos), DNI (8 dígitos) o pasaporte (6 a 12 letras y números); validado en el service y por trigger en BD */
     @Column(name = "numero_documento", nullable = false, length = 11)
     private String numeroDocumento;
 
-    /** Razón social (RUC) o nombres y apellidos (DNI) */
+    /** Razón social (RUC) o nombre completo (DNI y pasaporte), armado con los tres campos de abajo. */
     @Column(name = "razon_social", nullable = false, length = 200)
     private String razonSocial;
+
+    /** DNI y pasaporte: nombres de la persona (null para RUC). */
+    @Column(name = "nombres", length = 120)
+    private String nombres;
+
+    @Column(name = "apellido_paterno", length = 60)
+    private String apellidoPaterno;
+
+    @Column(name = "apellido_materno", length = 60)
+    private String apellidoMaterno;
 
     @Column(name = "direccion", length = 255)
     private String direccion;

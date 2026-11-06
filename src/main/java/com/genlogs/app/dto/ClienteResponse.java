@@ -17,6 +17,9 @@ public class ClienteResponse {
     private Integer idDistrito;        // para que el formulario de edición muestre el distrito
     private String numeroDocumento;
     private String razonSocial;
+    private String nombres;            // DNI y pasaporte
+    private String apellidoPaterno;
+    private String apellidoMaterno;
     private String direccion;
     private String telefono;
     private String correo;
