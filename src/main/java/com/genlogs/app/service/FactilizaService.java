@@ -15,6 +15,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.genlogs.app.dto.ConsultaDocumentoResponse;
 import com.genlogs.app.exception.BusinessException;
+import com.genlogs.app.model.Distrito;
+import com.genlogs.app.repository.DistritoRepository;
 
 /**
  * Autocompletado de RUC/DNI contra la API de Factiliza (RF-08: "Integrar
@@ -44,6 +46,12 @@ public class FactilizaService {
 
     private final ObjectMapper mapper = new ObjectMapper();
 
+    private final DistritoRepository distritoRepository;
+
+    public FactilizaService(DistritoRepository distritoRepository) {
+        this.distritoRepository = distritoRepository;
+    }
+
     public ConsultaDocumentoResponse consultarPorNumero(String numero) {
         if (numero == null) {
             throw new BusinessException("Debe indicar el número de documento");
@@ -60,6 +68,10 @@ public class FactilizaService {
         if (!limpio.matches("\\d+")) {
             throw new BusinessException("El número de documento debe ser numérico");
         }
+        // Se valida antes de consultar para no gastar consultas de Factiliza en números imposibles.
+        if (tipo.equals("RUC") && !limpio.matches("^(10|20)\\d{9}$")) {
+            throw new BusinessException("El RUC debe empezar con 10 o 20");
+        }
 
         if (apiKey == null || apiKey.isBlank()) {
             log.warn("FACTILIZA_API_KEY no configurada. Devolviendo datos simulados para {} {}", tipo, limpio);
@@ -74,12 +86,15 @@ public class FactilizaService {
 
         String razonSocial = primero(data, "nombre_o_razon_social", "razon_social", "nombre");
         String direccion = primero(data, "direccion", "domicilio_fiscal");
+        String ubigeo = ubigeoDe(data);
 
         return ConsultaDocumentoResponse.builder()
                 .numeroDocumento(ruc)
                 .tipoDocumento("RUC")
                 .razonSocial(razonSocial)
                 .direccion(direccion)
+                .ubigeo(ubigeo)
+                .idDistrito(idDistritoDe(ubigeo))
                 .simulado(false)
                 .build();
     }
@@ -87,20 +102,28 @@ public class FactilizaService {
     private ConsultaDocumentoResponse consultarDni(String dni) {
         JsonNode data = consultar("/dni/info/" + dni);
 
-        String nombres = primero(data, "nombre_completo");
-        if (nombres == null || nombres.isBlank()) {
-            String nombre = primero(data, "nombres");
-            String apPaterno = primero(data, "apellido_paterno");
-            String apMaterno = primero(data, "apellido_materno");
-            nombres = String.join(" ",
-                    valorOVacio(nombre), valorOVacio(apPaterno), valorOVacio(apMaterno)).trim();
+        String nombres = primero(data, "nombres");
+        String apPaterno = primero(data, "apellido_paterno");
+        String apMaterno = primero(data, "apellido_materno");
+
+        String nombreCompleto = primero(data, "nombre_completo");
+        if (nombreCompleto == null || nombreCompleto.isBlank()) {
+            nombreCompleto = String.join(" ",
+                    valorOVacio(nombres), valorOVacio(apPaterno), valorOVacio(apMaterno)).trim();
         }
+
+        String ubigeo = ubigeoDe(data);
 
         return ConsultaDocumentoResponse.builder()
                 .numeroDocumento(dni)
                 .tipoDocumento("DNI")
-                .razonSocial(nombres)
-                .direccion(null)
+                .razonSocial(nombreCompleto)
+                .nombres(nombres)
+                .apellidoPaterno(apPaterno)
+                .apellidoMaterno(apMaterno)
+                .direccion(primero(data, "direccion"))
+                .ubigeo(ubigeo)
+                .idDistrito(idDistritoDe(ubigeo))
                 .simulado(false)
                 .build();
     }
@@ -149,6 +172,40 @@ public class FactilizaService {
         return null;
     }
 
+    /**
+     * Factiliza devuelve el UBIGEO como texto ("ubigeo_sunat": "150101") o como
+     * lista ("ubigeo": ["15", "1501", "150101"]). Se toma el de 6 dígitos.
+     * No se usa "ubigeo_reniec": RENIEC tiene su propia codificación y no
+     * coincide con el UBIGEO del catálogo de distritos.
+     */
+    private String ubigeoDe(JsonNode data) {
+        String texto = primero(data, "ubigeo_sunat");
+        if (texto != null && texto.trim().matches("\\d{6}")) {
+            return texto.trim();
+        }
+        JsonNode lista = data.get("ubigeo");
+        if (lista != null && lista.isArray()) {
+            for (JsonNode n : lista) {
+                if (n.asText().trim().matches("\\d{6}")) {
+                    return n.asText().trim();
+                }
+            }
+        } else if (lista != null && lista.asText().trim().matches("\\d{6}")) {
+            return lista.asText().trim();
+        }
+        return null;
+    }
+
+    /** Busca el distrito del catálogo de GenLogs con ese UBIGEO (null si no está). */
+    private Integer idDistritoDe(String ubigeo) {
+        if (ubigeo == null) {
+            return null;
+        }
+        return distritoRepository.findByUbigeo(ubigeo)
+                .map(Distrito::getIdDistrito)
+                .orElse(null);
+    }
+
     private String valorOVacio(String valor) {
         return valor == null ? "" : valor;
     }
@@ -159,10 +216,14 @@ public class FactilizaService {
                 : "Nombre Apellido de Prueba (simulado)";
         String direccion = tipo.equals("RUC") ? "Av. Simulación 123, Lima (simulado)" : null;
 
+        boolean esDni = tipo.equals("DNI");
         return ConsultaDocumentoResponse.builder()
                 .numeroDocumento(numero)
                 .tipoDocumento(tipo)
                 .razonSocial(razonSocial)
+                .nombres(esDni ? "Nombre" : null)
+                .apellidoPaterno(esDni ? "Apellido" : null)
+                .apellidoMaterno(esDni ? "De Prueba" : null)
                 .direccion(direccion)
                 .simulado(true)
                 .build();

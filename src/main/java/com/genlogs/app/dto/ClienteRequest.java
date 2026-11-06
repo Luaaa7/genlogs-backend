@@ -24,9 +24,18 @@ public class ClienteRequest {
     @Pattern(regexp = "^[A-Za-z0-9\\-]{1,20}$", message = "Número de documento inválido (solo letras, números y guiones)")
     private String numeroDocumento;
 
-    @NotBlank(message = "La razón social / nombre es obligatorio")
+    /** Obligatoria con RUC. Con DNI o pasaporte se arma con los nombres y apellidos. */
     @Size(max = 200)
     private String razonSocial;
+
+    @Size(max = 120)
+    private String nombres;
+
+    @Size(max = 60)
+    private String apellidoPaterno;
+
+    @Size(max = 60)
+    private String apellidoMaterno;
 
     @NotNull(message = "Debe indicar el distrito")
     private Integer idDistrito;
@@ -57,6 +66,9 @@ public class ClienteRequest {
         if (t.getIdTipoDocumento() != null) idTipoDocumento = t.getIdTipoDocumento();
         if (t.getNumeroDocumento() != null) numeroDocumento = t.getNumeroDocumento().trim();
         if (t.getRazonSocial() != null) razonSocial = t.getRazonSocial().trim();
+        if (t.getNombres() != null) nombres = t.getNombres().trim();
+        if (t.getApellidoPaterno() != null) apellidoPaterno = t.getApellidoPaterno().trim();
+        if (t.getApellidoMaterno() != null) apellidoMaterno = t.getApellidoMaterno().trim();
         if (t.getIdDistrito() != null) idDistrito = t.getIdDistrito();
         if (t.getDireccion() != null) direccion = vacioANulo(t.getDireccion());
         if (t.getTelefono() != null) telefono = vacioANulo(t.getTelefono());
