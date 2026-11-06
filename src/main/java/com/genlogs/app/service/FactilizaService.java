@@ -5,6 +5,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +17,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.genlogs.app.dto.ConsultaDocumentoResponse;
 import com.genlogs.app.exception.BusinessException;
+import com.genlogs.app.model.ConsultaDocumentoCache;
+import com.genlogs.app.repository.ConsultaDocumentoCacheRepository;
 
 /**
  * Autocompletado de RUC/DNI contra la API de Factiliza (RF-08: "Integrar
@@ -37,6 +41,19 @@ public class FactilizaService {
 
     @Value("${factiliza.base-url:https://api.factiliza.com/v1}")
     private String baseUrl;
+
+    /** Días que un resultado guardado se reutiliza antes de volver a consultar Factiliza (0 = nunca vence). */
+    @Value("${factiliza.cache-dias:30}")
+    private int cacheDias;
+
+    private static final String PROCESO_USUARIO = "SISTEMA";
+    private static final String PROCESO_CACHE = "FACTILIZA_CACHE";
+
+    private final ConsultaDocumentoCacheRepository cacheRepository;
+
+    public FactilizaService(ConsultaDocumentoCacheRepository cacheRepository) {
+        this.cacheRepository = cacheRepository;
+    }
 
     private final HttpClient client = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
@@ -66,7 +83,68 @@ public class FactilizaService {
             return simulado(limpio, tipo);
         }
 
-        return tipo.equals("RUC") ? consultarRuc(limpio) : consultarDni(limpio);
+        // Si ya se consultó antes y no venció, se responde desde la BD sin gastar token.
+        Optional<ConsultaDocumentoCache> enCache =
+                cacheRepository.findByNumeroDocumentoAndStatus(limpio, "A");
+        if (enCache.isPresent() && vigente(enCache.get())) {
+            log.info("{} {} respondido desde caché (sin consumir token de Factiliza)", tipo, limpio);
+            return desdeCache(enCache.get());
+        }
+
+        ConsultaDocumentoResponse respuesta =
+                tipo.equals("RUC") ? consultarRuc(limpio) : consultarDni(limpio);
+        guardarEnCache(respuesta);
+        return respuesta;
+    }
+
+    private boolean vigente(ConsultaDocumentoCache cache) {
+        if (cacheDias <= 0) {
+            return true; // 0 o negativo = nunca vence
+        }
+        return cache.getFechaConsulta() != null
+                && cache.getFechaConsulta().isAfter(LocalDateTime.now().minusDays(cacheDias));
+    }
+
+    private ConsultaDocumentoResponse desdeCache(ConsultaDocumentoCache cache) {
+        return ConsultaDocumentoResponse.builder()
+                .numeroDocumento(cache.getNumeroDocumento())
+                .tipoDocumento(cache.getTipoDocumento())
+                .razonSocial(cache.getRazonSocial())
+                .direccion(cache.getDireccion())
+                .simulado(false)
+                .build();
+    }
+
+    /**
+     * Inserta o actualiza (si estaba vencido o inactivo) el resultado.
+     * Un fallo al guardar no debe romper la consulta: el token ya se gastó
+     * y el usuario igual recibe sus datos.
+     */
+    private void guardarEnCache(ConsultaDocumentoResponse r) {
+        try {
+            LocalDateTime ahora = LocalDateTime.now();
+            ConsultaDocumentoCache cache = cacheRepository.findByNumeroDocumento(r.getNumeroDocumento())
+                    .orElse(null);
+            if (cache == null) {
+                cache = new ConsultaDocumentoCache();
+                cache.setNumeroDocumento(r.getNumeroDocumento());
+                cache.setUserCreate(PROCESO_USUARIO);
+                cache.setProcessCreate(PROCESO_CACHE);
+                cache.setDateCreate(ahora);
+            } else {
+                cache.setUserUpdate(PROCESO_USUARIO);
+                cache.setProcessUpdate(PROCESO_CACHE);
+                cache.setDateUpdate(ahora);
+            }
+            cache.setTipoDocumento(r.getTipoDocumento());
+            cache.setRazonSocial(r.getRazonSocial());
+            cache.setDireccion(r.getDireccion());
+            cache.setFechaConsulta(ahora);
+            cache.setStatus("A");
+            cacheRepository.save(cache);
+        } catch (Exception e) {
+            log.error("No se pudo guardar en caché la consulta de {}", r.getNumeroDocumento(), e);
+        }
     }
 
     private ConsultaDocumentoResponse consultarRuc(String ruc) {
