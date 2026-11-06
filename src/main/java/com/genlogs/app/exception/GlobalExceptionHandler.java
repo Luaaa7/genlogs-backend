@@ -56,6 +56,13 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
+    /** Registro del portal: demasiados intentos desde el mismo documento o correo. */
+    @ExceptionHandler(DemasiadasSolicitudesException.class)
+    public ResponseEntity<Map<String, Object>> handleDemasiadasSolicitudes(DemasiadasSolicitudesException ex) {
+        log.warn("Registro de portal limitado: {}", ex.getMessage());
+        return buildResponse(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
+    }
+
     /** Ruta inexistente: 404 en lugar de caer en el handler genérico (500). */
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<Map<String, Object>> handleRutaInexistente(NoResourceFoundException ex) {

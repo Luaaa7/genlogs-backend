@@ -33,6 +33,9 @@ public interface ProductoRepository extends JpaRepository<Producto, Long>, JpaSp
     /** Catálogo web: mismo orden global por código que el listado paginado. */
     List<Producto> findByStatusAndVisibleWeb(String status, Boolean visibleWeb, Sort sort);
 
+    /** Muestra pública de la landing. El límite lo pone el Pageable. */
+    List<Producto> findByStatusAndVisibleWeb(String status, Boolean visibleWeb, Pageable pageable);
+
     List<Producto> findByCategoriaProducto_IdCategoriaProductoAndStatus(Integer idCategoriaProducto, String status);
 
     @Query("""

@@ -23,7 +23,8 @@ import org.springframework.web.cors.CorsConfigurationSource;
 
 /**
  * El rol CLIENTE queda fuera de lo interno y los roles internos fuera del portal.
- * El controller del portal todavía no existe: si la regla deja pasar, la respuesta es 404.
+ * El catálogo público responde 200. El registro sin body es 400 (la ruta es pública).
+ * Un CLIENTE sin id_cliente pasa el filtro y el portal responde 403.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -39,12 +40,12 @@ class SeguridadRolesTest {
     @Test
     void sinTokenLoPublicoNoPideSesionYLoInternoResponde401() throws Exception {
         mockMvc.perform(get("/api/public/catalogo"))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/portal/registro")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isBadRequest());
 
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -114,7 +115,7 @@ class SeguridadRolesTest {
     @Test
     void clientePasaLaAutorizacionDelPortal() throws Exception {
         mockMvc.perform(get("/api/portal/pedidos").with(user("cliente").roles("CLIENTE")))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isForbidden());
     }
 
     @Test
