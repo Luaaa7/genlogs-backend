@@ -5,18 +5,25 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.genlogs.app.dto.ConsultaDocumentoResponse;
 import com.genlogs.app.exception.BusinessException;
+import com.genlogs.app.model.ConsultaDocumento;
 import com.genlogs.app.model.Distrito;
+import com.genlogs.app.model.Tercero;
+import com.genlogs.app.repository.ConsultaDocumentoRepository;
 import com.genlogs.app.repository.DistritoRepository;
+import com.genlogs.app.repository.TerceroRepository;
 
 /**
  * Autocompletado de RUC/DNI contra la API de Factiliza (RF-08: "Integrar
@@ -25,9 +32,15 @@ import com.genlogs.app.repository.DistritoRepository;
  * no tenía ninguna fuente externa: el usuario escribía razón social y
  * dirección a mano.
  *
+ * Orden de búsqueda, para no gastar consultas pagadas de Factiliza:
+ * 1. Clientes y proveedores ya registrados en GENLOGS (tabla tercero).
+ * 2. RUC y DNI consultados antes (tabla consulta_documento).
+ * 3. Factiliza. Lo que responde se guarda en consulta_documento.
+ *
  * Si FACTILIZA_API_KEY no está configurada (todavía no se gestionó la
  * cuenta), responde con datos simulados en vez de fallar, para no bloquear
- * el trabajo del frontend mientras se consigue la key real.
+ * el trabajo del frontend mientras se consigue la key real. Los datos
+ * simulados no se guardan.
  */
 @Service
 public class FactilizaService {
@@ -47,9 +60,15 @@ public class FactilizaService {
     private final ObjectMapper mapper = new ObjectMapper();
 
     private final DistritoRepository distritoRepository;
+    private final TerceroRepository terceroRepository;
+    private final ConsultaDocumentoRepository consultaDocumentoRepository;
 
-    public FactilizaService(DistritoRepository distritoRepository) {
+    public FactilizaService(DistritoRepository distritoRepository,
+                            TerceroRepository terceroRepository,
+                            ConsultaDocumentoRepository consultaDocumentoRepository) {
         this.distritoRepository = distritoRepository;
+        this.terceroRepository = terceroRepository;
+        this.consultaDocumentoRepository = consultaDocumentoRepository;
     }
 
     public ConsultaDocumentoResponse consultarPorNumero(String numero) {
@@ -63,7 +82,7 @@ public class FactilizaService {
             case 8 -> "DNI";
             default -> throw new BusinessException(
                     "El autocompletado solo está disponible para RUC (11 dígitos) y DNI (8 dígitos). " +
-                    "Para Carné de Extranjería y Pasaporte, ingrese los datos manualmente.");
+                    "Para el pasaporte, ingrese los datos manualmente.");
         };
         if (!limpio.matches("\\d+")) {
             throw new BusinessException("El número de documento debe ser numérico");
@@ -73,12 +92,98 @@ public class FactilizaService {
             throw new BusinessException("El RUC debe empezar con 10 o 20");
         }
 
+        // 1. ¿Ya es cliente o proveedor?
+        Optional<ConsultaDocumentoResponse> registrado = desdeTercero(tipo, limpio);
+        if (registrado.isPresent()) {
+            return registrado.get();
+        }
+
+        // 2. ¿Ya se consultó antes?
+        Optional<ConsultaDocumento> guardado = consultaDocumentoRepository.findByNumeroDocumento(limpio);
+        if (guardado.isPresent()) {
+            return desdeGuardado(guardado.get());
+        }
+
+        // 3. Factiliza
         if (apiKey == null || apiKey.isBlank()) {
             log.warn("FACTILIZA_API_KEY no configurada. Devolviendo datos simulados para {} {}", tipo, limpio);
             return simulado(limpio, tipo);
         }
 
-        return tipo.equals("RUC") ? consultarRuc(limpio) : consultarDni(limpio);
+        ConsultaDocumentoResponse respuesta = tipo.equals("RUC") ? consultarRuc(limpio) : consultarDni(limpio);
+        guardar(respuesta);
+        return respuesta;
+    }
+
+    /** Datos de un cliente o proveedor ya registrado con ese documento. */
+    private Optional<ConsultaDocumentoResponse> desdeTercero(String tipo, String numero) {
+        return terceroRepository.buscarRegistrado(tipo, numero).map((Tercero t) -> {
+            Distrito d = t.getDistrito();
+            return ConsultaDocumentoResponse.builder()
+                    .numeroDocumento(numero)
+                    .tipoDocumento(tipo)
+                    .razonSocial(t.getRazonSocial())
+                    .nombres(t.getNombres())
+                    .apellidoPaterno(t.getApellidoPaterno())
+                    .apellidoMaterno(t.getApellidoMaterno())
+                    .direccion(t.getDireccion())
+                    .ubigeo(d != null ? d.getUbigeo() : null)
+                    .idDistrito(d != null ? d.getIdDistrito() : null)
+                    .origen("REGISTRADO")
+                    .simulado(false)
+                    .build();
+        });
+    }
+
+    /** Datos de una consulta anterior; suma una vez más al contador. */
+    private ConsultaDocumentoResponse desdeGuardado(ConsultaDocumento c) {
+        c.setVecesConsultado((c.getVecesConsultado() == null ? 1 : c.getVecesConsultado()) + 1);
+        consultaDocumentoRepository.save(c);
+        return ConsultaDocumentoResponse.builder()
+                .numeroDocumento(c.getNumeroDocumento())
+                .tipoDocumento(c.getTipoDocumento())
+                .razonSocial(c.getRazonSocial())
+                .nombres(c.getNombres())
+                .apellidoPaterno(c.getApellidoPaterno())
+                .apellidoMaterno(c.getApellidoMaterno())
+                .direccion(c.getDireccion())
+                .ubigeo(c.getUbigeo())
+                .idDistrito(c.getIdDistrito())
+                .origen("GUARDADO")
+                .simulado(false)
+                .build();
+    }
+
+    /** Guarda la respuesta de Factiliza. Si falla, la consulta igual responde. */
+    private void guardar(ConsultaDocumentoResponse r) {
+        try {
+            consultaDocumentoRepository.save(ConsultaDocumento.builder()
+                    .numeroDocumento(r.getNumeroDocumento())
+                    .tipoDocumento(r.getTipoDocumento())
+                    .razonSocial(recortar(r.getRazonSocial(), 200))
+                    .nombres(recortar(r.getNombres(), 120))
+                    .apellidoPaterno(recortar(r.getApellidoPaterno(), 60))
+                    .apellidoMaterno(recortar(r.getApellidoMaterno(), 60))
+                    .direccion(recortar(r.getDireccion(), 255))
+                    .ubigeo(r.getUbigeo())
+                    .idDistrito(r.getIdDistrito())
+                    .fechaConsulta(LocalDateTime.now())
+                    .vecesConsultado(1)
+                    .build());
+        } catch (DataIntegrityViolationException e) {
+            // Otra persona consultó el mismo número al mismo tiempo: ya quedó guardado.
+            log.info("La consulta de {} ya estaba guardada", r.getNumeroDocumento());
+        } catch (RuntimeException e) {
+            log.warn("No se pudo guardar la consulta de {}: {}", r.getNumeroDocumento(), e.getMessage());
+        }
+    }
+
+    private static String recortar(String valor, int maximo) {
+        if (valor == null) {
+            return null;
+        }
+        String v = valor.trim();
+        return v.length() > maximo ? v.substring(0, maximo) : v;
     }
 
     private ConsultaDocumentoResponse consultarRuc(String ruc) {
@@ -95,6 +200,7 @@ public class FactilizaService {
                 .direccion(direccion)
                 .ubigeo(ubigeo)
                 .idDistrito(idDistritoDe(ubigeo))
+                .origen("FACTILIZA")
                 .simulado(false)
                 .build();
     }
@@ -124,6 +230,7 @@ public class FactilizaService {
                 .direccion(primero(data, "direccion"))
                 .ubigeo(ubigeo)
                 .idDistrito(idDistritoDe(ubigeo))
+                .origen("FACTILIZA")
                 .simulado(false)
                 .build();
     }
@@ -225,6 +332,7 @@ public class FactilizaService {
                 .apellidoPaterno(esDni ? "Apellido" : null)
                 .apellidoMaterno(esDni ? "De Prueba" : null)
                 .direccion(direccion)
+                .origen("SIMULADO")
                 .simulado(true)
                 .build();
     }

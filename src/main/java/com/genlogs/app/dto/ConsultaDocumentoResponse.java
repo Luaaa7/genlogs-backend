@@ -40,6 +40,14 @@ public class ConsultaDocumentoResponse {
     private Integer idDistrito;
 
     /**
+     * De dónde salieron los datos:
+     * REGISTRADO (cliente o proveedor ya registrado en GENLOGS),
+     * GUARDADO (consultado antes y guardado en consulta_documento),
+     * FACTILIZA (consulta nueva) o SIMULADO (sin FACTILIZA_API_KEY).
+     */
+    private String origen;
+
+    /**
      * true cuando no hay FACTILIZA_API_KEY configurada y la respuesta es
      * simulada (modo demo), para que el frontend pueda avisarlo si quiere.
      */
