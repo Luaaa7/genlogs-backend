@@ -199,14 +199,21 @@ public class ClienteService {
         return terceroRepository.save(tercero);
     }
 
-    /** Misma regla que valida el trigger fn_tercero_valida_documento() en la BD. */
+    /**
+     * Misma regla que valida el trigger fn_tercero_valida_documento() en la BD:
+     * RUC y DNI (solo números) con largo exacto; Pasaporte de 6 hasta el
+     * máximo configurado, solo letras y números.
+     */
     private void validarLongitudDocumento(TipoDocumento tipoDocumento, String numeroDocumento) {
-        if (numeroDocumento.length() != tipoDocumento.getLongitudDocumento()) {
-            throw new BusinessException(String.format(
-                    "El documento %s debe tener %d dígitos",
-                    tipoDocumento.getCodigoTipo(), tipoDocumento.getLongitudDocumento()));
+        boolean numerico = Boolean.TRUE.equals(tipoDocumento.getSoloNumerico());
+        int largo = numeroDocumento.length();
+        int maximo = tipoDocumento.getLongitudDocumento();
+        if (numerico ? largo != maximo : (largo < 6 || largo > maximo || !numeroDocumento.matches("^[A-Za-z0-9]+$"))) {
+            throw new BusinessException(numerico
+                    ? String.format("El documento %s debe tener %d dígitos", tipoDocumento.getCodigoTipo(), maximo)
+                    : String.format("El documento %s debe tener de 6 a %d letras y números", tipoDocumento.getCodigoTipo(), maximo));
         }
-        if (Boolean.TRUE.equals(tipoDocumento.getSoloNumerico()) && !numeroDocumento.matches("^[0-9]+$")) {
+        if (numerico && !numeroDocumento.matches("^[0-9]+$")) {
             throw new BusinessException(
                     "El documento " + tipoDocumento.getCodigoTipo() + " debe ser numérico");
         }
