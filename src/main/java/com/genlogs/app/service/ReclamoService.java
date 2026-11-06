@@ -76,6 +76,16 @@ public class ReclamoService {
         return seguimientos(idReclamo);
     }
 
+    /** Usuarios activos que pueden ser responsables (para el selector del frontend). */
+    @Transactional(readOnly = true)
+    public List<java.util.Map<String, Object>> listarResponsables() {
+        return usuarioRepository.findAll().stream()
+                .filter(u -> "A".equals(u.getStatus()) && !Boolean.TRUE.equals(u.getBloqueado()))
+                .sorted(java.util.Comparator.comparing(Usuario::getNombres, String.CASE_INSENSITIVE_ORDER))
+                .map(u -> java.util.Map.<String, Object>of("idUsuario", u.getIdUsuario(), "nombres", u.getNombres()))
+                .toList();
+    }
+
     // ------------------------------------------------------------------ altas y cambios
 
     @Transactional
