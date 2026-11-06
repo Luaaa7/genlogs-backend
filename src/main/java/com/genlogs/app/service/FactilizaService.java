@@ -57,19 +57,6 @@ public class FactilizaService {
     @Value("${factiliza.base-url:https://api.factiliza.com/v1}")
     private String baseUrl;
 
-    /** Días que un resultado guardado se reutiliza antes de volver a consultar Factiliza (0 = nunca vence). */
-    @Value("${factiliza.cache-dias:30}")
-    private int cacheDias;
-
-    private static final String PROCESO_USUARIO = "SISTEMA";
-    private static final String PROCESO_CACHE = "FACTILIZA_CACHE";
-
-    private final ConsultaDocumentoCacheRepository cacheRepository;
-
-    public FactilizaService(ConsultaDocumentoCacheRepository cacheRepository) {
-        this.cacheRepository = cacheRepository;
-    }
-
     private final HttpClient client = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
