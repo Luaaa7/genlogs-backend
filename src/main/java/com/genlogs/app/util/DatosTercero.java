@@ -91,14 +91,17 @@ public final class DatosTercero {
         if (nom == null) {
             throw new BusinessException("Ingresa los nombres");
         }
-        if (pat == null) {
+                if (pat == null) {
             throw new BusinessException("Ingresa el apellido paterno");
+        }
+        if (mat == null) {
+            throw new BusinessException("Ingresa el apellido materno");
         }
 
         tercero.setNombres(nom);
         tercero.setApellidoPaterno(pat);
         tercero.setApellidoMaterno(mat);
-        tercero.setRazonSocial(String.join(" ", nom, pat, mat == null ? "" : mat).trim());
+        tercero.setRazonSocial(String.join(" ", nom, pat, mat));
     }
 
     private static String limpio(String valor) {
