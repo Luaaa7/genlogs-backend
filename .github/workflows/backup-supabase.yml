@@ -1,0 +1,95 @@
+name: Copia de seguridad Supabase
+
+# Copia diaria de la base de datos (esquema public) de Supabase.
+# El plan gratuito de Supabase no guarda copias descargables; esta acción las crea.
+#
+# Secretos necesarios (Settings > Secrets and variables > Actions):
+#   SUPABASE_DB_URL     URI de conexión "Session pooler" de Supabase, por ejemplo:
+#                       postgresql://postgres.<ref>:<password>@aws-0-us-east-2.pooler.supabase.com:5432/postgres
+#   BACKUP_PASSPHRASE   Contraseña con la que se cifra la copia (guárdala fuera de GitHub:
+#                       sin ella la copia no se puede restaurar).
+#
+# La copia queda cifrada (AES-256) como artifact del workflow durante 30 días.
+# Cómo restaurarla: ver MANTENIMIENTO.md.
+
+on:
+  schedule:
+    # Todos los días a las 08:00 UTC (03:00 hora de Perú).
+    # Los workflows programados solo corren desde la rama principal (main).
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: backup-supabase
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Verificar secretos
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ] || [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "::error::Faltan los secretos SUPABASE_DB_URL y/o BACKUP_PASSPHRASE en el repositorio."
+            exit 1
+          fi
+
+      # Supabase usa PostgreSQL 17: pg_dump debe ser de la misma versión o mayor.
+      - name: Instalar cliente de PostgreSQL 17
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -qq postgresql-client-17
+          /usr/lib/postgresql/17/bin/pg_dump --version
+
+      - name: Generar copia
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          FECHA=$(date -u +%Y-%m-%d_%H%M)
+          echo "ARCHIVO=genlogs_${FECHA}.dump" >> "$GITHUB_ENV"
+          /usr/lib/postgresql/17/bin/pg_dump "$SUPABASE_DB_URL" \
+            --schema=public \
+            --format=custom \
+            --no-owner \
+            --no-privileges \
+            --file="genlogs_${FECHA}.dump"
+
+      - name: Comprobar que la copia es válida
+        run: |
+          TABLAS=$(/usr/lib/postgresql/17/bin/pg_restore --list "$ARCHIVO" | grep -c "TABLE DATA" || true)
+          TAMANO=$(du -h "$ARCHIVO" | cut -f1)
+          echo "Copia: $ARCHIVO ($TAMANO), tablas con datos: $TABLAS"
+          if [ "$TABLAS" -lt 5 ]; then
+            echo "::error::La copia tiene muy pocas tablas ($TABLAS). Revisa la conexión."
+            exit 1
+          fi
+          {
+            echo "### Copia de seguridad generada"
+            echo "- Archivo: \`$ARCHIVO.gpg\`"
+            echo "- Tamaño sin cifrar: $TAMANO"
+            echo "- Tablas con datos: $TABLAS"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Se cifra porque contiene datos de clientes y hashes de contraseñas:
+      # cualquiera con acceso de lectura al repositorio puede descargar los artifacts.
+      - name: Cifrar copia
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          gpg --batch --yes --pinentry-mode loopback --symmetric --cipher-algo AES256 \
+            --passphrase "$BACKUP_PASSPHRASE" --output "$ARCHIVO.gpg" "$ARCHIVO"
+          rm -f "$ARCHIVO"
+
+      - name: Guardar copia (30 días)
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-${{ env.ARCHIVO }}
+          path: ${{ env.ARCHIVO }}.gpg
+          retention-days: 30
+          if-no-files-found: error
