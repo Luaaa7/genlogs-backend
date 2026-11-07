@@ -51,6 +51,13 @@ public class ReclamoController {
         return ResponseEntity.ok(reclamoService.listar(tipo, estado, prioridad, idCliente, idResponsable, page, size));
     }
 
+    /** Usuarios activos para asignar como responsables (GET /api/usuarios es solo de administrador). */
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
+    @GetMapping("/responsables")
+    public ResponseEntity<List<java.util.Map<String, Object>>> listarResponsables() {
+        return ResponseEntity.ok(reclamoService.listarResponsables());
+    }
+
     @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
     @GetMapping("/{id}")
     public ResponseEntity<ReclamoResponse> buscarPorId(@PathVariable Long id) {
