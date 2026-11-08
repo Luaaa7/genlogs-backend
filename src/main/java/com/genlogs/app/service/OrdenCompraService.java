@@ -271,7 +271,7 @@ public class OrdenCompraService {
                 .urlArchivo(oc.getUrlArchivo())
                 .observaciones(oc.getObservaciones())
                 .total(total)
-                .moneda(oc.getCotizacion().getMoneda().getSimbolo())
+                .moneda(com.genlogs.app.util.PdfUtils.simboloMoneda(oc.getCotizacion().getMoneda()))
                 .build();
     }
 }
