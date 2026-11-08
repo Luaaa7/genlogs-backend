@@ -4,7 +4,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.temporal.TemporalAdjusters;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
@@ -14,9 +17,11 @@ import com.genlogs.app.dto.FacturacionHistoricoItemResponse;
 import com.genlogs.app.repository.ClienteRepository;
 import com.genlogs.app.repository.CotizacionRepository;
 import com.genlogs.app.repository.CotizacionRepository.EstadoCantidadProjection;
+import com.genlogs.app.repository.CotizacionRepository.MonedaMontoProjection;
 import com.genlogs.app.repository.FacturacionRepository;
 import com.genlogs.app.repository.FacturacionRepository.PeriodoMontoProjection;
 import com.genlogs.app.repository.OrdenCompraRepository;
+import com.genlogs.app.util.PdfUtils;
 
 import lombok.RequiredArgsConstructor;
 
@@ -56,12 +61,16 @@ public class DashboardService {
         double variacion = calcularVariacionPorcentual(totalMesAnterior, totalMesActual);
 
         long cotizacionesPendientes = cotizacionRepository.countPendientes();
+        Map<String, BigDecimal> montoPendientes = montoPendientesPorMoneda();
+        Double diasRespuesta = cotizacionRepository.avgDiasRespuesta();
         long clientesActivos = clienteRepository.countBySituacionAndStatus("ACTIVO", "A");
         long ordenesCompraProceso = ordenCompraRepository.countEnProceso();
 
         return DashboardIndicadoresResponse.builder()
                 .totalFacturado(totalFacturado == null ? BigDecimal.ZERO : totalFacturado)
                 .cotizacionesPendientes(cotizacionesPendientes)
+                .montoCotizacionesPendientes(montoPendientes)
+                .tiempoRespuestaPromedioDias(diasRespuesta == null ? null : redondear(diasRespuesta))
                 .clientesActivos(clientesActivos)
                 .ordenesCompraProceso(ordenesCompraProceso)
                 .porcentajeVariacionFacturacion(variacion)
@@ -106,6 +115,25 @@ public class DashboardService {
                         .porcentaje(total == 0 ? 0.0 : redondear(f.getCantidad() * 100.0 / total))
                         .build())
                 .toList();
+    }
+
+    /**
+     * Monto pendiente por moneda con la etiqueta que muestra el Dashboard:
+     * soles como "S/" y dólares como "$". Los euros se omiten porque el
+     * frontend no los maneja. Se conserva el orden (mayor monto primero).
+     */
+    private Map<String, BigDecimal> montoPendientesPorMoneda() {
+        Map<String, BigDecimal> montos = new LinkedHashMap<>();
+        for (MonedaMontoProjection fila : cotizacionRepository.sumTotalPendientePorMoneda()) {
+            String codigo = fila.getMoneda() == null ? "PEN" : fila.getMoneda().trim().toUpperCase(Locale.ROOT);
+            if ("EUR".equals(codigo)) {
+                continue;
+            }
+            String etiqueta = PdfUtils.simboloMoneda(codigo);
+            BigDecimal monto = fila.getMonto() == null ? BigDecimal.ZERO : fila.getMonto();
+            montos.merge(etiqueta, monto, BigDecimal::add);
+        }
+        return montos;
     }
 
     private double calcularVariacionPorcentual(BigDecimal anterior, BigDecimal actual) {

@@ -113,6 +113,33 @@ public interface CotizacionRepository extends JpaRepository<Cotizacion, Long> {
         Long getCantidad();
     }
 
+    /**
+     * Tiempo de respuesta promedio, en días: desde que la cotización se
+     * ENVIÓ al cliente hasta su primera respuesta (negociación, aprobación o
+     * rechazo), según el historial de seguimiento_cotizacion. Solo cuentan
+     * las cotizaciones activas que ya recibieron respuesta; null si ninguna.
+     */
+    @Query(value = "SELECT AVG(EXTRACT(EPOCH FROM (r.fecha_respuesta - r.fecha_envio)) / 86400.0) " +
+            "FROM ( " +
+            "  SELECT env.id_cotizacion, env.fecha_envio, " +
+            "         (SELECT MIN(s2.fecha_evento) FROM seguimiento_cotizacion s2 " +
+            "          JOIN estado_cotizacion e2 ON e2.id_estado_cotizacion = s2.id_estado_cotizacion " +
+            "          WHERE s2.id_cotizacion = env.id_cotizacion " +
+            "            AND s2.fecha_evento >= env.fecha_envio " +
+            "            AND e2.codigo_estado IN ('EN_NEGOCIACION', 'APROBADA', 'ACEPTADA', 'CONVERTIDA_OC', 'RECHAZADA') " +
+            "         ) AS fecha_respuesta " +
+            "  FROM ( " +
+            "    SELECT s.id_cotizacion, MIN(s.fecha_evento) AS fecha_envio " +
+            "    FROM seguimiento_cotizacion s " +
+            "    JOIN estado_cotizacion e ON e.id_estado_cotizacion = s.id_estado_cotizacion " +
+            "    WHERE e.codigo_estado = 'ENVIADA' " +
+            "    GROUP BY s.id_cotizacion " +
+            "  ) env " +
+            ") r " +
+            "JOIN cotizacion c ON c.id_cotizacion = r.id_cotizacion " +
+            "WHERE c.status = 'A' AND r.fecha_respuesta IS NOT NULL", nativeQuery = true)
+    Double avgDiasRespuesta();
+
     @Query("SELECT c.estadoCotizacion.nombreEstado AS estado, COUNT(c) AS cantidad " +
             "FROM Cotizacion c WHERE c.status = 'A' " +
             "GROUP BY c.estadoCotizacion.nombreEstado")
