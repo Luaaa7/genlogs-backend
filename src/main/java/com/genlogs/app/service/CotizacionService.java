@@ -27,6 +27,7 @@ import com.genlogs.app.dto.EnviarCotizacionResponse;
 import com.genlogs.app.dto.EstadisticasCotizacionResponse;
 import com.genlogs.app.dto.PaginaResponse;
 import com.genlogs.app.dto.SeguimientoCotizacionResponse;
+import com.genlogs.app.enums.CodigoEstadoCotizacion;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
 import com.genlogs.app.model.AdjuntoCotizacion;
@@ -118,6 +119,7 @@ public class CotizacionService {
     private final MailService mailService;
     private final TasaIgvService tasaIgvService;
     private final TipoCambioCotizacion tipoCambioCotizacion;
+    private final AvisoAltoValorCotizacion avisoAltoValorCotizacion;
 
     /**
      * Permite controlar transacciones explícitas en operaciones que deben
@@ -296,6 +298,9 @@ public class CotizacionService {
                     "Debe indicar el código del nuevo estado");
         }
 
+        ReglasAprobacionCotizacion.validarCambioLibre(
+                cotizacion.getEstadoCotizacion().getCodigoEstado(), codigoEstado);
+
         EstadoCotizacion nuevoEstado = buscarEstado(codigoEstado);
 
         if (Boolean.TRUE.equals(
@@ -318,6 +323,49 @@ public class CotizacionService {
                 cotizacion, nuevoEstado, usuario, request.comentarioResuelto());
 
         return toResponseDetalle(cotizacion);
+    }
+
+    @Transactional
+    public CotizacionResponse solicitarAprobacion(Long idCotizacion) {
+        Cotizacion cotizacion = obtenerOLanzar(idCotizacion);
+        ReglasAprobacionCotizacion.exigir(
+                cotizacion.getEstadoCotizacion().getCodigoEstado(),
+                CodigoEstadoCotizacion.BORRADOR,
+                ReglasAprobacionCotizacion.SOLO_BORRADOR);
+        return mover(cotizacion, CodigoEstadoCotizacion.PENDIENTE_APROBACION,
+                "SOLICITAR_APROBACION", "Enviada a aprobación del Jefe");
+    }
+
+    @Transactional
+    public CotizacionResponse aprobar(Long idCotizacion) {
+        Cotizacion cotizacion = obtenerOLanzar(idCotizacion);
+        ReglasAprobacionCotizacion.exigir(
+                cotizacion.getEstadoCotizacion().getCodigoEstado(),
+                CodigoEstadoCotizacion.PENDIENTE_APROBACION,
+                ReglasAprobacionCotizacion.SOLO_PENDIENTE);
+        Usuario usuario = usuarioActual();
+        EstadoCotizacion destino = estadoDe(CodigoEstadoCotizacion.APROBADA_INTERNA);
+        aplicarEstado(cotizacion, destino, usuario, "APROBAR_COTIZACION");
+        BigDecimal total = cotizacionRepository.findTotalesByCotizacion(idCotizacion)
+                .map(TotalesCotizacionProjection::getTotal)
+                .orElse(BigDecimal.ZERO);
+        avisoAltoValorCotizacion.alAprobar(cotizacion, total);
+        cotizacionRepository.save(cotizacion);
+        registrarSeguimiento(cotizacion, destino, usuario,
+                "Aprobada por " + usuario.getNombreUsuario());
+        return toResponseDetalle(cotizacion);
+    }
+
+    @Transactional
+    public CotizacionResponse devolver(Long idCotizacion, String motivo) {
+        ReglasAprobacionCotizacion.exigirMotivo(motivo);
+        Cotizacion cotizacion = obtenerOLanzar(idCotizacion);
+        ReglasAprobacionCotizacion.exigir(
+                cotizacion.getEstadoCotizacion().getCodigoEstado(),
+                CodigoEstadoCotizacion.PENDIENTE_APROBACION,
+                ReglasAprobacionCotizacion.SOLO_PENDIENTE);
+        return mover(cotizacion, CodigoEstadoCotizacion.BORRADOR,
+                "DEVOLVER_COTIZACION", motivo.trim());
     }
 
     @Transactional
@@ -408,6 +456,10 @@ public class CotizacionService {
 
         DatosEnvio datos = transactionTemplate.execute(status -> {
             Cotizacion cotizacion = obtenerOLanzar(idCotizacion);
+            ReglasAprobacionCotizacion.exigir(
+                    cotizacion.getEstadoCotizacion().getCodigoEstado(),
+                    CodigoEstadoCotizacion.APROBADA_INTERNA,
+                    ReglasAprobacionCotizacion.SOLO_APROBADA_INTERNA);
 
             return new DatosEnvio(
                     obtenerNombreCliente(cotizacion),
@@ -456,8 +508,8 @@ public class CotizacionService {
     }
 
     /**
-     * Cambia BORRADOR a ENVIADA. El método es invocado dentro de una
-     * transacción abierta mediante TransactionTemplate.
+     * Pasa APROBADA_INTERNA a ENVIADA. Se invoca dentro del TransactionTemplate,
+     * después de que el correo al cliente salió bien.
      */
     public void marcarComoEnviadaSiBorrador(
             Long idCotizacion,
@@ -465,29 +517,15 @@ public class CotizacionService {
             String destinatario) {
 
         Cotizacion cotizacion = obtenerOLanzar(idCotizacion);
+        ReglasAprobacionCotizacion.exigir(
+                cotizacion.getEstadoCotizacion().getCodigoEstado(),
+                CodigoEstadoCotizacion.APROBADA_INTERNA,
+                ReglasAprobacionCotizacion.SOLO_APROBADA_INTERNA);
         cotizacion.setTipoCambioUsado(tipoCambioCotizacion.vigente());
-        cotizacion.setUserUpdate(usuario.getNombreUsuario());
-        cotizacion.setProcessUpdate("ENVIO_COTIZACION");
-        cotizacion.setDateUpdate(LocalDateTime.now());
-
-        if ("BORRADOR".equals(
-                cotizacion.getEstadoCotizacion().getCodigoEstado())) {
-
-            EstadoCotizacion estadoEnviada = estadoCotizacionRepository
-                    .findByCodigoEstado("ENVIADA")
-                    .orElse(null);
-
-            if (estadoEnviada != null) {
-                cotizacion.setEstadoCotizacion(estadoEnviada);
-                registrarSeguimiento(
-                        cotizacion,
-                        estadoEnviada,
-                        usuario,
-                        "Cotización enviada a " + destinatario);
-            }
-        }
-
+        EstadoCotizacion enviada = estadoDe(CodigoEstadoCotizacion.ENVIADA);
+        aplicarEstado(cotizacion, enviada, usuario, "ENVIO_COTIZACION");
         cotizacionRepository.save(cotizacion);
+        registrarSeguimiento(cotizacion, enviada, usuario, "Cotización enviada a " + destinatario);
     }
 
     @Transactional(readOnly = true)
@@ -1024,6 +1062,38 @@ public class CotizacionService {
         }
 
         return null;
+    }
+
+    private CotizacionResponse mover(
+            Cotizacion cotizacion,
+            CodigoEstadoCotizacion codigo,
+            String proceso,
+            String comentario) {
+
+        Usuario usuario = usuarioActual();
+        EstadoCotizacion destino = estadoDe(codigo);
+        aplicarEstado(cotizacion, destino, usuario, proceso);
+        cotizacionRepository.save(cotizacion);
+        registrarSeguimiento(cotizacion, destino, usuario, comentario);
+        return toResponseDetalle(cotizacion);
+    }
+
+    private void aplicarEstado(
+            Cotizacion cotizacion,
+            EstadoCotizacion destino,
+            Usuario usuario,
+            String proceso) {
+
+        cotizacion.setEstadoCotizacion(destino);
+        cotizacion.setUserUpdate(usuario.getNombreUsuario());
+        cotizacion.setProcessUpdate(proceso);
+        cotizacion.setDateUpdate(LocalDateTime.now());
+    }
+
+    private EstadoCotizacion estadoDe(CodigoEstadoCotizacion codigo) {
+        return estadoCotizacionRepository.findByCodigoEstado(codigo.name())
+                .orElseThrow(() -> new BusinessException(
+                        "No existe el estado " + codigo.name() + " configurado"));
     }
 
     private EstadoCotizacion buscarEstado(String codigoEstado) {

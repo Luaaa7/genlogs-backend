@@ -82,6 +82,11 @@ public class Cotizacion extends Auditable {
     @Column(name = "tipo_cambio_usado", precision = 10, scale = 4)
     private BigDecimal tipoCambioUsado;
 
+    /** True cuando ya se avisó al Gerente por alto valor. v3_2_be_c.sql. */
+    @Column(name = "aviso_alto_valor_enviado", nullable = false)
+    @Builder.Default
+    private Boolean avisoAltoValorEnviado = false;
+
     @Column(name = "observaciones", columnDefinition = "TEXT")
     private String observaciones;
 }

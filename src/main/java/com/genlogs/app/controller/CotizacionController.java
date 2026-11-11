@@ -31,6 +31,7 @@ import com.genlogs.app.service.OrdenCompraService;
 import com.genlogs.app.dto.AdjuntoCotizacionResponse;
 import com.genlogs.app.dto.CambiarEstadoCotizacionRequest;
 import com.genlogs.app.dto.CotizacionDetalleResponse;
+import com.genlogs.app.dto.DevolverCotizacionRequest;
 import com.genlogs.app.dto.CotizacionRequest;
 import com.genlogs.app.dto.CotizacionResponse;
 import com.genlogs.app.dto.EnviarCotizacionRequest;
@@ -203,6 +204,25 @@ public class CotizacionController {
             }
         }
         return ResponseEntity.ok(respuesta);
+    }
+
+    @PreAuthorize(PermisosCotizacion.CREAR)
+    @PostMapping("/{id}/solicitar-aprobacion")
+    public ResponseEntity<CotizacionResponse> solicitarAprobacion(@PathVariable Long id) {
+        return ResponseEntity.ok(cotizacionService.solicitarAprobacion(id));
+    }
+
+    @PreAuthorize(PermisosCotizacion.APROBAR)
+    @PostMapping("/{id}/aprobar")
+    public ResponseEntity<CotizacionResponse> aprobar(@PathVariable Long id) {
+        return ResponseEntity.ok(cotizacionService.aprobar(id));
+    }
+
+    @PreAuthorize(PermisosCotizacion.APROBAR)
+    @PostMapping("/{id}/devolver")
+    public ResponseEntity<CotizacionResponse> devolver(
+            @PathVariable Long id, @Valid @RequestBody DevolverCotizacionRequest request) {
+        return ResponseEntity.ok(cotizacionService.devolver(id, request.getMotivo()));
     }
 
     @PreAuthorize(PermisosCotizacion.CREAR)

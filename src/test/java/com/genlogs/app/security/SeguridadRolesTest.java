@@ -160,6 +160,38 @@ class SeguridadRolesTest {
                 .andExpect(status().isNotFound());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "GERENTE_GENERAL",
+            "ASISTENTE_LOGISTICO",
+            "ASISTENTE_ADMINISTRATIVO",
+            "CONTADOR_GENERAL",
+            "SUPERVISOR_SST",
+            "CLIENTE"
+    })
+    void soloElJefeApruebaODevuelve(String rol) throws Exception {
+        mockMvc.perform(post("/api/cotizaciones/1/aprobar").with(user("usuario").roles(rol)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/cotizaciones/1/devolver")
+                        .with(user("usuario").roles(rol))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"motivo\":\"falta plazo\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void elJefeNoSolicitaYDevolverSinMotivoEs400() throws Exception {
+        mockMvc.perform(post("/api/cotizaciones/1/solicitar-aprobacion")
+                        .with(user("jefe").roles("JEFE_ADMINISTRATIVO")))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/cotizaciones/1/devolver")
+                        .with(user("jefe").roles("JEFE_ADMINISTRATIVO"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"motivo\":\"\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
     @Test
     void clientePasaLaAutorizacionDelPortal() throws Exception {
         mockMvc.perform(get("/api/portal/pedidos").with(user("cliente").roles("CLIENTE")))

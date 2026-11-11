@@ -12,5 +12,9 @@ public enum CodigoEstadoCotizacion {
     APROBADA,
     RECHAZADA,
     VENCIDA,
-    ANULADA
+    ANULADA,
+    /** El asistente logístico la dejó para que el jefe la revise. */
+    PENDIENTE_APROBACION,
+    /** El jefe ya la aprobó. Recién aquí se puede enviar al cliente. */
+    APROBADA_INTERNA
 }
