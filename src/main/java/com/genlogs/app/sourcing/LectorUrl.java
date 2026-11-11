@@ -1,6 +1,5 @@
 package com.genlogs.app.sourcing;
 
-import com.genlogs.app.exception.BusinessException;
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Connection;
 import org.jsoup.HttpStatusException;
@@ -11,9 +10,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.net.InetAddress;
 import java.net.URI;
-import java.net.UnknownHostException;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -45,12 +42,12 @@ public class LectorUrl {
     }
 
     public DatosUrl leer(String url) {
-        URI actual = validarFormato(url);
+        URI actual = UrlSegura.validarFormato(url);
         String fuente = detectarFuente(actual.getHost());
         try {
             // Las redirecciones se siguen a mano para revisar cada destino.
             for (int salto = 0; salto <= MAX_REDIRECCIONES; salto++) {
-                validarDestino(actual);
+                UrlSegura.validarDestino(actual);
                 Connection.Response resp = Jsoup.connect(actual.toString())
                         .userAgent(USER_AGENT)
                         .header("Accept-Language", "es-PE,es;q=0.9,en;q=0.8")
@@ -59,7 +56,7 @@ public class LectorUrl {
                         .followRedirects(false)
                         .execute();
                 if (resp.statusCode() >= 300 && resp.statusCode() < 400 && resp.hasHeader("Location")) {
-                    actual = validarFormato(actual.resolve(resp.header("Location")).toString());
+                    actual = UrlSegura.validarFormato(actual.resolve(resp.header("Location")).toString());
                     continue;
                 }
                 return extraer(resp.parse(), actual.toString(), fuente);
@@ -96,6 +93,7 @@ public class LectorUrl {
             if (imagen == null) imagen = grupo(LD_IMAGEN, json);
         }
 
+        if (imagen != null && !imagen.matches("(?i)^https?://\\S+$")) imagen = null; // nada de data:, javascript: ni rutas relativas
         BigDecimal precio = normalizarPrecio(precioTxt);
         String codigoMoneda = moneda != null ? moneda.trim().toUpperCase(Locale.ROOT) : null;
         boolean sinDatos = precio == null && imagen == null;
@@ -130,36 +128,6 @@ public class LectorUrl {
         if (h.contains("ebay.")) return "EBAY";
         if (h.contains("mercadolibre.") || h.contains("mercadolivre.")) return "MERCADO_LIBRE";
         return "PROVEEDOR";
-    }
-
-    /** Solo http/https con un sitio. No consulta la red. */
-    static URI validarFormato(String url) {
-        URI uri;
-        try {
-            uri = URI.create(url == null ? "" : url.trim());
-        } catch (IllegalArgumentException e) {
-            throw new BusinessException("La URL no es válida");
-        }
-        String esquema = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
-        boolean http = esquema.equals("http") || esquema.equals("https");
-        if (!http || uri.getHost() == null) {
-            throw new BusinessException("La URL debe empezar con http:// o https://");
-        }
-        return uri;
-    }
-
-    /** Nunca direcciones internas: evita que se use el servidor para leer la red interna. */
-    static void validarDestino(URI uri) {
-        try {
-            for (InetAddress ip : InetAddress.getAllByName(uri.getHost())) {
-                if (ip.isLoopbackAddress() || ip.isSiteLocalAddress() || ip.isLinkLocalAddress()
-                        || ip.isAnyLocalAddress() || ip.isMulticastAddress()) {
-                    throw new BusinessException("No se pueden leer direcciones internas");
-                }
-            }
-        } catch (UnknownHostException e) {
-            throw new BusinessException("No se encontró el sitio " + uri.getHost());
-        }
     }
 
     // ---------- utilidades ----------

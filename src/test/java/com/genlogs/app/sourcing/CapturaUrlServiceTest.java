@@ -73,4 +73,26 @@ class CapturaUrlServiceTest {
                 .isInstanceOf(BusinessException.class);
         verify(historialRepo, never()).save(any());
     }
+
+    @Test
+    void imagenQueNoEsHttp_esRechazada() {
+        GuardarUrlRequest p = pedido("USD", "3.75", false);
+        GuardarUrlRequest conImagenMala = new GuardarUrlRequest(p.idSolicitudItem(), p.url(), p.titulo(), p.marca(),
+                p.numeroParte(), p.precio(), p.codigoMoneda(), "javascript:alert(1)", p.origen(), p.tipoCambio(),
+                p.flete(), p.seguro(), p.aduana(), p.editadoAMano());
+
+        assertThatThrownBy(() -> servicio.guardar(conImagenMala)).isInstanceOf(BusinessException.class);
+        verify(historialRepo, never()).save(any());
+    }
+
+    @Test
+    void urlEnOtroPuerto_esRechazada() {
+        GuardarUrlRequest p = pedido("USD", "3.75", false);
+        GuardarUrlRequest otroPuerto = new GuardarUrlRequest(p.idSolicitudItem(), "http://tienda.com:6379/x", p.titulo(),
+                p.marca(), p.numeroParte(), p.precio(), p.codigoMoneda(), p.urlImagen(), p.origen(), p.tipoCambio(),
+                p.flete(), p.seguro(), p.aduana(), p.editadoAMano());
+
+        assertThatThrownBy(() -> servicio.guardar(otroPuerto)).isInstanceOf(BusinessException.class);
+        verify(historialRepo, never()).save(any());
+    }
 }

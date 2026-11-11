@@ -40,7 +40,8 @@ public class CapturaUrlService {
 
     @Transactional
     public ReferenciaResponse guardar(GuardarUrlRequest req) {
-        java.net.URI uri = LectorUrl.validarFormato(req.url());
+        java.net.URI uri = UrlSegura.validarFormato(req.url());
+        String urlImagen = UrlSegura.imagenOpcional(req.urlImagen());
         String codigoMoneda = req.codigoMoneda().trim().toUpperCase(Locale.ROOT);
         Moneda moneda = monedaRepository.findByCodigoMoneda(codigoMoneda)
                 .orElseThrow(() -> new BusinessException("La moneda " + codigoMoneda + " no está registrada"));
@@ -62,7 +63,7 @@ public class CapturaUrlService {
                 .metodo(MetodoBusqueda.URL)
                 .consulta(req.url().trim())
                 .urlReferencia(req.url().trim())
-                .urlImagenRef(vacioANull(req.urlImagen()))
+                .urlImagenRef(urlImagen)
                 .titulo(req.titulo().trim())
                 .marcaTexto(vacioANull(req.marca()))
                 .numeroParte(vacioANull(req.numeroParte()))

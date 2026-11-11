@@ -1,16 +1,11 @@
 package com.genlogs.app.sourcing;
 
-import com.genlogs.app.exception.BusinessException;
 import org.jsoup.Jsoup;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.junit.jupiter.params.provider.ValueSource;
-
-import java.net.URI;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class LectorUrlTest {
 
@@ -104,17 +99,15 @@ class LectorUrlTest {
         assertThat(LectorUrl.detectarFuente(host)).isEqualTo(fuente);
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {"ftp://tienda.com/x", "javascript:alert(1)", "tienda.com/sin-esquema", ""})
-    void rechazaUrlsQueNoSonHttp(String url) {
-        assertThatThrownBy(() -> LectorUrl.validarFormato(url)).isInstanceOf(BusinessException.class);
-    }
+    @Test
+    void descartaImagenesQueNoSonHttp() {
+        LectorUrl.DatosUrl d = extraer("""
+                <html><head>
+                  <meta property="og:image" content="javascript:alert(1)">
+                  <meta property="product:price:amount" content="10">
+                </head><body></body></html>""");
 
-    @ParameterizedTest
-    @ValueSource(strings = {"http://localhost:8080/api", "http://127.0.0.1/", "http://10.0.0.5/", "http://192.168.1.1/"})
-    void noLeeDireccionesInternas(String url) {
-        assertThatThrownBy(() -> LectorUrl.validarDestino(URI.create(url)))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("internas");
+        assertThat(d.urlImagen()).isNull();
+        assertThat(d.precio()).isEqualByComparingTo("10");
     }
 }
