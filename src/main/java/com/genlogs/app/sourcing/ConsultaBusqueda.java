@@ -1,7 +1,7 @@
 package com.genlogs.app.sourcing;
 
 /**
- * PROVISIONAL — viene con FuenteBusqueda en el Paso 0. No va en el PR.
+ * Parte del contrato de FuenteBusqueda (Paso 0).
  *
  * @param metodo      NUMERO_PARTE, GTIN, PALABRAS o IMAGEN
  * @param numeroParte N.º de parte del fabricante (dato principal, D-01)
