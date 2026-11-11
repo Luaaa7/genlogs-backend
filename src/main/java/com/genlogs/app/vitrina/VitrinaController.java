@@ -26,6 +26,7 @@ import java.util.List;
 public class VitrinaController {
 
     private final VitrinaService vitrinaService;
+    private final VerificacionVitrinaService verificacionVitrinaService;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ASISTENTE_LOGISTICO','JEFE_ADMINISTRATIVO','GERENTE_GENERAL','ASISTENTE_ADMINISTRATIVO')")
@@ -70,5 +71,21 @@ public class VitrinaController {
     @PreAuthorize("hasAnyRole('ASISTENTE_LOGISTICO','JEFE_ADMINISTRATIVO')")
     public ResponseEntity<ProductoVitrinaResponse> retirar(@PathVariable Long idProducto) {
         return ResponseEntity.ok(vitrinaService.cambiarEstado(idProducto, EstadoPublicacion.RETIRADO));
+    }
+
+    /** RF-83: el asistente confirmó hoy que el repuesto sigue disponible. */
+    @PostMapping("/{idProducto}/verificar")
+    @PreAuthorize("hasRole('ASISTENTE_LOGISTICO')")
+    public ResponseEntity<ProductoVitrinaResponse> verificar(@PathVariable Long idProducto) {
+        verificacionVitrinaService.marcarVerificado(idProducto);
+        return ResponseEntity.ok(vitrinaService.detalle(idProducto));
+    }
+
+    /** RF-83: una cotización no consiguió el repuesto; a la 2.ª se oculta. */
+    @PostMapping("/{idProducto}/falla-cotizacion")
+    @PreAuthorize("hasAnyRole('ASISTENTE_LOGISTICO','JEFE_ADMINISTRATIVO')")
+    public ResponseEntity<ProductoVitrinaResponse> fallaCotizacion(@PathVariable Long idProducto) {
+        verificacionVitrinaService.registrarFallaCotizacion(idProducto);
+        return ResponseEntity.ok(vitrinaService.detalle(idProducto));
     }
 }
