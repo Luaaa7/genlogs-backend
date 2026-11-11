@@ -2,7 +2,9 @@ package com.genlogs.app.service;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -80,5 +82,37 @@ class CalendarioHabilTest {
     @Test
     void recibidoNulo_lanzaError() {
         assertThrows(IllegalArgumentException.class, () -> calendario.fechaLimite(null, 1));
+    }
+
+    // ---- Feriados (D-18) ----
+
+    private final CalendarioHabil conFeriados = new CalendarioHabil(Set.of(
+            LocalDate.of(2026, 12, 8), LocalDate.of(2026, 12, 9), LocalDate.of(2027, 5, 1))::contains);
+
+    @Test
+    void feriadosSeguidos_noCuentanComoDiasHabiles() {
+        // lunes 7/12/2026; martes 8 y miércoles 9 son feriados
+        assertEquals(LocalDateTime.of(2026, 12, 10, 18, 0),
+                conFeriados.fechaLimite(LocalDateTime.of(2026, 12, 7, 10, 0), 1));
+    }
+
+    @Test
+    void recibidoEnFeriado_cuentaDesdeElSiguienteDiaHabil() {
+        // llega el martes 8 (feriado): se toma como recibido el jueves 10
+        assertEquals(LocalDateTime.of(2026, 12, 11, 18, 0),
+                conFeriados.fechaLimite(LocalDateTime.of(2026, 12, 8, 10, 0), 1));
+    }
+
+    @Test
+    void feriadoEnSabado_saltaHastaElLunes() {
+        // viernes 30/4/2027; sábado 1/5 es feriado y el domingo no se atiende
+        assertEquals(LocalDateTime.of(2027, 5, 3, 18, 0),
+                conFeriados.fechaLimite(LocalDateTime.of(2027, 4, 30, 10, 0), 1));
+    }
+
+    @Test
+    void sinFeriadosRegistrados_seComportaIgualQueAntes() {
+        assertEquals(LocalDateTime.of(2026, 12, 8, 18, 0),
+                calendario.fechaLimite(LocalDateTime.of(2026, 12, 7, 10, 0), 1));
     }
 }

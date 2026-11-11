@@ -1,11 +1,13 @@
 package com.genlogs.app.service;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.function.Predicate;
 
 /**
  * Calcula la fecha límite interna de una solicitud en días hábiles.
@@ -15,13 +17,30 @@ import java.time.LocalTime;
  * del N-ésimo día hábil. Lo recibido después del cierre (o en un día sin atención)
  * cuenta como recibido en la siguiente apertura.
  *
- * Los feriados (D-18) se agregan en feat/be-b-feriados.
+ * Los feriados registrados (D-18) no cuentan como días hábiles.
  */
 @Component
 public class CalendarioHabil {
 
     private static final LocalTime CIERRE_SEMANA = LocalTime.of(18, 0);
     private static final LocalTime CIERRE_SABADO = LocalTime.of(13, 0);
+
+    private final Predicate<LocalDate> esFeriado;
+
+    /** Sin feriados (para pruebas y cálculos que no los necesitan). */
+    public CalendarioHabil() {
+        this(fecha -> false);
+    }
+
+    /** El que usa Spring: toma los feriados registrados en la tabla feriado. */
+    @Autowired
+    public CalendarioHabil(FeriadoService feriadoService) {
+        this(feriadoService::esFeriado);
+    }
+
+    public CalendarioHabil(Predicate<LocalDate> esFeriado) {
+        this.esFeriado = esFeriado;
+    }
 
     public LocalDateTime fechaLimite(LocalDateTime recibido, int diasHabiles) {
         if (recibido == null) {
@@ -55,7 +74,7 @@ public class CalendarioHabil {
     }
 
     private boolean esHabil(LocalDate dia) {
-        return dia.getDayOfWeek() != DayOfWeek.SUNDAY;
+        return dia.getDayOfWeek() != DayOfWeek.SUNDAY && !esFeriado.test(dia);
     }
 
     private LocalTime cierre(LocalDate dia) {
