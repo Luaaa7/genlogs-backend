@@ -499,7 +499,7 @@ public class CotizacionService {
                 .findTotalesByCotizacion(idCotizacion)
                 .orElse(null);
 
-        String moneda = PdfUtils.codigoMoneda(cotizacion.getMoneda());
+        String moneda = PdfUtils.simboloMoneda(cotizacion.getMoneda());
 
         // Cada línea con su detalle (marca, descripción, código) como en las cotizaciones de GENLOGS.
         List<LineaPdf> filas = new ArrayList<>();
@@ -1121,9 +1121,7 @@ public class CotizacionService {
                 ? c.getMoneda().getCodigoMoneda()
                 : null;
 
-        String simboloMoneda = c.getMoneda() != null
-                ? c.getMoneda().getSimbolo()
-                : "S/";
+        String simboloMoneda = PdfUtils.simboloMoneda(c.getMoneda());
 
         CotizacionResponse.CotizacionResponseBuilder builder =
                 CotizacionResponse.builder()
@@ -1367,7 +1365,7 @@ public class CotizacionService {
                         : BigDecimal.ZERO;
 
         String totalStr = PdfUtils.formatearMonto(total);
-        String simbolo = PdfUtils.codigoMoneda(c.getMoneda());
+        String simbolo = PdfUtils.simboloMoneda(c.getMoneda());
 
         String codigo = c.getCodigoCotizacion() != null ? c.getCodigoCotizacion() : "-";
         String cliente = obtenerNombreCliente(c);

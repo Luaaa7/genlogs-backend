@@ -187,7 +187,7 @@ public class ReporteService {
                     razonSocialDe(c.getCliente()),
                     c.getFechaCotizacion() != null ? c.getFechaCotizacion().format(FMT) : "",
                     c.getEstadoCotizacion() != null ? c.getEstadoCotizacion().getNombreEstado() : "",
-                    PdfUtils.codigoMoneda(c.getMoneda()),
+                    PdfUtils.simboloMoneda(c.getMoneda()),
                     formatoMonto(total),
             };
         }

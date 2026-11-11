@@ -44,15 +44,34 @@ public final class PdfUtils {
         return formato("#,##0.###").format(v.stripTrailingZeros());
     }
 
-    /** Código ISO de la moneda ("USD", "PEN"), como en la pantalla. Nunca "$". */
+    /**
+     * Código ISO de la moneda ("PEN", "USD"). Solo para integraciones que lo
+     * exigen (SUNAT); en PDF, correos, reportes y pantallas va {@link #simboloMoneda}.
+     */
     public static String codigoMoneda(Moneda moneda) {
         if (moneda == null) {
             return "PEN";
         }
         if (moneda.getCodigoMoneda() != null && !moneda.getCodigoMoneda().isBlank()) {
-            return moneda.getCodigoMoneda().trim();
+            return moneda.getCodigoMoneda().trim().toUpperCase(Locale.ROOT);
         }
-        return moneda.getSimbolo() != null ? moneda.getSimbolo() : "PEN";
+        String simbolo = moneda.getSimbolo() != null ? moneda.getSimbolo().trim() : "";
+        return simbolo.contains("$") ? "USD" : "PEN";
+    }
+
+    /** Símbolo con que se muestra la moneda: "S/" para soles y "$" para dólares. */
+    public static String simboloMoneda(Moneda moneda) {
+        return simboloMoneda(codigoMoneda(moneda));
+    }
+
+    /** "PEN" -> "S/", "USD" -> "$"; cualquier otro código se devuelve tal cual. */
+    public static String simboloMoneda(String codigo) {
+        String c = codigo == null ? "PEN" : codigo.trim().toUpperCase(Locale.ROOT);
+        return switch (c) {
+            case "", "PEN" -> "S/";
+            case "USD" -> "$";
+            default -> c;
+        };
     }
 
     private static final DateTimeFormatter FECHA_LARGA =
@@ -79,7 +98,6 @@ public final class PdfUtils {
         return switch (codigo) {
             case "USD" -> "DÓLARES AMERICANOS";
             case "PEN" -> "SOLES";
-            case "EUR" -> "EUROS";
             default -> moneda.getNombreMoneda() != null ? moneda.getNombreMoneda().toUpperCase(Locale.ROOT) : codigo;
         };
     }

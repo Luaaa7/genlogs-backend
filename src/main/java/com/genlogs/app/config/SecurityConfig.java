@@ -3,7 +3,6 @@ package com.genlogs.app.config;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -12,7 +11,6 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfigurationSource;
 
@@ -62,7 +60,12 @@ public class SecurityConfig {
             // Sin sesión / token inválido -> 401 (el frontend lo usa para mandar al login).
             // Sin permiso para la ruta -> 403 en JSON ("message" es lo que lee el frontend).
             .exceptionHandling(e -> e
-                .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
+                .authenticationEntryPoint((req, res, ex) -> {
+                    res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                    res.setContentType("application/json;charset=UTF-8");
+                    res.getWriter().write("{\"status\":401,\"error\":\"Tu sesión expiró o no has iniciado sesión\","
+                            + "\"message\":\"Tu sesión expiró o no has iniciado sesión. Vuelve a ingresar.\"}");
+                })
                 .accessDeniedHandler((req, res, ex) -> {
                     res.setStatus(HttpServletResponse.SC_FORBIDDEN);
                     res.setContentType("application/json;charset=UTF-8");
@@ -73,8 +76,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers("/error").permitAll()
                 // Health check público para monitoreo de Render
-                .requestMatchers("/", "/health", "/api/health").permitAll()
-                // Login, recuperación de contraseña y, si se agrega, refresh: siguen públicos.
+                .requestMatchers("/", "/health", "/api/health", "/api/health/db").permitAll()
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers("/api/public/**").permitAll()
                 // El alta del portal no lleva token. Va antes que /api/portal/** para no pedir rol CLIENTE.

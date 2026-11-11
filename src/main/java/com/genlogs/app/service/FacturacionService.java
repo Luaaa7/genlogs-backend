@@ -443,7 +443,7 @@ public class FacturacionService {
         BigDecimal igv = total.subtract(subtotal);
         BigDecimal pagado = f.getMontoPagado() != null ? f.getMontoPagado() : BigDecimal.ZERO;
 
-        String moneda = PdfUtils.codigoMoneda(f.getMoneda());
+        String moneda = PdfUtils.simboloMoneda(f.getMoneda());
 
         // Misma tabla que la cotización: título y debajo marca, descripción y código.
         List<LineaPdf> filas = new ArrayList<>();
@@ -567,7 +567,7 @@ public class FacturacionService {
     private String cuerpoCorreo(Facturacion f, String codigo, EnviarCotizacionRequest request, boolean html) {
         String mensaje = request.getMensaje() != null ? request.getMensaje().trim() : "";
         String tipo = f.getTipoComprobante() != null ? f.getTipoComprobante().getNombreTipo() : "Comprobante";
-        String moneda = PdfUtils.codigoMoneda(f.getMoneda());
+        String moneda = PdfUtils.simboloMoneda(f.getMoneda());
         String total = moneda + " " + PdfUtils.formatearMonto(calcularTotal(f));
         String vence = f.getFechaVencimiento() != null ? f.getFechaVencimiento().format(FMT_FECHA) : "-";
         String emitida = f.getFechaEmision() != null ? f.getFechaEmision().format(FMT_FECHA) : "-";
@@ -668,7 +668,7 @@ public class FacturacionService {
         if (request.getNumeroOperacion() != null && !request.getNumeroOperacion().isBlank()) {
             nota.append(" · Op. ").append(request.getNumeroOperacion().trim());
         }
-        String moneda = f.getMoneda() != null ? f.getMoneda().getCodigoMoneda() : "PEN";
+        String moneda = PdfUtils.simboloMoneda(f.getMoneda());
         nota.append(" · ").append(moneda).append(" ").append(request.getMontoPagado().setScale(2, RoundingMode.HALF_UP).toPlainString());
 
         String previas = f.getObservaciones();
@@ -795,7 +795,7 @@ public class FacturacionService {
                 .porcentajeIgv(f.getPorcentajeIgv())
                 .montoPagado(pagado)
                 .saldoPendiente(total.subtract(pagado))
-                .moneda(f.getMoneda() != null ? f.getMoneda().getSimbolo() : "S/")
+                .moneda(PdfUtils.simboloMoneda(f.getMoneda()))
                 .estado(f.getEstadoFacturacion() != null ? f.getEstadoFacturacion().getNombreEstado() : null)
                 .urlArchivo(f.getUrlArchivo())
                 .sunatModo(f.getSunatModo())

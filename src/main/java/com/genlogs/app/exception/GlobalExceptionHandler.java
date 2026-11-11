@@ -75,13 +75,26 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.FORBIDDEN, "No tienes permisos suficientes para realizar esta acción.");
     }
 
-    /** JSON mal formado, parámetro faltante o de tipo incorrecto: 400 en lugar de 500. */
-    @ExceptionHandler({HttpMessageNotReadableException.class,
-                       MissingServletRequestParameterException.class,
-                       MethodArgumentTypeMismatchException.class})
-    public ResponseEntity<Map<String, Object>> handlePeticionInvalida(Exception ex) {
-        log.warn("Petición inválida: {}", ex.getMessage());
-        return buildResponse(HttpStatus.BAD_REQUEST, "Petición mal formada o parámetros inválidos.");
+    /** JSON mal formado o con valores de tipo incorrecto: 400 indicando el campo. */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, Object>> handleCuerpoIlegible(HttpMessageNotReadableException ex) {
+        log.warn("Cuerpo de la petición inválido: {}", ex.getMessage());
+        return buildResponse(HttpStatus.BAD_REQUEST, MensajesError.cuerpoIlegible(ex));
+    }
+
+    /** Falta un parámetro obligatorio de la URL (?page=...). */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<Map<String, Object>> handleParametroFaltante(MissingServletRequestParameterException ex) {
+        log.warn("Falta parámetro: {}", ex.getMessage());
+        return buildResponse(HttpStatus.BAD_REQUEST, "Falta el parámetro obligatorio \"" + ex.getParameterName() + "\".");
+    }
+
+    /** Parámetro de la URL con tipo incorrecto (?estado=XYZ, /reclamos/abc). */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<Map<String, Object>> handleTipoParametro(MethodArgumentTypeMismatchException ex) {
+        log.warn("Parámetro con tipo inválido: {}", ex.getMessage());
+        return buildResponse(HttpStatus.BAD_REQUEST,
+                MensajesError.parametroInvalido(ex.getName(), ex.getValue(), ex.getRequiredType()));
     }
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
@@ -98,7 +111,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, Object>> handleDataIntegrity(DataIntegrityViolationException ex) {
         log.error("Conflicto de integridad de datos", ex);
-        return buildResponse(HttpStatus.CONFLICT, "La operación no se pudo completar debido a un conflicto o restricción en los datos.");
+        return buildResponse(HttpStatus.CONFLICT, MensajesError.integridad(ex));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
