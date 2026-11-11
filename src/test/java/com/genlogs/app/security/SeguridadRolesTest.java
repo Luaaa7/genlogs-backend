@@ -4,7 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.junit.jupiter.api.Test;
@@ -80,7 +82,7 @@ class SeguridadRolesTest {
     @ParameterizedTest
     @CsvSource({
             "ADMINISTRADOR,/api/usuarios",
-            "VENDEDOR,/api/cotizaciones",
+            "VENDEDOR,/api/clientes",
             "JEFE_ADMINISTRATIVO,/api/ordenes-compra",
             "GERENTE_GENERAL,/api/cotizaciones",
             "CONTADOR_GENERAL,/api/facturacion"
@@ -110,6 +112,52 @@ class SeguridadRolesTest {
     void rolInternoNoEntraAlPortal(String rol) throws Exception {
         mockMvc.perform(get("/api/portal/pedidos").with(user("interno").roles(rol)))
                 .andExpect(status().isForbidden());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "CONTADOR_GENERAL",
+            "SUPERVISOR_SST",
+            "CLIENTE",
+            "VENDEDOR",
+            "ADMINISTRADOR"
+    })
+    void cotizacionesNieganAQuienNoEstaEnLaMatriz(String rol) throws Exception {
+        mockMvc.perform(get("/api/cotizaciones").with(user("usuario").roles(rol)))
+                .andExpect(status().isForbidden());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"GERENTE_GENERAL", "JEFE_ADMINISTRATIVO"})
+    void gerenteYJefeVenCotizacionesSinMargenNiPrecioDeProveedor(String rol) throws Exception {
+        mockMvc.perform(get("/api/cotizaciones").with(user("usuario").roles(rol)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$..margen").doesNotExist())
+                .andExpect(jsonPath("$..precioProveedor").doesNotExist())
+                .andExpect(jsonPath("$..precioReferencial").doesNotExist());
+    }
+
+    @Test
+    void soloElJefeCambiaElEstadoDeLaCotizacion() throws Exception {
+        String cuerpo = "{\"codigoEstado\":\"APROBADA\"}";
+
+        mockMvc.perform(patch("/api/cotizaciones/1/estado")
+                        .with(user("gerente").roles("GERENTE_GENERAL"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpo))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/cotizaciones")
+                        .with(user("jefe").roles("JEFE_ADMINISTRATIVO"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(patch("/api/cotizaciones/1/estado")
+                        .with(user("jefe").roles("JEFE_ADMINISTRATIVO"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpo))
+                .andExpect(status().isNotFound());
     }
 
     @Test

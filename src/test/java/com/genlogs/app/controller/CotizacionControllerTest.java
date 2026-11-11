@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -110,6 +111,21 @@ class CotizacionControllerTest {
         Pageable pageable = pageableCapturado();
         assertEquals(0, pageable.getPageNumber());
         assertEquals(1, pageable.getPageSize());
+    }
+
+    @Test
+    void detalle_publicaElTipoDeCambioYOmiteMargenYPrecioDeProveedor() throws Exception {
+        when(cotizacionService.buscarPorId(1L)).thenReturn(CotizacionResponse.builder()
+                .idCotizacion(1L)
+                .id(1L)
+                .tipoCambioUsado(new BigDecimal("3.7500"))
+                .build());
+
+        mockMvc.perform(get("/api/cotizaciones/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tipoCambioUsado").value(3.75))
+                .andExpect(jsonPath("$.margen").doesNotExist())
+                .andExpect(jsonPath("$.precioProveedor").doesNotExist());
     }
 
     private Pageable pageableCapturado() {

@@ -78,6 +78,10 @@ public class Cotizacion extends Auditable {
     @Builder.Default
     private BigDecimal porcentajeIgv = new BigDecimal("18.00");
 
+    /** Soles por 1 USD al crear o enviar. v3_2.sql: NUMERIC(10,4), nullable. */
+    @Column(name = "tipo_cambio_usado", precision = 10, scale = 4)
+    private BigDecimal tipoCambioUsado;
+
     @Column(name = "observaciones", columnDefinition = "TEXT")
     private String observaciones;
 }

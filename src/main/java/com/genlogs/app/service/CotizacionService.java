@@ -117,6 +117,7 @@ public class CotizacionService {
     private final CloudinaryService cloudinaryService;
     private final MailService mailService;
     private final TasaIgvService tasaIgvService;
+    private final TipoCambioCotizacion tipoCambioCotizacion;
 
     /**
      * Permite controlar transacciones explícitas en operaciones que deben
@@ -255,6 +256,7 @@ public class CotizacionService {
                 .observaciones(request.getObservaciones())
                 // La tasa que rige hoy queda guardada en la cotización.
                 .porcentajeIgv(tasaIgvService.porcentajeVigente())
+                .tipoCambioUsado(tipoCambioCotizacion.vigente())
                 .build();
 
         cotizacion.setUserCreate(vendedor.getNombreUsuario());
@@ -463,6 +465,10 @@ public class CotizacionService {
             String destinatario) {
 
         Cotizacion cotizacion = obtenerOLanzar(idCotizacion);
+        cotizacion.setTipoCambioUsado(tipoCambioCotizacion.vigente());
+        cotizacion.setUserUpdate(usuario.getNombreUsuario());
+        cotizacion.setProcessUpdate("ENVIO_COTIZACION");
+        cotizacion.setDateUpdate(LocalDateTime.now());
 
         if ("BORRADOR".equals(
                 cotizacion.getEstadoCotizacion().getCodigoEstado())) {
@@ -473,12 +479,6 @@ public class CotizacionService {
 
             if (estadoEnviada != null) {
                 cotizacion.setEstadoCotizacion(estadoEnviada);
-                cotizacion.setUserUpdate(usuario.getNombreUsuario());
-                cotizacion.setProcessUpdate("ENVIO_COTIZACION");
-                cotizacion.setDateUpdate(LocalDateTime.now());
-
-                cotizacionRepository.save(cotizacion);
-
                 registrarSeguimiento(
                         cotizacion,
                         estadoEnviada,
@@ -486,6 +486,8 @@ public class CotizacionService {
                         "Cotización enviada a " + destinatario);
             }
         }
+
+        cotizacionRepository.save(cotizacion);
     }
 
     @Transactional(readOnly = true)
@@ -584,6 +586,7 @@ public class CotizacionService {
                 .observaciones(original.getObservaciones())
                 // La copia es un documento nuevo: usa la tasa que rige hoy.
                 .porcentajeIgv(tasaIgvService.porcentajeVigente())
+                .tipoCambioUsado(tipoCambioCotizacion.vigente())
                 .build();
 
         copia.setUserCreate(usuario.getNombreUsuario());
@@ -850,9 +853,12 @@ public class CotizacionService {
                                 "Cotización no encontrada"));
     }
 
+    private Authentication autenticacionActual() {
+        return SecurityContextHolder.getContext().getAuthentication();
+    }
+
     private Usuario usuarioActual() {
-        Authentication authentication =
-                SecurityContextHolder.getContext().getAuthentication();
+        Authentication authentication = autenticacionActual();
 
         if (authentication == null
                 || !authentication.isAuthenticated()
@@ -1193,7 +1199,12 @@ public class CotizacionService {
                                 c.getMoneda() != null
                                         ? c.getMoneda().getNombreMoneda()
                                         : null)
-                        .observaciones(c.getObservaciones());
+                        .observaciones(c.getObservaciones())
+                        .tipoCambioUsado(c.getTipoCambioUsado());
+
+        // Hoy la cotización no guarda margen ni precio de proveedor (null).
+        // Este es el único sitio que puede copiarlos al JSON.
+        VisibilidadMargen.aplicar(builder, null, null, autenticacionActual());
 
         if (conDetalle) {
             builder.detalles(
