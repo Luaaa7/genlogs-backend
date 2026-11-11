@@ -192,6 +192,21 @@ class SeguridadRolesTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "GERENTE_GENERAL",
+            "JEFE_ADMINISTRATIVO",
+            "CONTADOR_GENERAL",
+            "ASISTENTE_LOGISTICO",
+            "ASISTENTE_ADMINISTRATIVO",
+            "SUPERVISOR_SST",
+            "VENDEDOR"
+    })
+    void rolInternoNoVeLasCotizacionesDelPortal(String rol) throws Exception {
+        mockMvc.perform(get("/api/portal/cotizaciones").with(user("interno").roles(rol)))
+                .andExpect(status().isForbidden());
+    }
+
     @Test
     void clientePasaLaAutorizacionDelPortal() throws Exception {
         mockMvc.perform(get("/api/portal/pedidos").with(user("cliente").roles("CLIENTE")))

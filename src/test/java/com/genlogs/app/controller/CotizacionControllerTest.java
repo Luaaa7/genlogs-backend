@@ -47,7 +47,7 @@ class CotizacionControllerTest {
         when(cotizacionService.listar(any(), any(), any(), any()))
                 .thenReturn(paginaVacia);
 
-        mockMvc = MockMvcBuilders.standaloneSetup(new CotizacionController(cotizacionService, mock(com.genlogs.app.service.OrdenCompraService.class)))
+        mockMvc = MockMvcBuilders.standaloneSetup(new CotizacionController(cotizacionService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }

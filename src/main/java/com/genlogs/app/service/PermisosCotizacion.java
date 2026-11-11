@@ -22,6 +22,10 @@ public final class PermisosCotizacion {
     public static final String APROBAR =
             "hasRole(T(com.genlogs.app.enums.RolSistema).JEFE_ADMINISTRATIVO.name())";
 
+    /** Portal: el cliente solo ve y decide las cotizaciones de su empresa. */
+    public static final String PORTAL =
+            "hasRole(T(com.genlogs.app.enums.RolSistema).CLIENTE.name())";
+
     private PermisosCotizacion() {
     }
 }

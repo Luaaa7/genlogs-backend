@@ -120,6 +120,7 @@ public class CotizacionService {
     private final TasaIgvService tasaIgvService;
     private final TipoCambioCotizacion tipoCambioCotizacion;
     private final AvisoAltoValorCotizacion avisoAltoValorCotizacion;
+    private final OrdenCompraService ordenCompraService;
 
     /**
      * Permite controlar transacciones explícitas en operaciones que deben
@@ -132,6 +133,7 @@ public class CotizacionService {
      * de PostgreSQL.
      */
     private final EntityManager entityManager;
+    private final AvisoOrdenNoCreada avisoOrdenNoCreada;
 
     @Transactional(readOnly = true)
     public CotizacionResponse buscarPorId(Long idCotizacion) {
@@ -323,6 +325,31 @@ public class CotizacionService {
                 cotizacion, nuevoEstado, usuario, request.comentarioResuelto());
 
         return toResponseDetalle(cotizacion);
+    }
+
+    /**
+     * La llama el controlador cuando la aprobación ya se confirmó.
+     * No abre esa transacción: si la orden falla, la cotización sigue APROBADA.
+     */
+    public void registrarOrdenSiAprobada(Long idCotizacion, String codigoEstado) {
+        if (!CodigoEstadoCotizacion.APROBADA.name().equalsIgnoreCase(codigoEstado)) {
+            return;
+        }
+        try {
+            ordenCompraService.crearAutomatica(idCotizacion);
+        } catch (RuntimeException e) {
+            log.warn("No se pudo registrar sola la orden de la cotización {}: {}", idCotizacion, e.getMessage());
+            try {
+                avisoOrdenNoCreada.avisar(idCotizacion);
+            } catch (RuntimeException aviso) {
+                log.error("No se pudo avisar que la orden de la cotización " + idCotizacion + " no se creó", aviso);
+            }
+            try {
+                avisoOrdenNoCreada.registrarSeguimiento(idCotizacion, e.getMessage());
+            } catch (RuntimeException seguimiento) {
+                log.error("No se pudo dejar el seguimiento del fallo de la orden " + idCotizacion, seguimiento);
+            }
+        }
     }
 
     @Transactional

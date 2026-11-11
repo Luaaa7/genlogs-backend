@@ -7,6 +7,8 @@ package com.genlogs.app.enums;
 public enum TipoAviso {
     /** BE-C: cotizacion que supera MONTO_ALTO_VALOR_PEN (aviso al Gerente General). */
     ALTO_VALOR,
+    /** BE-C: la cotización quedó APROBADA y la orden de compra no se pudo crear. */
+    ORDEN_NO_CREADA,
     /** BE-B: solicitud al 75 % de su plazo interno. */
     PLAZO_POR_VENCER,
     /** BE-B: solicitud con el plazo interno vencido. */
