@@ -40,9 +40,11 @@ import lombok.RequiredArgsConstructor;
  *   - Con N.º de parte, siempre se pide la marca (catálogo o texto).
  *   - PORTAL: sin N.º de parte exige foto o plano.
  *   - LANDING: basta la descripción; el asistente pide la foto después.
- *   - VITRINA: el repuesto debe ser un producto visible de la vitrina.
- * El plazo interno (RF-84) es ESPECIAL si algún repuesto no trae N.º de parte y
- * COMUN en otro caso; el asistente lo reclasifica a IMPORTADO si corresponde.
+ *   - VITRINA: un ítem con idProducto debe ser un producto visible de la vitrina; los
+ *     ítems sin idProducto (p. ej. "Volver a pedir" en el mismo carrito) siguen la regla del PORTAL.
+ * El plazo interno (RF-84) es ESPECIAL si algún repuesto no está identificado (sin N.º de
+ * parte ni producto de la vitrina) y COMUN en otro caso; el asistente lo reclasifica a
+ * IMPORTADO si corresponde.
  */
 @Service
 @RequiredArgsConstructor
@@ -72,7 +74,7 @@ public class SolicitudService {
         boolean algunoSinNumeroParte = false;
         for (SolicitudRequest.Item item : request.getItems()) {
             validarItem(request.getCanal(), item);
-            algunoSinNumeroParte |= vacio(item.getNumeroParte());
+            algunoSinNumeroParte |= vacio(item.getNumeroParte()) && item.getIdProducto() == null;
         }
 
         LocalDateTime ahora = LocalDateTime.now();
@@ -155,11 +157,15 @@ public class SolicitudService {
                 throw new BusinessException("La foto de " + repuesto + " no es válida. Vuelve a subirla.");
             }
         }
-        if (canal == CanalSolicitud.PORTAL && !conNumeroParte && vacio(item.getUrlFoto())) {
+        // Un producto de la vitrina ya está identificado. Sin él, PORTAL y VITRINA piden N.º de parte o foto;
+        // LANDING acepta solo la descripción (el asistente pide la foto después).
+        boolean identificadoPorProducto = item.getIdProducto() != null;
+        boolean pideFoto = canal != CanalSolicitud.LANDING && !identificadoPorProducto;
+        if (pideFoto && !conNumeroParte && vacio(item.getUrlFoto())) {
             throw new BusinessException("Sin N.º de parte, adjunta una foto o plano de " + repuesto + ".");
         }
-        if (canal == CanalSolicitud.VITRINA) {
-            boolean enVitrina = item.getIdProducto() != null && productoRepository.findById(item.getIdProducto())
+        if (item.getIdProducto() != null) {
+            boolean enVitrina = productoRepository.findById(item.getIdProducto())
                     .filter(p -> p.getStatus() != null && "A".equals(p.getStatus().trim()) && Boolean.TRUE.equals(p.getVisibleWeb()))
                     .isPresent();
             if (!enVitrina) {

@@ -60,7 +60,8 @@ import com.genlogs.app.service.CloudinaryService;
 /**
  * Endpoint único de solicitudes (BE-B). POST /api/solicitudes y POST /api/solicitudes/fotos.
  * D-01 por canal: PORTAL sin N.º de parte exige foto o plano; LANDING acepta solo descripción;
- * VITRINA exige idProducto. Con N.º de parte siempre se pide la marca.
+ * VITRINA: los ítems con idProducto deben ser productos visibles; los que vienen de
+ * "Volver a pedir" (sin idProducto) siguen la regla del PORTAL. Con N.º de parte siempre se pide la marca.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -180,12 +181,35 @@ class SolicitudEndpointTest {
     }
 
     @Test
-    void vitrinaSinProducto_responde400() throws Exception {
+    void vitrinaItemSinProductoNiNumeroDeParteNiFoto_respondeComoElPortal() throws Exception {
         String cliente = nuevoCliente();
         mockMvc.perform(post("/api/solicitudes").with(user(cliente).roles("CLIENTE"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(unItem("VITRINA", "\"descripcion\":\"Rodamiento\",\"cantidad\":1")))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("foto o plano")));
+    }
+
+    @Test
+    void vitrinaCarritoMixto_productoDeLaVitrinaYVolverAPedir_seAcepta() throws Exception {
+        String cliente = nuevoCliente();
+        long idProducto = nuevoProducto();
+        String cuerpo = mockMvc.perform(post("/api/solicitudes").with(user(cliente).roles("CLIENTE"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"canal":"VITRINA","asunto":"Carrito",
+                                 "items":[{"descripcion":"Rodamiento","cantidad":2,"idProducto":%d},
+                                          {"descripcion":"Filtro","cantidad":1,"marcaTexto":"Caterpillar","numeroParte":"1R-0750"}]}
+                                """.formatted(idProducto)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+
+        long id = idDe(cuerpo);
+        // El producto de la vitrina ya está identificado: no vuelve ESPECIAL el plazo.
+        assertThat(jdbc.queryForObject("SELECT tipo_plazo FROM solicitud_cotizacion WHERE id_solicitud = ?",
+                String.class, id)).isEqualTo("COMUN");
+        assertThat(jdbc.queryForList("SELECT id_producto FROM solicitud_item WHERE id_solicitud = ? ORDER BY id_solicitud_item",
+                Long.class, id)).containsExactly(idProducto, null);
     }
 
     @Test
