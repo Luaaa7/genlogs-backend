@@ -23,6 +23,19 @@ import jakarta.servlet.http.HttpServletResponse;
 @EnableWebSecurity
 public class SecurityConfig {
 
+    /**
+     * Roles del sistema interno. El portal de clientes (CLIENTE) no entra aquí:
+     * cualquier ruta que no sea pública, de autenticación o del portal exige uno de estos.
+     * Los nombres coinciden con {@code rol.nombre_rol}; el prefijo ROLE_ lo agrega Spring.
+     */
+    private static final String[] ROLES_INTERNOS = {
+            "ADMINISTRADOR",
+            "VENDEDOR",
+            "JEFE_ADMINISTRATIVO",
+            "GERENTE_GENERAL",
+            "CONTADOR_GENERAL"
+    };
+
     private final CustomUserDetailsService userDetailsService;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final CorsConfigurationSource corsConfigurationSource;
@@ -65,9 +78,15 @@ public class SecurityConfig {
                 // Health check público para monitoreo de Render
                 .requestMatchers("/", "/health", "/api/health", "/api/health/db").permitAll()
                 .requestMatchers("/api/auth/**").permitAll()
-                // Público SOLO para consultar (catálogo web y mapa). Crear/editar/borrar exige sesión.
+                .requestMatchers("/api/public/**").permitAll()
+                // El alta del portal no lleva token. Va antes que /api/portal/** para no pedir rol CLIENTE.
+                .requestMatchers(HttpMethod.POST, "/api/portal/registro").permitAll()
+                // Público SOLO para consultar (catálogo web y mapa). Crear/editar/borrar exige rol interno.
                 .requestMatchers(HttpMethod.GET, "/api/catalogo/**", "/api/catalogos/**", "/api/empresas-mineras/**").permitAll()
-                .anyRequest().authenticated()
+                // El resto del portal es exclusivo de CLIENTE. Un rol interno recibe 403.
+                .requestMatchers("/api/portal/**").hasRole("CLIENTE")
+                // Todo lo interno (aunque el método no tenga @PreAuthorize) rechaza a CLIENTE.
+                .anyRequest().hasAnyRole(ROLES_INTERNOS)
             )
             .authenticationProvider(authenticationProvider())
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

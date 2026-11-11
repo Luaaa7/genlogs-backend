@@ -21,6 +21,11 @@ public class Usuario extends Auditable {
     @JoinColumn(name = "id_rol", nullable = false)
     private Rol rol;
 
+    /** Solo el portal de clientes lo usa. Los usuarios internos quedan en NULL. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_cliente", unique = true)
+    private Cliente cliente;
+
     @Column(name = "nombre_usuario", length = 50, nullable = false, unique = true)
     private String nombreUsuario;
 

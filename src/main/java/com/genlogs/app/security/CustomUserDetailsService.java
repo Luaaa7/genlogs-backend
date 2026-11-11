@@ -36,7 +36,7 @@ public class CustomUserDetailsService implements UserDetailsService {
                 .username(usuario.getNombreUsuario())
                 .password(usuario.getPasswordHash())
                 .authorities(authorities)
-                .disabled("I".equals(usuario.getStatus()))
+                .disabled(usuario.getStatus() != null && usuario.getStatus().trim().startsWith("I"))
                 .accountLocked(Boolean.TRUE.equals(usuario.getBloqueado()))
                 .build();
     }
