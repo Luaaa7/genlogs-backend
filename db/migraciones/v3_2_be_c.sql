@@ -30,4 +30,8 @@ WHERE NOT EXISTS (
 ALTER TABLE public.cotizacion
     ADD COLUMN IF NOT EXISTS aviso_alto_valor_enviado BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- Código leído o confirmado de la OC de la minera. Nulo si no hay un código de 3 letras.
+ALTER TABLE public.orden_compra
+    ADD COLUMN IF NOT EXISTS moneda_oc_cliente CHAR(3);
+
 COMMIT;

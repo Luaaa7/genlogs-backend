@@ -26,6 +26,8 @@ public class PortalCotizacionResponse {
     private String estado;
     private BigDecimal total;
     private String moneda;
+    /** N.º de la OC de la minera, solo si esta cotización ya tiene una. */
+    private String numeroOcCliente;
     private List<Linea> lineas;
 
     @Getter

@@ -32,6 +32,7 @@ import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.CotizacionDetalleRepository;
 import com.genlogs.app.repository.CotizacionRepository;
 import com.genlogs.app.repository.EstadoCotizacionRepository;
+import com.genlogs.app.repository.OrdenCompraRepository;
 import com.genlogs.app.repository.SeguimientoCotizacionRepository;
 import com.genlogs.app.repository.UsuarioRepository;
 
@@ -43,6 +44,7 @@ class PortalCotizacionServiceTest {
     @Mock private CotizacionDetalleRepository cotizacionDetalleRepository;
     @Mock private EstadoCotizacionRepository estadoCotizacionRepository;
     @Mock private SeguimientoCotizacionRepository seguimientoCotizacionRepository;
+    @Mock private OrdenCompraRepository ordenCompraRepository;
 
     private PortalCotizacionService servicio;
     private Cliente mia;
@@ -51,7 +53,7 @@ class PortalCotizacionServiceTest {
     @BeforeEach
     void setUp() {
         servicio = new PortalCotizacionService(usuarioRepository, cotizacionRepository, cotizacionDetalleRepository,
-                estadoCotizacionRepository, seguimientoCotizacionRepository);
+                estadoCotizacionRepository, seguimientoCotizacionRepository, ordenCompraRepository);
         mia = new Cliente();
         mia.setIdCliente(5L);
         usuario = new Usuario();
@@ -119,6 +121,29 @@ class PortalCotizacionServiceTest {
         assertFalse(json.contains("precioProveedor"));
         assertFalse(json.contains("tipoCambio"));
         assertFalse(json.contains("aviso"));
+    }
+
+    @Test
+    void elPortalSoloMuestraElNumeroDeLaOcDeLaMinera() throws Exception {
+        Cotizacion cotizacion = cotizacion(4L, mia, "ENVIADA");
+        cotizacion.setFechaCotizacion(null);
+        cotizacion.setFechaValidez(null);
+        when(cotizacionRepository.findById(4L)).thenReturn(Optional.of(cotizacion));
+        when(cotizacionRepository.findTotalesByCotizacion(4L)).thenReturn(Optional.empty());
+        when(cotizacionDetalleRepository.findByCotizacion(4L)).thenReturn(List.of());
+        when(ordenCompraRepository.numerosOcCliente(4L)).thenReturn(List.of("4500012345"));
+
+        String json = new ObjectMapper().writeValueAsString(servicio.detalle(4L));
+
+        assertTrue(json.contains("4500012345"));
+        assertFalse(json.contains("montoOc"));
+        assertFalse(json.contains("monedaLeida"));
+        assertFalse(json.contains("avisoMonto"));
+        assertFalse(json.contains("ocLeida"));
+        assertFalse(json.contains("ocConfirmada"));
+        assertFalse(json.contains("urlArchivo"));
+        assertFalse(json.contains("margen"));
+        assertFalse(json.contains("costo"));
     }
 
     private static Cliente cliente(Long id) {

@@ -26,6 +26,7 @@ import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.CotizacionDetalleRepository;
 import com.genlogs.app.repository.CotizacionRepository;
 import com.genlogs.app.repository.EstadoCotizacionRepository;
+import com.genlogs.app.repository.OrdenCompraRepository;
 import com.genlogs.app.repository.SeguimientoCotizacionRepository;
 import com.genlogs.app.repository.UsuarioRepository;
 
@@ -49,6 +50,7 @@ public class PortalCotizacionService {
     private final CotizacionDetalleRepository cotizacionDetalleRepository;
     private final EstadoCotizacionRepository estadoCotizacionRepository;
     private final SeguimientoCotizacionRepository seguimientoCotizacionRepository;
+    private final OrdenCompraRepository ordenCompraRepository;
 
     @Transactional(readOnly = true)
     public List<PortalCotizacionResponse> listar() {
@@ -165,13 +167,26 @@ public class PortalCotizacionService {
                 .estado(cotizacion.getEstadoCotizacion() != null
                         ? cotizacion.getEstadoCotizacion().getNombreEstado() : null)
                 .total(total)
-                .moneda(cotizacion.getMoneda() != null ? cotizacion.getMoneda().getCodigoMoneda() : null);
+                .moneda(cotizacion.getMoneda() != null ? cotizacion.getMoneda().getCodigoMoneda() : null)
+                .numeroOcCliente(numeroOc(cotizacion.getIdCotizacion()));
         if (conLineas) {
             builder.lineas(cotizacionDetalleRepository.findByCotizacion(cotizacion.getIdCotizacion()).stream()
                     .map(PortalCotizacionService::linea)
                     .toList());
         }
         return builder.build();
+    }
+
+    private String numeroOc(Long idCotizacion) {
+        if (idCotizacion == null) {
+            return null;
+        }
+        List<String> numeros = ordenCompraRepository.numerosOcCliente(idCotizacion);
+        if (numeros == null || numeros.isEmpty()) {
+            return null;
+        }
+        String numero = numeros.get(0);
+        return numero == null || numero.isBlank() ? null : numero;
     }
 
     private static PortalCotizacionResponse.Linea linea(CotizacionDetalle detalle) {
