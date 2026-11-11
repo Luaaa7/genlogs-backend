@@ -63,11 +63,12 @@ class PasoCeroEndpointsTest {
     }
 
     @Test
-    void solicitudes_clienteConCuerpoValido_llegaAlEndpoint() throws Exception {
-        // 501 mientras BE-B no lo implemente; cuando lo haga, este caso pasa a 201.
+    void solicitudes_rolClienteSinUsuarioEnBd_403() throws Exception {
+        // La regla de URL deja pasar al rol CLIENTE; sin fila de usuario con cliente el servicio responde 403.
+        // El 201 con un cliente real está en SolicitudEndpointTest.
         mockMvc.perform(post("/api/solicitudes").with(user("cliente").roles("CLIENTE"))
                         .contentType(MediaType.APPLICATION_JSON).content(SOLICITUD_VALIDA))
-                .andExpect(status().isNotImplemented());
+                .andExpect(status().isForbidden());
     }
 
     @Test

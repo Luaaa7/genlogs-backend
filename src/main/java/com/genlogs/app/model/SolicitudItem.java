@@ -45,4 +45,24 @@ public class SolicitudItem extends Auditable {
 
     @Column(name = "unidad", length = 30)
     private String unidad;
+
+    /** Marca del catálogo; si no está, marcaTexto (D-01). */
+    @Column(name = "id_marca")
+    private Integer idMarca;
+
+    @Column(name = "marca_texto", length = 100)
+    private String marcaTexto;
+
+    @Column(name = "numero_parte", length = 60)
+    private String numeroParte;
+
+    @Column(name = "gtin", length = 14)
+    private String gtin;
+
+    @Column(name = "url_foto", columnDefinition = "TEXT")
+    private String urlFoto;
+
+    /** Producto de la vitrina cuando el pedido viene de "Cotizar". */
+    @Column(name = "id_producto")
+    private Long idProducto;
 }
