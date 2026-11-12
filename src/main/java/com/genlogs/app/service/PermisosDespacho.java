@@ -2,10 +2,10 @@ package com.genlogs.app.service;
 
 /**
  * {@code @PreAuthorize} de despachos.
- * Ver: Gerente, Jefe y Asistente Administrativo, más el Asistente Logístico que los opera.
- * Crear y avanzar: solo el Asistente Logístico.
- * El Contador no entra. El Supervisor SST queda anotado para el pase y el SCTR (tarea 6), sin endpoint aquí.
- * El cliente solo usa el portal.
+ * Ver: Gerente, Jefe, Asistente Administrativo, Asistente Logístico y Supervisor SST.
+ * Crear y avanzar: solo el Asistente Logístico. El bloqueo de pase y SCTR no se salta.
+ * Confirmar pase y SCTR: solo el Supervisor SST.
+ * El Contador no entra. El cliente solo usa el portal.
  */
 public final class PermisosDespacho {
 
@@ -13,7 +13,8 @@ public final class PermisosDespacho {
             + "T(com.genlogs.app.enums.RolSistema).GERENTE_GENERAL.name(),"
             + "T(com.genlogs.app.enums.RolSistema).JEFE_ADMINISTRATIVO.name(),"
             + "T(com.genlogs.app.enums.RolSistema).ASISTENTE_ADMINISTRATIVO.name(),"
-            + "T(com.genlogs.app.enums.RolSistema).ASISTENTE_LOGISTICO.name())";
+            + "T(com.genlogs.app.enums.RolSistema).ASISTENTE_LOGISTICO.name(),"
+            + "T(com.genlogs.app.enums.RolSistema).SUPERVISOR_SST.name())";
 
     public static final String GESTIONAR =
             "hasRole(T(com.genlogs.app.enums.RolSistema).ASISTENTE_LOGISTICO.name())";
@@ -21,7 +22,7 @@ public final class PermisosDespacho {
     public static final String PORTAL =
             "hasRole(T(com.genlogs.app.enums.RolSistema).CLIENTE.name())";
 
-    /** Tarea 6: aprobar pase y SCTR. No hay endpoint que lo use todavía. */
+    /** Confirmar pase y SCTR. No avanza etapas. */
     public static final String APROBAR_SST =
             "hasRole(T(com.genlogs.app.enums.RolSistema).SUPERVISOR_SST.name())";
 

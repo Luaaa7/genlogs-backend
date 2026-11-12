@@ -27,4 +27,6 @@ public class DespachoResponse {
     private Long idUsuario;
     /** True si algún ítem no se pudo determinar. No sale en el portal. */
     private boolean origenIncompleto;
+    /** Pase y SCTR. No sale en el portal. */
+    private BloqueoSstResponse sst;
 }

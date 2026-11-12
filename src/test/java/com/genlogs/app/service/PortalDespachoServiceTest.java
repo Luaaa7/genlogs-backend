@@ -76,7 +76,7 @@ class PortalDespachoServiceTest {
         for (String interno : new String[] {
                 "origenIncompleto", "idUsuario", "usuario", "fechaPreparacion", "fechaAduana",
                 "fechaTransito", "fechaEntrega", "userCreate", "userUpdate", "dateCreate",
-                "processCreate", "origen"}) {
+                "processCreate", "origen", "sst", "referencia", "SCTR", "DESPACHO_BLOQUEADO_SST"}) {
             assertFalse(json.contains(interno), json);
         }
     }

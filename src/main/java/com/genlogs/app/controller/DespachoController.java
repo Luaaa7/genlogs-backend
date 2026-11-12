@@ -15,9 +15,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.genlogs.app.dto.AvanzarEtapaDespachoRequest;
+import com.genlogs.app.dto.ConfirmarSstRequest;
 import com.genlogs.app.dto.CrearDespachoRequest;
 import com.genlogs.app.dto.DespachoResponse;
 import com.genlogs.app.service.DespachoService;
+import com.genlogs.app.service.DespachoSstService;
 import com.genlogs.app.service.PermisosDespacho;
 import com.genlogs.app.service.PlazoDespacho;
 
@@ -30,6 +32,7 @@ import lombok.RequiredArgsConstructor;
 public class DespachoController {
 
     private final DespachoService despachoService;
+    private final DespachoSstService despachoSstService;
 
     @PreAuthorize(PermisosDespacho.VER)
     @GetMapping
@@ -55,5 +58,13 @@ public class DespachoController {
     public ResponseEntity<DespachoResponse> avanzar(
             @PathVariable Long id, @Valid @RequestBody AvanzarEtapaDespachoRequest request) {
         return ResponseEntity.ok(despachoService.avanzar(id, request.getEtapa()));
+    }
+
+    @PreAuthorize(PermisosDespacho.APROBAR_SST)
+    @PostMapping("/{id}/sst")
+    public ResponseEntity<DespachoResponse> confirmarSst(
+            @PathVariable Long id, @Valid @RequestBody ConfirmarSstRequest request) {
+        despachoSstService.confirmar(id, request);
+        return ResponseEntity.ok(despachoService.buscar(id));
     }
 }

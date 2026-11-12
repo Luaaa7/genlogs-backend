@@ -1,5 +1,6 @@
 package com.genlogs.app.service;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
@@ -39,6 +40,7 @@ public class DespachoService {
     private final ProductoRepository productoRepository;
     private final UsuarioRepository usuarioRepository;
     private final PlazoDespacho plazoDespacho;
+    private final DespachoSstService despachoSstService;
 
     @Transactional(readOnly = true)
     public List<DespachoResponse> listar() {
@@ -104,6 +106,7 @@ public class DespachoService {
             throw new BusinessException("La etapa solo avanza de " + despacho.getEtapa().etiqueta()
                     + " a " + esperada.etiqueta() + ".");
         }
+        despachoSstService.exigirParaSalida(despacho, destino, LocalDate.now(PlazoDespacho.LIMA));
         LocalDateTime ahora = LocalDateTime.now(PlazoDespacho.LIMA);
         switch (destino) {
             case EN_PREPARACION -> despacho.setFechaPreparacion(ahora);
@@ -156,6 +159,7 @@ public class DespachoService {
                 .plazoHasta(despacho.getPlazoHasta())
                 .idUsuario(despacho.getUsuario().getIdUsuario())
                 .origenIncompleto(incompleto)
+                .sst(despachoSstService.estado(despacho, LocalDate.now(PlazoDespacho.LIMA)))
                 .build();
     }
 
