@@ -41,6 +41,11 @@ BEGIN
     END LOOP;
 END $$;
 
--- Aquí agrega BE-D lo suyo más adelante (feat/be-d-parametros: MARGEN_REP_*, D-17).
+-- Márgenes de repuestos (D-17). La edición exige MIN <= DEFAULT <= MAX.
+INSERT INTO public.parametro_sistema (clave, valor, descripcion) VALUES
+    ('MARGEN_REP_MIN',     '15', 'Margen mínimo de repuestos (%)'),
+    ('MARGEN_REP_DEFAULT', '35', 'Margen por defecto de repuestos (%)'),
+    ('MARGEN_REP_MAX',     '45', 'Margen máximo de repuestos (%)')
+ON CONFLICT (clave) DO NOTHING;
 
 COMMIT;
