@@ -51,6 +51,12 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.UNAUTHORIZED, ex.getMessage());
     }
 
+    /** Acción no permitida en el estado actual (cancelar algo ya cotizado, etc.): 409. */
+    @ExceptionHandler(EstadoNoPermitidoException.class)
+    public ResponseEntity<Map<String, Object>> handleEstadoNoPermitido(EstadoNoPermitidoException ex) {
+        return buildResponse(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<Map<String, Object>> handleBusiness(BusinessException ex) {
         return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
