@@ -1,7 +1,5 @@
 package com.genlogs.app.service;
 
-import java.time.LocalDate;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -12,7 +10,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * Corre todos los días a las 07:30 de Lima. Al arrancar solo si
+ * Corre todos los días a las 08:30 de Lima. Al arrancar solo si
  * genlogs.alertas-sst.al-arrancar=true. activo=false no registra este bean.
  * Mismo patrón que VencimientoCotizacionesTarea.
  */
@@ -31,7 +29,7 @@ public class AlertasDocumentosSstTarea {
         this.alArrancar = alArrancar;
     }
 
-    @Scheduled(cron = "0 30 7 * * *", zone = "America/Lima")
+    @Scheduled(cron = "0 30 8 * * *", zone = "America/Lima")
     public void diaria() {
         correr();
     }
@@ -45,7 +43,7 @@ public class AlertasDocumentosSstTarea {
 
     void correr() {
         try {
-            alertasDocumentosSstService.avisar(LocalDate.now(PlazoDespacho.LIMA));
+            alertasDocumentosSstService.avisar();
         } catch (RuntimeException ex) {
             log.error("No se pudieron revisar los PASE y SCTR por vencer", ex);
         }

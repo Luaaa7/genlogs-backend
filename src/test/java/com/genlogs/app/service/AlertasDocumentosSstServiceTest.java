@@ -9,7 +9,6 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -52,7 +51,7 @@ class AlertasDocumentosSstServiceTest {
 
     @Test
     void losTramosSonDe30_15y7Dias() {
-        assertEquals(7, AlertasDocumentosSstService.umbralDe(0));
+        assertNull(AlertasDocumentosSstService.umbralDe(0));
         assertEquals(7, AlertasDocumentosSstService.umbralDe(7));
         assertEquals(15, AlertasDocumentosSstService.umbralDe(8));
         assertEquals(15, AlertasDocumentosSstService.umbralDe(15));
@@ -68,11 +67,11 @@ class AlertasDocumentosSstServiceTest {
 
         servicio.avisar(HOY);
 
-        verify(alertas).porVencer(HOY, HOY.plusDays(30), EtapaDespacho.ENTREGADO);
+        verify(alertas).porVencer(HOY.plusDays(1), HOY.plusDays(30), EtapaDespacho.ENTREGADO);
     }
 
     @Test
-    void avisaAlSupervisorSstYAlAsistenteLogisticoSinCorreo() {
+    void avisaAlSupervisorSstPorCampanaYCorreo() {
         when(alertas.porVencer(any(), any(), any()))
                 .thenReturn(List.of(documento(TipoSstDespacho.SCTR, 5L, HOY.plusDays(30), "SCTR-889")));
 
@@ -81,9 +80,9 @@ class AlertasDocumentosSstServiceTest {
         String titulo = "SCTR del despacho #5 vence el 12/12/2026 (aviso de 30 días)";
         ArgumentCaptor<String> mensaje = ArgumentCaptor.forClass(String.class);
         verify(notificaciones).avisarRol(eq(RolSistema.SUPERVISOR_SST), eq(TipoAviso.DOCUMENTO_POR_VENCER),
-                eq(titulo), mensaje.capture(), eq("/ordenes-compra"), eq(false));
-        verify(notificaciones).avisarRol(eq(RolSistema.ASISTENTE_LOGISTICO), eq(TipoAviso.DOCUMENTO_POR_VENCER),
-                eq(titulo), anyString(), eq("/ordenes-compra"), eq(false));
+                eq(titulo), mensaje.capture(), eq("/ordenes-compra"), eq(true));
+        verify(notificaciones, never()).avisarRol(eq(RolSistema.ASISTENTE_LOGISTICO), any(), anyString(),
+                anyString(), anyString(), anyBoolean());
         assertTrue(mensaje.getValue().startsWith("Faltan 30 días"));
         assertTrue(mensaje.getValue().contains("SCTR-889"));
         assertEquals(new AlertasDocumentosSstService.Resultado(1, 1, 0, 0), resultado);
@@ -94,18 +93,18 @@ class AlertasDocumentosSstServiceTest {
         when(alertas.porVencer(any(), any(), any())).thenReturn(List.of(
                 documento(TipoSstDespacho.PASE, 1L, HOY.plusDays(20), null),
                 documento(TipoSstDespacho.PASE, 2L, HOY.plusDays(10), null),
-                documento(TipoSstDespacho.SCTR, 3L, HOY, null)));
+                documento(TipoSstDespacho.SCTR, 3L, HOY.plusDays(7), null)));
 
         servicio.avisar(HOY);
 
-        verify(notificaciones, times(2)).avisarRol(any(), any(),
+        verify(notificaciones).avisarRol(any(), any(),
                 eq("PASE del despacho #1 vence el 02/12/2026 (aviso de 30 días)"), anyString(), anyString(), anyBoolean());
-        verify(notificaciones, times(2)).avisarRol(any(), any(),
+        verify(notificaciones).avisarRol(any(), any(),
                 eq("PASE del despacho #2 vence el 22/11/2026 (aviso de 15 días)"), anyString(), anyString(), anyBoolean());
         ArgumentCaptor<String> mensaje = ArgumentCaptor.forClass(String.class);
-        verify(notificaciones, times(2)).avisarRol(any(), any(),
-                eq("SCTR del despacho #3 vence el 12/11/2026 (aviso de 7 días)"), mensaje.capture(), anyString(), anyBoolean());
-        assertTrue(mensaje.getValue().startsWith("Vence hoy"));
+        verify(notificaciones).avisarRol(any(), any(),
+                eq("SCTR del despacho #3 vence el 19/11/2026 (aviso de 7 días)"), mensaje.capture(), anyString(), anyBoolean());
+        assertTrue(mensaje.getValue().startsWith("Faltan 7 días"));
     }
 
     @Test
@@ -140,7 +139,7 @@ class AlertasDocumentosSstServiceTest {
 
         AlertasDocumentosSstService.Resultado resultado = servicio.avisar(HOY);
 
-        verify(notificaciones, times(2)).avisarRol(any(), any(),
+        verify(notificaciones).avisarRol(any(), any(),
                 eq(AlertasDocumentosSstService.titulo(segundo, 7)), anyString(), anyString(), anyBoolean());
         assertEquals(new AlertasDocumentosSstService.Resultado(2, 1, 0, 1), resultado);
     }
