@@ -5,7 +5,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
-/** Sin token: el acceso queda pendiente hasta que un administrador active al usuario. */
+/** Registro con acceso inmediato (D-10): trae el token del cliente para entrar sin esperar. */
 @Getter
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -16,11 +16,11 @@ public class RegistroClienteResponse {
     private String nombre;
     private String nombreUsuario;
 
-    public static RegistroClienteResponse pendiente() {
+    public static RegistroClienteResponse conAcceso(String token, String nombre, String nombreUsuario) {
         return new RegistroClienteResponse(
-                "Registro recibido. Ya puedes ingresar cuando tu acceso sea habilitado.",
-                null,
-                null,
-                null);
+                "Registro completado. Ya puedes usar el portal.",
+                token,
+                nombre,
+                nombreUsuario);
     }
 }

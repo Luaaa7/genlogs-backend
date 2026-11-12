@@ -12,6 +12,8 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
+import com.genlogs.app.dto.IngresoClienteRequest;
+import com.genlogs.app.dto.IngresoClienteResponse;
 import com.genlogs.app.dto.LoginRequest;
 import com.genlogs.app.dto.LoginResponse;
 import com.genlogs.app.exception.BusinessException;
@@ -30,6 +32,7 @@ import lombok.RequiredArgsConstructor;
 public class AuthService {
 
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
+    private static final String ROL_CLIENTE = "CLIENTE";
 
     private final AuthenticationManager authenticationManager;
     private final UsuarioRepository usuarioRepository;
@@ -44,10 +47,44 @@ public class AuthService {
         // sobre el usuario correcto (RF-28: bloqueo automático tras varios
         // intentos seguidos con contraseña incorrecta).
         Usuario usuario = usuarioRepository.findByNombreUsuario(request.getNombreUsuario()).orElse(null);
+        autenticar(usuario, request.getNombreUsuario(), request.getPassword());
+        return new LoginResponse(emitirToken(usuario), usuario.getNombreUsuario(), usuario.getRol().getNombreRol());
+    }
 
+    /**
+     * Ingreso del cliente al portal (POST /api/portal/login), separado del login
+     * interno: entra con su correo y solo si su rol es CLIENTE. A un usuario
+     * interno se le responde igual que a una contraseña incorrecta, para no
+     * revelar qué correos son del personal.
+     */
+    public IngresoClienteResponse loginCliente(IngresoClienteRequest request) {
+        Usuario usuario = usuarioRepository.findWithRolByCorreoIgnoreCase(request.getCorreo().trim()).orElse(null);
+        if (usuario == null || !ROL_CLIENTE.equalsIgnoreCase(usuario.getRol().getNombreRol())) {
+            throw new CredencialesInvalidasException();
+        }
+        autenticar(usuario, usuario.getNombreUsuario(), request.getPassword());
+        return new IngresoClienteResponse(emitirToken(usuario), usuario.getNombreUsuario(),
+                usuario.getNombres(), usuario.getRol().getNombreRol());
+    }
+
+    /** Token JWT del usuario (login interno, ingreso del cliente y registro con acceso inmediato). */
+    public String emitirToken(Usuario usuario) {
+        UserDetails userDetails = org.springframework.security.core.userdetails.User.builder()
+                .username(usuario.getNombreUsuario())
+                .password(usuario.getPasswordHash())
+                .authorities("ROLE_" + usuario.getRol().getNombreRol().toUpperCase())
+                .build();
+        return jwtUtil.generarToken(userDetails);
+    }
+
+    /**
+     * Valida usuario y contraseña con Spring Security: cuenta los intentos fallidos
+     * (RF-28), rechaza inactivos y bloqueados y, si entra, reinicia el contador.
+     */
+    private void autenticar(Usuario usuario, String nombreUsuario, String password) {
         try {
             authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(request.getNombreUsuario(), request.getPassword())
+                    new UsernamePasswordAuthenticationToken(nombreUsuario, password)
             );
         } catch (BadCredentialsException ex) {
             if (usuario != null) {
@@ -77,16 +114,6 @@ public class AuthService {
             usuario.setIntentosFallidos((short) 0);
             usuarioRepository.save(usuario);
         }
-
-        UserDetails userDetails = org.springframework.security.core.userdetails.User.builder()
-                .username(usuario.getNombreUsuario())
-                .password(usuario.getPasswordHash())
-                .authorities("ROLE_" + usuario.getRol().getNombreRol().toUpperCase())
-                .build();
-
-        String token = jwtUtil.generarToken(userDetails);
-
-        return new LoginResponse(token, usuario.getNombreUsuario(), usuario.getRol().getNombreRol());
     }
 
     /**

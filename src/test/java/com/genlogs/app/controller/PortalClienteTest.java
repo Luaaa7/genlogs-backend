@@ -9,6 +9,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.hamcrest.Matchers.hasItem;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -29,9 +30,13 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.genlogs.app.dto.ConsultaDocumentoResponse;
+import com.genlogs.app.exception.BusinessException;
+import com.genlogs.app.service.FactilizaService;
 import com.genlogs.app.model.Auditable;
 import com.genlogs.app.model.CategoriaProducto;
 import com.genlogs.app.model.Cliente;
@@ -76,7 +81,7 @@ class PortalClienteTest {
 
     private static final AtomicInteger SECUENCIA = new AtomicInteger(200);
     private static final String MENSAJE_REGISTRO =
-            "Registro recibido. Ya puedes ingresar cuando tu acceso sea habilitado.";
+            "Registro completado. Ya puedes usar el portal.";
 
     private static final Pattern INICIALES = Pattern.compile("^[A-Z]{2,3}$");
 
@@ -100,6 +105,8 @@ class PortalClienteTest {
     @Autowired private EmpresaMineraRepository empresaMineraRepository;
     @Autowired private EtapaComercialMineraRepository etapaComercialMineraRepository;
     @Autowired private TipoOperacionMineraRepository tipoOperacionMineraRepository;
+    /** El alta de una minera nueva consulta el RUC en Factiliza; en las pruebas se simula. */
+    @MockitoBean private FactilizaService factilizaService;
 
     @Test
     void catalogoYCoberturaSonPublicosYNoTraenDatosInternos() throws Exception {
@@ -171,7 +178,7 @@ class PortalClienteTest {
     }
 
     @Test
-    void registroCreaClienteInactivoSinTokenYNoRevelaSiElDocumentoExiste() throws Exception {
+    void registroDaAccesoInmediatoYPermiteVariosUsuariosPorEmpresa() throws Exception {
         int n = SECUENCIA.incrementAndGet();
         String documento = "2055" + String.format("%07d", n);
         Distrito distrito = ubigeo("Lima", "Lima", "Miraflores", n);
@@ -185,31 +192,142 @@ class PortalClienteTest {
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.mensaje").value(MENSAJE_REGISTRO))
-                .andExpect(jsonPath("$.token").doesNotExist());
+                .andExpect(jsonPath("$.token").isNotEmpty())
+                .andExpect(jsonPath("$.nombre").value("Ana Ruiz"));
 
-        Usuario creado = usuarioRepository.findByCorreoIgnoreCaseAndStatus("ana" + n + "@portal.pe", "I").orElseThrow();
+        Usuario creado = usuarioRepository.findByCorreoIgnoreCaseAndStatus("ana" + n + "@portal.pe", "A").orElseThrow();
         assertEquals("CLIENTE", creado.getRol().getNombreRol());
         assertEquals(cliente.getIdCliente(), creado.getCliente().getIdCliente());
-        assertEquals("I", creado.getStatus());
         assertTrue(passwordEncoder.matches("clave1234", creado.getPasswordHash()));
         assertNotEquals("clave1234", creado.getPasswordHash());
         assertEquals("Cliente Portal " + n, cliente.getTercero().getRazonSocial());
 
-        String desconocido = """
-                {"razonSocial":"Nadie","documento":"20999999999","nombreContacto":"Nadie",
-                 "correo":"nadie%s@portal.pe","password":"clave1234"}
-                """.formatted(n);
-        mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(desconocido))
+        // Segundo usuario de la misma empresa (antes lo impedía unique = true y existsByCliente).
+        String segundo = """
+                {"razonSocial":"Otra razon","documento":"%s","nombreContacto":"Beto Paz",
+                 "correo":"beto%s@portal.pe","password":"clave1234"}
+                """.formatted(documento, n);
+        mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(segundo))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.mensaje").value(MENSAJE_REGISTRO))
-                .andExpect(jsonPath("$.token").doesNotExist());
-        assertFalse(usuarioRepository.existsByCorreoIgnoreCase("nadie" + n + "@portal.pe"));
+                .andExpect(jsonPath("$.token").isNotEmpty());
+        Usuario otro = usuarioRepository.findByCorreoIgnoreCaseAndStatus("beto" + n + "@portal.pe", "A").orElseThrow();
+        assertEquals(cliente.getIdCliente(), otro.getCliente().getIdCliente());
 
+        // El mismo correo no se registra dos veces.
         long antes = usuarioRepository.count();
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.mensaje").value(MENSAJE_REGISTRO));
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(containsString("ya tiene una cuenta")));
         assertEquals(antes, usuarioRepository.count());
+    }
+
+    @Test
+    void registroDeUnaMineraNuevaValidaElRucYCreaElCliente() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        String ruc = "2071" + String.format("%07d", n);
+        Distrito distrito = ubigeo("Ica", "Nasca", "Nasca", n);
+        rolCliente();
+        tipoRuc();
+        when(factilizaService.consultarPorNumero(ruc)).thenReturn(ConsultaDocumentoResponse.builder()
+                .numeroDocumento(ruc)
+                .tipoDocumento("RUC")
+                .razonSocial("MINERA NUEVA S.A.C.")
+                .direccion("Av. Principal 123")
+                .idDistrito(distrito.getIdDistrito())
+                .origen("FACTILIZA")
+                .simulado(false)
+                .build());
+        String cuerpo = """
+                {"razonSocial":"Minera Nueva","documento":"%s","nombreContacto":"Carla Soto",
+                 "correo":"carla%s@nueva.pe","password":"clave1234"}
+                """.formatted(ruc, n);
+
+        mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").isNotEmpty());
+
+        Cliente nuevo = clienteRepository.findByNumeroDocumento(ruc).orElseThrow();
+        assertEquals("MINERA NUEVA S.A.C.", nuevo.getTercero().getRazonSocial());
+        assertEquals("ACTIVO", nuevo.getSituacion());
+        assertEquals("Minería", nuevo.getSectorEconomico().getNombreSector());
+        Usuario creado = usuarioRepository.findByCorreoIgnoreCaseAndStatus("carla" + n + "@nueva.pe", "A").orElseThrow();
+        assertEquals(nuevo.getIdCliente(), creado.getCliente().getIdCliente());
+    }
+
+    @Test
+    void registroRechazaRucInvalidoONoValidadoSinCrearNada() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        rolCliente();
+        String rucMalo = """
+                {"razonSocial":"Nadie","documento":"12345678","nombreContacto":"Nadie",
+                 "correo":"nadie%s@portal.pe","password":"clave1234"}
+                """.formatted(n);
+        mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(rucMalo))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.token").doesNotExist());
+
+        String ruc = "2099" + String.format("%07d", n);
+        when(factilizaService.consultarPorNumero(ruc)).thenThrow(new BusinessException("Factiliza no encontró datos"));
+        String sinSunat = """
+                {"razonSocial":"Nadie","documento":"%s","nombreContacto":"Nadie",
+                 "correo":"nadie%s@portal.pe","password":"clave1234"}
+                """.formatted(ruc, n);
+        mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(sinSunat))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(containsString("RUC")));
+
+        assertFalse(usuarioRepository.existsByCorreoIgnoreCase("nadie" + n + "@portal.pe"));
+        assertTrue(clienteRepository.findByNumeroDocumento(ruc).isEmpty());
+    }
+
+    @Test
+    void ingresoDelClienteConCorreoDaTokenDelPortal() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        Distrito distrito = ubigeo("Junin", "Huancayo", "El Tambo", n);
+        Cliente cliente = cliente(distrito, "2072" + String.format("%07d", n), "Ingreso " + n, "Ingreso " + n);
+        usuarioPortal("ingreso." + n, "Ingreso" + n + "@Portal.pe", cliente, rolCliente());
+
+        String respuesta = mockMvc.perform(post("/api/portal/login").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"correo\":\"ingreso" + n + "@portal.pe\",\"password\":\"clave1234\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nombreRol").value("CLIENTE"))
+                .andExpect(jsonPath("$.nombreUsuario").value("ingreso." + n))
+                .andReturn().getResponse().getContentAsString();
+        String token = new ObjectMapper().readTree(respuesta).get("token").asText();
+
+        // El token sirve en el portal (pasa por el filtro JWT real).
+        mockMvc.perform(get("/api/portal/pedidos").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/portal/login").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"correo\":\"ingreso" + n + "@portal.pe\",\"password\":\"otra-clave\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.token").doesNotExist());
+    }
+
+    @Test
+    void ingresoDelPortalRechazaAlPersonalInterno() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        Rol jefe = rolRepository.findByNombreRolIgnoreCase("JEFE_ADMINISTRATIVO")
+                .orElseGet(() -> rolRepository.save(auditar(new Rol(), e -> {
+                    e.setNombreRol("JEFE_ADMINISTRATIVO");
+                    e.setDescripcion("Interno");
+                })));
+        usuarioRepository.save(auditar(new Usuario(), e -> {
+            e.setRol(jefe);
+            e.setNombreUsuario("jefe." + n);
+            e.setNombres("Jefe Interno");
+            e.setCorreo("jefe" + n + "@genlogs.pe");
+            e.setPasswordHash(passwordEncoder.encode("clave1234"));
+            e.setIniciales("JI");
+            e.setBloqueado(false);
+            e.setIntentosFallidos((short) 0);
+        }));
+
+        mockMvc.perform(post("/api/portal/login").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"correo\":\"jefe" + n + "@genlogs.pe\",\"password\":\"clave1234\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.token").doesNotExist());
     }
 
     @Test
@@ -234,21 +352,21 @@ class PortalClienteTest {
                 """.formatted(documento, local);
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.token").doesNotExist());
+                .andExpect(jsonPath("$.token").isNotEmpty());
 
-        Usuario creado = usuarioRepository.findByCorreoIgnoreCaseAndStatus(local + "@portal.pe", "I").orElseThrow();
+        Usuario creado = usuarioRepository.findByCorreoIgnoreCaseAndStatus(local + "@portal.pe", "A").orElseThrow();
         assertEquals("MS", creado.getIniciales());
         assertTrue(INICIALES.matcher(creado.getIniciales()).matches());
         assertNotEquals(local, creado.getNombreUsuario());
         assertEquals("Ana", creado.getNombres());
         assertEquals("portal", creado.getUserCreate());
         assertEquals("REGISTRO_PORTAL", creado.getProcessCreate());
-        assertEquals("I", creado.getStatus().trim());
+        assertEquals("A", creado.getStatus().trim());
         assertNotEquals("clave1234", creado.getPasswordHash());
 
         long antes = usuarioRepository.count();
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
-                .andExpect(status().isOk());
+                .andExpect(status().isBadRequest());
         assertEquals(antes, usuarioRepository.count());
     }
 
@@ -269,7 +387,7 @@ class PortalClienteTest {
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
                 .andExpect(status().isOk());
 
-        Usuario creado = usuarioRepository.findByCorreoIgnoreCaseAndStatus("tresm" + n + "@portal.pe", "I").orElseThrow();
+        Usuario creado = usuarioRepository.findByCorreoIgnoreCaseAndStatus("tresm" + n + "@portal.pe", "A").orElseThrow();
         assertEquals("MP", creado.getIniciales());
         assertTrue(INICIALES.matcher(creado.getIniciales()).matches());
 
@@ -281,7 +399,7 @@ class PortalClienteTest {
                 """.formatted(documentoSinLetras, n);
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(sinLetras))
                 .andExpect(status().isOk());
-        Usuario fallback = usuarioRepository.findByCorreoIgnoreCaseAndStatus("sinletras" + n + "@portal.pe", "I").orElseThrow();
+        Usuario fallback = usuarioRepository.findByCorreoIgnoreCaseAndStatus("sinletras" + n + "@portal.pe", "A").orElseThrow();
         assertEquals("CL", fallback.getIniciales());
     }
 
@@ -303,7 +421,7 @@ class PortalClienteTest {
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
                 .andExpect(status().isOk());
 
-        Usuario creado = usuarioRepository.findByCorreoIgnoreCaseAndStatus("a".repeat(60) + "@portal.pe", "I").orElseThrow();
+        Usuario creado = usuarioRepository.findByCorreoIgnoreCaseAndStatus("a".repeat(60) + "@portal.pe", "A").orElseThrow();
         assertTrue(creado.getNombreUsuario().length() <= 50);
         assertEquals(50, creado.getNombreUsuario().length());
         assertNotEquals(ocupado, creado.getNombreUsuario());
@@ -455,6 +573,18 @@ class PortalClienteTest {
             e.setIntentosFallidos((short) 0);
             e.setStatus("A");
         }));
+    }
+
+    private TipoDocumento tipoRuc() {
+        return tipoDocumentoRepository.findAll().stream()
+                .filter(t -> "RUC".equals(t.getCodigoTipo()))
+                .findFirst()
+                .orElseGet(() -> tipoDocumentoRepository.save(auditar(new TipoDocumento(), e -> {
+                    e.setCodigoTipo("RUC");
+                    e.setNombreTipo("RUC");
+                    e.setLongitudDocumento((short) 11);
+                    e.setSoloNumerico(true);
+                })));
     }
 
     private Cliente cliente(Distrito distrito, String documento, String razonSocial, String sectorNombre) {
