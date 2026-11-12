@@ -55,7 +55,6 @@ import com.genlogs.app.repository.UsuarioRepository;
  * <p>Diferencias con la matriz que este test NO cubre todavía, porque hoy el backend
  * las deja más abiertas (cada una es de su bloque; al cerrarlas, agregar su caso aquí):
  * <ul>
- *   <li>GET /api/solicitudes/vencimiento (BE-B): Contador y Supervisor SST entran; la matriz no les da acceso.</li>
  *   <li>GET /api/facturacion (BE-D): Supervisor SST y Asistente Logístico entran; la matriz no les da acceso.</li>
  *   <li>GET /api/servicios (BE-D): Contador y Supervisor SST entran; la matriz no les da acceso.</li>
  *   <li>GET /api/metas (BE-D, dashboard): Supervisor SST y Asistente Administrativo entran; la matriz no les da acceso.</li>
@@ -102,6 +101,13 @@ class MatrizRolesTest {
                         "ASISTENTE_LOGISTICO", "JEFE_ADMINISTRATIVO"),
                 caso("Solicitudes", "PATCH", "/api/solicitudes/" + id + "/reasignar", "{\"idUsuario\":1}",
                         "JEFE_ADMINISTRATIVO"),
+                // Ver la lista y el detalle: Gerente y Asistente Administrativo solo ven (matriz: V).
+                caso("Solicitudes", "GET", "/api/solicitudes/vencimiento", null,
+                        "GERENTE_GENERAL", "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO", "ASISTENTE_ADMINISTRATIVO"),
+                caso("Solicitudes", "GET", "/api/solicitudes/" + id + "/historial", null,
+                        "GERENTE_GENERAL", "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO", "ASISTENTE_ADMINISTRATIVO"),
+                caso("Solicitudes", "GET", "/api/solicitudes/" + id + "/items", null,
+                        "GERENTE_GENERAL", "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO", "ASISTENTE_ADMINISTRATIVO"),
 
                 // ---- Búsqueda e historial: ven Gerente y Jefe; captura el Asistente Logístico ----
                 caso("Búsqueda", "GET", "/api/sourcing/historial", null,
