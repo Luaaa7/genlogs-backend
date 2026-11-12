@@ -18,4 +18,8 @@ public interface SolicitudCotizacionRepository extends JpaRepository<SolicitudCo
             Long idSolicitud, Long idCliente, String status);
 
     boolean existsByCodigoSolicitud(String codigoSolicitud);
+
+    /** Abiertas (PENDIENTE, EN_REVISION, EN_ESPERA_TERCERO) de la más urgente a la más holgada (BE-B). */
+    List<SolicitudCotizacion> findByEstadoSolicitudInAndStatusOrderByFechaLimiteInternaAsc(
+            java.util.Collection<String> estados, String status);
 }
