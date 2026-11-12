@@ -27,6 +27,8 @@ import com.genlogs.app.dto.EnviarCotizacionResponse;
 import com.genlogs.app.dto.EstadisticasCotizacionResponse;
 import com.genlogs.app.dto.PaginaResponse;
 import com.genlogs.app.dto.SeguimientoCotizacionResponse;
+import com.genlogs.app.enums.CodigoEstadoCotizacion;
+import com.genlogs.app.enums.OrigenRepuesto;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
 import com.genlogs.app.model.AdjuntoCotizacion;
@@ -117,6 +119,9 @@ public class CotizacionService {
     private final CloudinaryService cloudinaryService;
     private final MailService mailService;
     private final TasaIgvService tasaIgvService;
+    private final TipoCambioCotizacion tipoCambioCotizacion;
+    private final AvisoAltoValorCotizacion avisoAltoValorCotizacion;
+    private final OrdenCompraService ordenCompraService;
 
     /**
      * Permite controlar transacciones explícitas en operaciones que deben
@@ -129,6 +134,7 @@ public class CotizacionService {
      * de PostgreSQL.
      */
     private final EntityManager entityManager;
+    private final AvisoOrdenNoCreada avisoOrdenNoCreada;
 
     @Transactional(readOnly = true)
     public CotizacionResponse buscarPorId(Long idCotizacion) {
@@ -255,6 +261,7 @@ public class CotizacionService {
                 .observaciones(request.getObservaciones())
                 // La tasa que rige hoy queda guardada en la cotización.
                 .porcentajeIgv(tasaIgvService.porcentajeVigente())
+                .tipoCambioUsado(tipoCambioCotizacion.vigente())
                 .build();
 
         cotizacion.setUserCreate(vendedor.getNombreUsuario());
@@ -294,6 +301,9 @@ public class CotizacionService {
                     "Debe indicar el código del nuevo estado");
         }
 
+        ReglasAprobacionCotizacion.validarCambioLibre(
+                cotizacion.getEstadoCotizacion().getCodigoEstado(), codigoEstado);
+
         EstadoCotizacion nuevoEstado = buscarEstado(codigoEstado);
 
         if (Boolean.TRUE.equals(
@@ -316,6 +326,74 @@ public class CotizacionService {
                 cotizacion, nuevoEstado, usuario, request.comentarioResuelto());
 
         return toResponseDetalle(cotizacion);
+    }
+
+    /**
+     * La llama el controlador cuando la aprobación ya se confirmó.
+     * No abre esa transacción: si la orden falla, la cotización sigue APROBADA.
+     */
+    public void registrarOrdenSiAprobada(Long idCotizacion, String codigoEstado) {
+        if (!CodigoEstadoCotizacion.APROBADA.name().equalsIgnoreCase(codigoEstado)) {
+            return;
+        }
+        try {
+            ordenCompraService.crearAutomatica(idCotizacion);
+        } catch (RuntimeException e) {
+            log.warn("No se pudo registrar sola la orden de la cotización {}: {}", idCotizacion, e.getMessage());
+            try {
+                avisoOrdenNoCreada.avisar(idCotizacion);
+            } catch (RuntimeException aviso) {
+                log.error("No se pudo avisar que la orden de la cotización " + idCotizacion + " no se creó", aviso);
+            }
+            try {
+                avisoOrdenNoCreada.registrarSeguimiento(idCotizacion, e.getMessage());
+            } catch (RuntimeException seguimiento) {
+                log.error("No se pudo dejar el seguimiento del fallo de la orden " + idCotizacion, seguimiento);
+            }
+        }
+    }
+
+    @Transactional
+    public CotizacionResponse solicitarAprobacion(Long idCotizacion) {
+        Cotizacion cotizacion = obtenerOLanzar(idCotizacion);
+        ReglasAprobacionCotizacion.exigir(
+                cotizacion.getEstadoCotizacion().getCodigoEstado(),
+                CodigoEstadoCotizacion.BORRADOR,
+                ReglasAprobacionCotizacion.SOLO_BORRADOR);
+        return mover(cotizacion, CodigoEstadoCotizacion.PENDIENTE_APROBACION,
+                "SOLICITAR_APROBACION", "Enviada a aprobación del Jefe");
+    }
+
+    @Transactional
+    public CotizacionResponse aprobar(Long idCotizacion) {
+        Cotizacion cotizacion = obtenerOLanzar(idCotizacion);
+        ReglasAprobacionCotizacion.exigir(
+                cotizacion.getEstadoCotizacion().getCodigoEstado(),
+                CodigoEstadoCotizacion.PENDIENTE_APROBACION,
+                ReglasAprobacionCotizacion.SOLO_PENDIENTE);
+        Usuario usuario = usuarioActual();
+        EstadoCotizacion destino = estadoDe(CodigoEstadoCotizacion.APROBADA_INTERNA);
+        aplicarEstado(cotizacion, destino, usuario, "APROBAR_COTIZACION");
+        BigDecimal total = cotizacionRepository.findTotalesByCotizacion(idCotizacion)
+                .map(TotalesCotizacionProjection::getTotal)
+                .orElse(BigDecimal.ZERO);
+        avisoAltoValorCotizacion.alAprobar(cotizacion, total);
+        cotizacionRepository.save(cotizacion);
+        registrarSeguimiento(cotizacion, destino, usuario,
+                "Aprobada por " + usuario.getNombreUsuario());
+        return toResponseDetalle(cotizacion);
+    }
+
+    @Transactional
+    public CotizacionResponse devolver(Long idCotizacion, String motivo) {
+        ReglasAprobacionCotizacion.exigirMotivo(motivo);
+        Cotizacion cotizacion = obtenerOLanzar(idCotizacion);
+        ReglasAprobacionCotizacion.exigir(
+                cotizacion.getEstadoCotizacion().getCodigoEstado(),
+                CodigoEstadoCotizacion.PENDIENTE_APROBACION,
+                ReglasAprobacionCotizacion.SOLO_PENDIENTE);
+        return mover(cotizacion, CodigoEstadoCotizacion.BORRADOR,
+                "DEVOLVER_COTIZACION", motivo.trim());
     }
 
     @Transactional
@@ -406,6 +484,10 @@ public class CotizacionService {
 
         DatosEnvio datos = transactionTemplate.execute(status -> {
             Cotizacion cotizacion = obtenerOLanzar(idCotizacion);
+            ReglasAprobacionCotizacion.exigir(
+                    cotizacion.getEstadoCotizacion().getCodigoEstado(),
+                    CodigoEstadoCotizacion.APROBADA_INTERNA,
+                    ReglasAprobacionCotizacion.SOLO_APROBADA_INTERNA);
 
             return new DatosEnvio(
                     obtenerNombreCliente(cotizacion),
@@ -454,8 +536,8 @@ public class CotizacionService {
     }
 
     /**
-     * Cambia BORRADOR a ENVIADA. El método es invocado dentro de una
-     * transacción abierta mediante TransactionTemplate.
+     * Pasa APROBADA_INTERNA a ENVIADA. Se invoca dentro del TransactionTemplate,
+     * después de que el correo al cliente salió bien.
      */
     public void marcarComoEnviadaSiBorrador(
             Long idCotizacion,
@@ -463,29 +545,15 @@ public class CotizacionService {
             String destinatario) {
 
         Cotizacion cotizacion = obtenerOLanzar(idCotizacion);
-
-        if ("BORRADOR".equals(
-                cotizacion.getEstadoCotizacion().getCodigoEstado())) {
-
-            EstadoCotizacion estadoEnviada = estadoCotizacionRepository
-                    .findByCodigoEstado("ENVIADA")
-                    .orElse(null);
-
-            if (estadoEnviada != null) {
-                cotizacion.setEstadoCotizacion(estadoEnviada);
-                cotizacion.setUserUpdate(usuario.getNombreUsuario());
-                cotizacion.setProcessUpdate("ENVIO_COTIZACION");
-                cotizacion.setDateUpdate(LocalDateTime.now());
-
-                cotizacionRepository.save(cotizacion);
-
-                registrarSeguimiento(
-                        cotizacion,
-                        estadoEnviada,
-                        usuario,
-                        "Cotización enviada a " + destinatario);
-            }
-        }
+        ReglasAprobacionCotizacion.exigir(
+                cotizacion.getEstadoCotizacion().getCodigoEstado(),
+                CodigoEstadoCotizacion.APROBADA_INTERNA,
+                ReglasAprobacionCotizacion.SOLO_APROBADA_INTERNA);
+        cotizacion.setTipoCambioUsado(tipoCambioCotizacion.vigente());
+        EstadoCotizacion enviada = estadoDe(CodigoEstadoCotizacion.ENVIADA);
+        aplicarEstado(cotizacion, enviada, usuario, "ENVIO_COTIZACION");
+        cotizacionRepository.save(cotizacion);
+        registrarSeguimiento(cotizacion, enviada, usuario, "Cotización enviada a " + destinatario);
     }
 
     @Transactional(readOnly = true)
@@ -584,6 +652,7 @@ public class CotizacionService {
                 .observaciones(original.getObservaciones())
                 // La copia es un documento nuevo: usa la tasa que rige hoy.
                 .porcentajeIgv(tasaIgvService.porcentajeVigente())
+                .tipoCambioUsado(tipoCambioCotizacion.vigente())
                 .build();
 
         copia.setUserCreate(usuario.getNombreUsuario());
@@ -604,6 +673,7 @@ public class CotizacionService {
                     .cantidad(lineaOriginal.getCantidad())
                     .precioUnitario(lineaOriginal.getPrecioUnitario())
                     .descuentoUnitario(lineaOriginal.getDescuentoUnitario())
+                    .origen(lineaOriginal.getOrigen())
                     .build();
 
             lineaCopia.setUserCreate(usuario.getNombreUsuario());
@@ -678,7 +748,7 @@ public class CotizacionService {
     // Construcción de líneas y resolución de unidades de medida
     // ------------------------------------------------------------
 
-    private CotizacionDetalle construirLinea(
+    CotizacionDetalle construirLinea(
             Cotizacion cotizacion,
             CotizacionDetalleRequest req,
             String usuario) {
@@ -734,10 +804,52 @@ public class CotizacionService {
                                 : BigDecimal.ZERO)
                 .build();
 
+        aplicarOrigen(linea, req, false);
         linea.setUserCreate(usuario);
         linea.setProcessCreate("ALTA_LINEA_COTIZACION");
 
         return linea;
+    }
+
+    /**
+     * Alta: el request manda; si no viene y hay producto, se copia producto.origen
+     * en ese momento; sin producto queda nulo.
+     * Edición: un origen ya guardado solo cambia cuando el request trae otro.
+     * Hoy no hay endpoint que edite líneas; la regla queda para no pisarlo.
+     */
+    void aplicarOrigen(CotizacionDetalle linea, CotizacionDetalleRequest req, boolean edicion) {
+        if (req.getOrigen() != null) {
+            linea.setOrigen(req.getOrigen());
+            return;
+        }
+        if (edicion) {
+            return;
+        }
+        Long idProducto = linea.getProducto() == null ? null : linea.getProducto().getIdProducto();
+        if (idProducto == null) {
+            linea.setOrigen(null);
+            return;
+        }
+        linea.setOrigen(origenDeProducto(idProducto));
+    }
+
+    private OrigenRepuesto origenDeProducto(Long idProducto) {
+        List<String> leidos = productoRepository.findOrigenById(idProducto);
+        if (leidos == null || leidos.isEmpty()) {
+            return null;
+        }
+        return codigoOrigen(leidos.get(0));
+    }
+
+    private static OrigenRepuesto codigoOrigen(String crudo) {
+        if (crudo == null || crudo.isBlank()) {
+            return null;
+        }
+        try {
+            return OrigenRepuesto.valueOf(crudo.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 
     private UnidadMedida resolverUnidadMedida(
@@ -850,9 +962,12 @@ public class CotizacionService {
                                 "Cotización no encontrada"));
     }
 
+    private Authentication autenticacionActual() {
+        return SecurityContextHolder.getContext().getAuthentication();
+    }
+
     private Usuario usuarioActual() {
-        Authentication authentication =
-                SecurityContextHolder.getContext().getAuthentication();
+        Authentication authentication = autenticacionActual();
 
         if (authentication == null
                 || !authentication.isAuthenticated()
@@ -1018,6 +1133,38 @@ public class CotizacionService {
         }
 
         return null;
+    }
+
+    private CotizacionResponse mover(
+            Cotizacion cotizacion,
+            CodigoEstadoCotizacion codigo,
+            String proceso,
+            String comentario) {
+
+        Usuario usuario = usuarioActual();
+        EstadoCotizacion destino = estadoDe(codigo);
+        aplicarEstado(cotizacion, destino, usuario, proceso);
+        cotizacionRepository.save(cotizacion);
+        registrarSeguimiento(cotizacion, destino, usuario, comentario);
+        return toResponseDetalle(cotizacion);
+    }
+
+    private void aplicarEstado(
+            Cotizacion cotizacion,
+            EstadoCotizacion destino,
+            Usuario usuario,
+            String proceso) {
+
+        cotizacion.setEstadoCotizacion(destino);
+        cotizacion.setUserUpdate(usuario.getNombreUsuario());
+        cotizacion.setProcessUpdate(proceso);
+        cotizacion.setDateUpdate(LocalDateTime.now());
+    }
+
+    private EstadoCotizacion estadoDe(CodigoEstadoCotizacion codigo) {
+        return estadoCotizacionRepository.findByCodigoEstado(codigo.name())
+                .orElseThrow(() -> new BusinessException(
+                        "No existe el estado " + codigo.name() + " configurado"));
     }
 
     private EstadoCotizacion buscarEstado(String codigoEstado) {
@@ -1193,7 +1340,12 @@ public class CotizacionService {
                                 c.getMoneda() != null
                                         ? c.getMoneda().getNombreMoneda()
                                         : null)
-                        .observaciones(c.getObservaciones());
+                        .observaciones(c.getObservaciones())
+                        .tipoCambioUsado(c.getTipoCambioUsado());
+
+        // Hoy la cotización no guarda margen ni precio de proveedor (null).
+        // Este es el único sitio que puede copiarlos al JSON.
+        VisibilidadMargen.aplicar(builder, null, null, autenticacionActual());
 
         if (conDetalle) {
             builder.detalles(
@@ -1500,6 +1652,7 @@ public class CotizacionService {
                 .descuentoUnitario(d.getDescuentoUnitario())
                 .importeLinea(importe)
                 .subtotal(importe)
+                .origen(d.getOrigen())
                 .build();
     }
 

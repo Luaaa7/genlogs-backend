@@ -34,4 +34,15 @@ public class OrdenCompraResponse {
     /** Al pasar a ATENDIDA: por qué no se pudo emitir solo (para hacerlo a mano). */
     @Setter
     private String avisoComprobante;
+
+    private String numeroOcCliente;
+    private BigDecimal montoOcCliente;
+    /** Código de 3 letras guardado en la orden. Nulo si no se pudo leer ni confirmar. */
+    @Setter
+    private String monedaLeida;
+    /** Nulo si no hay nada que avisar. No afirma coincidencia cuando no se pudo comparar. */
+    @Setter
+    private String avisoMonto;
+    private Boolean ocLeidaAuto;
+    private Boolean ocConfirmada;
 }
