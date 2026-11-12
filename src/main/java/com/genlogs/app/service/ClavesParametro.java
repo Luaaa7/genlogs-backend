@@ -26,4 +26,9 @@ public final class ClavesParametro {
     public static final String VERIFICACION_DIAS = "VERIFICACION_DIAS";
     public static final String OCULTAR_SIN_VERIF_DIAS = "OCULTAR_SIN_VERIF_DIAS";
     public static final String OCULTAR_FALLAS = "OCULTAR_FALLAS";
+
+    /** Márgenes de repuestos (%). Al editarlos debe cumplirse MIN <= DEFAULT <= MAX. */
+    public static final String MARGEN_REP_MIN = "MARGEN_REP_MIN";
+    public static final String MARGEN_REP_DEFAULT = "MARGEN_REP_DEFAULT";
+    public static final String MARGEN_REP_MAX = "MARGEN_REP_MAX";
 }
