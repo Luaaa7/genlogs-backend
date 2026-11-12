@@ -279,6 +279,19 @@ public class PortalClienteService {
         return usuario;
     }
 
+    /** Barra del cliente (D-14): solo etapas, nunca plazos ni motivos internos. */
+    static String etapaCliente(String estado) {
+        if (estado == null) {
+            return "RECIBIDA";
+        }
+        return switch (estado) {
+            case "PENDIENTE" -> "RECIBIDA";
+            case "EN_REVISION" -> "EN_BUSQUEDA";
+            case "EN_ESPERA_TERCERO" -> "EN_ESPERA_PROVEEDOR";
+            default -> estado;
+        };
+    }
+
     private PedidoResponse aPedido(SolicitudCotizacion solicitud) {
         List<PedidoItemResponse> items = solicitud.getItems().stream()
                 .filter(item -> "A".equals(item.getStatus()))
@@ -287,6 +300,10 @@ public class PortalClienteService {
                         .descripcion(item.getDescripcion())
                         .cantidad(item.getCantidad())
                         .unidad(item.getUnidad())
+                        .marca(item.getMarcaTexto())
+                        .numeroParte(item.getNumeroParte())
+                        .gtin(item.getGtin())
+                        .urlFoto(item.getUrlFoto())
                         .build())
                 .toList();
         return PedidoResponse.builder()
@@ -294,6 +311,8 @@ public class PortalClienteService {
                 .codigo(solicitud.getCodigoSolicitud())
                 .fecha(solicitud.getDateCreate().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
                 .estado(solicitud.getEstadoSolicitud())
+                .etapa(etapaCliente(solicitud.getEstadoSolicitud()))
+                .puedeCancelar(ESTADOS_CANCELABLES.contains(solicitud.getEstadoSolicitud()))
                 .asunto(solicitud.getAsunto())
                 .descripcion(solicitud.getDescripcion())
                 .items(items)

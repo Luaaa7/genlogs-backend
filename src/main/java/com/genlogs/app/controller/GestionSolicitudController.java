@@ -9,18 +9,22 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.genlogs.app.dto.gestion.ConfirmarNumeroParteRequest;
 import com.genlogs.app.dto.gestion.EventoSolicitudResponse;
+import com.genlogs.app.dto.gestion.ItemIdentificacionResponse;
 import com.genlogs.app.dto.gestion.PausarSolicitudRequest;
 import com.genlogs.app.dto.gestion.ReasignarSolicitudRequest;
 import com.genlogs.app.dto.gestion.ReclasificarSolicitudRequest;
 import com.genlogs.app.dto.gestion.SolicitudInternaResponse;
 import com.genlogs.app.dto.gestion.SolicitudVencimientoResponse;
 import com.genlogs.app.service.GestionSolicitudService;
+import com.genlogs.app.service.IdentificacionItemService;
 import com.genlogs.app.service.VencimientoSolicitudService;
 
 import jakarta.validation.Valid;
@@ -35,6 +39,8 @@ import jakarta.validation.Valid;
  * PATCH /api/solicitudes/{id}/reasignar     {idUsuario}; solo el Jefe Adm.
  * GET   /api/solicitudes/{id}/historial     cada cambio, en orden
  * GET   /api/solicitudes/vencimiento        abiertas por vencimiento con semáforo (?soloMias=true)
+ * GET   /api/solicitudes/{id}/items         repuestos con su identificación
+ * PUT   /api/solicitudes/{id}/items/{idItem}/numero-parte  confirma marca, N.º de parte y equivalentes
  * 409 si la solicitud ya está cotizada, rechazada o cancelada, o no está en el estado que pide la acción.
  */
 @RestController
@@ -45,10 +51,13 @@ public class GestionSolicitudController {
 
     private final GestionSolicitudService gestion;
     private final VencimientoSolicitudService vencimientoService;
+    private final IdentificacionItemService identificacion;
 
-    public GestionSolicitudController(GestionSolicitudService gestion, VencimientoSolicitudService vencimientoService) {
+    public GestionSolicitudController(GestionSolicitudService gestion, VencimientoSolicitudService vencimientoService,
+            IdentificacionItemService identificacion) {
         this.gestion = gestion;
         this.vencimientoService = vencimientoService;
+        this.identificacion = identificacion;
     }
 
     @PatchMapping("/{id}/iniciar")
@@ -89,6 +98,20 @@ public class GestionSolicitudController {
     public ResponseEntity<List<SolicitudVencimientoResponse>> vencimiento(
             @RequestParam(defaultValue = "false") boolean soloMias, Authentication auth) {
         return ResponseEntity.ok(vencimientoService.lista(LocalDateTime.now(), soloMias ? auth.getName() : null));
+    }
+
+    /** Repuestos de la solicitud con lo que escribió el cliente y lo confirmado por el asistente. */
+    @GetMapping("/{id}/items")
+    public ResponseEntity<List<ItemIdentificacionResponse>> items(@PathVariable Long id) {
+        return ResponseEntity.ok(identificacion.items(id));
+    }
+
+    /** El asistente confirma o corrige marca, N.º de parte, GTIN y equivalentes de un repuesto (D-01). */
+    @PutMapping("/{id}/items/{idItem}/numero-parte")
+    @PreAuthorize(GESTIONAN)
+    public ResponseEntity<ItemIdentificacionResponse> confirmarNumeroParte(@PathVariable Long id,
+            @PathVariable Long idItem, @Valid @RequestBody ConfirmarNumeroParteRequest request) {
+        return ResponseEntity.ok(identificacion.confirmar(id, idItem, request));
     }
 
     @GetMapping("/{id}/historial")

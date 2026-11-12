@@ -20,4 +20,9 @@ public class PedidoItemResponse {
     private String descripcion;
     private BigDecimal cantidad;
     private String unidad;
+    /** Lo que el cliente escribió (o lo que corrigió el asistente): marca, N.º de parte, GTIN y foto. */
+    private String marca;
+    private String numeroParte;
+    private String gtin;
+    private String urlFoto;
 }

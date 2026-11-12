@@ -1,7 +1,7 @@
 -- ============================================================================
 -- GenLogS - Migración v3.2 · Bloque BE-B: feriados (D-18)
 -- Archivo : db/migraciones/v3_2_be_b.sql
--- Ramas   : luana/be-b-feriados, luana/be-b-endpoint-solicitudes
+-- Ramas   : luana/be-b-feriados, luana/be-b-endpoint-solicitudes, luana/be-b-confirmar-numero-parte
 -- Destino : Supabase (PostgreSQL), esquema public
 --
 -- Qué hace:
@@ -12,6 +12,8 @@
 --   4. Activa RLS y quita permisos a la API REST de Supabase.
 --   5. solicitud_item.id_producto: el repuesto que se pidió desde la vitrina
 --      ("Cotizar"). Si el producto se borra, el pedido se conserva (SET NULL).
+--   6. Confirmación del N.º de parte: parte_confirmada, id_usuario_confirma,
+--      fecha_confirmacion y tabla solicitud_item_equivalente (con RLS).
 --
 -- Cómo ejecutarlo:
 --   - Va después de v3_2.sql (orden del Paso 0) y ANTES de desplegar el
@@ -116,6 +118,40 @@ ALTER TABLE public.solicitud_item
     ADD COLUMN IF NOT EXISTS id_producto BIGINT
         REFERENCES public.producto (id_producto) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS ix_solicitud_item_producto ON public.solicitud_item (id_producto);
+
+-- ----------------------------------------------------------------------------
+-- 6. Confirmación del N.º de parte y equivalentes (D-01, be-b-confirmar-numero-parte)
+--    El Asistente Logístico confirma o corrige marca y N.º de parte y agrega
+--    equivalentes antes de buscar. Los equivalentes son solo internos.
+-- ----------------------------------------------------------------------------
+ALTER TABLE public.solicitud_item
+    ADD COLUMN IF NOT EXISTS parte_confirmada BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS id_usuario_confirma BIGINT
+        REFERENCES public.usuario (id_usuario) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS fecha_confirmacion TIMESTAMP;
+
+CREATE TABLE IF NOT EXISTS public.solicitud_item_equivalente (
+    id_solicitud_item BIGINT      NOT NULL
+        REFERENCES public.solicitud_item (id_solicitud_item) ON DELETE CASCADE,
+    numero_parte      VARCHAR(60) NOT NULL,
+    CONSTRAINT pk_solicitud_item_equivalente PRIMARY KEY (id_solicitud_item, numero_parte)
+);
+-- Para que la búsqueda (BE-E) encuentre también por equivalente.
+CREATE INDEX IF NOT EXISTS ix_solicitud_item_equivalente_numero
+    ON public.solicitud_item_equivalente (numero_parte);
+
+ALTER TABLE public.solicitud_item_equivalente ENABLE ROW LEVEL SECURITY;
+
+DO $$
+DECLARE
+    rol_api TEXT;
+BEGIN
+    FOREACH rol_api IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = rol_api) THEN
+            EXECUTE format('REVOKE ALL ON TABLE public.solicitud_item_equivalente FROM %I', rol_api);
+        END IF;
+    END LOOP;
+END $$;
 
 COMMIT;
 

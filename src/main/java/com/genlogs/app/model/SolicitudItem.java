@@ -2,7 +2,9 @@ package com.genlogs.app.model;
 
 import java.math.BigDecimal;
 
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -65,4 +67,23 @@ public class SolicitudItem extends Auditable {
     /** Producto de la vitrina cuando el pedido viene de "Cotizar". */
     @Column(name = "id_producto")
     private Long idProducto;
+
+    /** El Asistente Logístico confirmó o corrigió marca y N.º de parte (D-01). */
+    @Column(name = "parte_confirmada", nullable = false)
+    @Builder.Default
+    private Boolean parteConfirmada = false;
+
+    @Column(name = "id_usuario_confirma")
+    private Long idUsuarioConfirma;
+
+    @Column(name = "fecha_confirmacion")
+    private java.time.LocalDateTime fechaConfirmacion;
+
+    /** N.º de parte equivalentes que agrega el asistente antes de buscar. Solo interno. */
+    @EqualsAndHashCode.Exclude
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "solicitud_item_equivalente", joinColumns = @JoinColumn(name = "id_solicitud_item"))
+    @Column(name = "numero_parte", length = 60, nullable = false)
+    @Builder.Default
+    private java.util.Set<String> equivalentes = new java.util.LinkedHashSet<>();
 }
