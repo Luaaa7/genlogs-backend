@@ -34,6 +34,7 @@ import com.genlogs.app.repository.UsuarioRepository;
  *       las de días y cantidades, además, deben ser enteras.</li>
  *   <li>Los márgenes de repuestos (D-17) cumplen MIN &lt;= DEFAULT &lt;= MAX. Se pueden editar
  *       de a uno o los tres juntos con {@link #actualizarMargenesRepuesto}.</li>
+ *   <li>Los márgenes de servicios (RF-80) cumplen MIN &lt;= SUGERIDO &lt;= AVISO &lt;= MAX.</li>
  *   <li>Antes de validar se bloquean las filas que se van a leer y escribir, para que dos
  *       ediciones simultáneas no dejen los márgenes inconsistentes.</li>
  * </ul>
@@ -41,10 +42,23 @@ import com.genlogs.app.repository.UsuarioRepository;
 @Service
 public class EdicionParametrosService {
 
-    private static final Set<String> MARGENES_REPUESTO = Set.of(
-            ClavesParametro.MARGEN_REP_MIN,
-            ClavesParametro.MARGEN_REP_DEFAULT,
-            ClavesParametro.MARGEN_REP_MAX);
+    /** Claves que deben quedar en orden no decreciente, y el error si no lo están. */
+    private record GrupoOrdenado(List<String> claves, String error) {
+    }
+
+    /** D-17: MIN <= DEFAULT <= MAX. */
+    private static final GrupoOrdenado MARGENES_REPUESTO = new GrupoOrdenado(
+            List.of(ClavesParametro.MARGEN_REP_MIN, ClavesParametro.MARGEN_REP_DEFAULT,
+                    ClavesParametro.MARGEN_REP_MAX),
+            "El margen mínimo de repuestos no puede superar al de por defecto, ni este al máximo.");
+
+    /** D-12 / RF-80: MIN <= SUGERIDO <= AVISO <= MAX. */
+    private static final GrupoOrdenado MARGENES_SERVICIO = new GrupoOrdenado(
+            List.of(ClavesParametro.MARGEN_SERV_MIN, ClavesParametro.MARGEN_SERV_SUGERIDO,
+                    ClavesParametro.MARGEN_SERV_AVISO, ClavesParametro.MARGEN_SERV_MAX),
+            "Los márgenes de servicios deben cumplir mínimo <= sugerido <= aviso <= máximo.");
+
+    private static final List<GrupoOrdenado> GRUPOS = List.of(MARGENES_REPUESTO, MARGENES_SERVICIO);
 
     /** Días y cantidades: enteros no negativos (se leen con ParametrosService.getEntero). */
     private static final Set<String> ENTEROS = Set.of(
@@ -90,14 +104,14 @@ public class EdicionParametrosService {
     public ParametroResponse actualizar(String clave, String valor) {
         String nuevo = exigirValor(valor);
         ParametroSistema parametro;
-        if (MARGENES_REPUESTO.contains(clave)) {
-            Map<String, ParametroSistema> margenes = bloquearMargenes();
+        GrupoOrdenado grupo = grupoDe(clave);
+        if (grupo != null) {
+            Map<String, ParametroSistema> filas = bloquearGrupo(grupo);
             exigirFormato(clave, nuevo);
-            exigirOrden(
-                    valorMargen(margenes, ClavesParametro.MARGEN_REP_MIN, clave, nuevo),
-                    valorMargen(margenes, ClavesParametro.MARGEN_REP_DEFAULT, clave, nuevo),
-                    valorMargen(margenes, ClavesParametro.MARGEN_REP_MAX, clave, nuevo));
-            parametro = margenes.get(clave);
+            exigirOrden(grupo, grupo.claves().stream()
+                    .map(leida -> valorMargen(filas, leida, clave, nuevo))
+                    .toList());
+            parametro = filas.get(clave);
         } else {
             parametro = bloquearExistente(clave);
             exigirFormato(clave, nuevo);
@@ -116,8 +130,8 @@ public class EdicionParametrosService {
         exigirNoNegativo(ClavesParametro.MARGEN_REP_MIN, min);
         exigirNoNegativo(ClavesParametro.MARGEN_REP_DEFAULT, porDefecto);
         exigirNoNegativo(ClavesParametro.MARGEN_REP_MAX, max);
-        Map<String, ParametroSistema> margenes = bloquearMargenes();
-        exigirOrden(min, porDefecto, max);
+        Map<String, ParametroSistema> margenes = bloquearGrupo(MARGENES_REPUESTO);
+        exigirOrden(MARGENES_REPUESTO, List.of(min, porDefecto, max));
 
         Long idUsuario = usuarioActual().getIdUsuario();
         LocalDateTime ahora = LocalDateTime.now();
@@ -174,25 +188,30 @@ public class EdicionParametrosService {
         }
     }
 
-    private static void exigirOrden(BigDecimal min, BigDecimal porDefecto, BigDecimal max) {
-        if (min.compareTo(porDefecto) > 0 || porDefecto.compareTo(max) > 0) {
-            throw new BusinessException(
-                    "El margen mínimo de repuestos no puede superar al de por defecto, ni este al máximo.");
+    /** Los valores, en el orden del grupo, no pueden bajar. */
+    private static void exigirOrden(GrupoOrdenado grupo, List<BigDecimal> valores) {
+        for (int i = 1; i < valores.size(); i++) {
+            if (valores.get(i - 1).compareTo(valores.get(i)) > 0) {
+                throw new BusinessException(grupo.error());
+            }
         }
     }
 
-    /** Bloquea las tres filas de márgenes de repuestos; si falta alguna, error claro. */
-    private Map<String, ParametroSistema> bloquearMargenes() {
-        Map<String, ParametroSistema> margenes = parametroSistemaRepository.bloquearPorClaves(MARGENES_REPUESTO)
+    private static GrupoOrdenado grupoDe(String clave) {
+        return GRUPOS.stream().filter(g -> g.claves().contains(clave)).findFirst().orElse(null);
+    }
+
+    /** Bloquea todas las filas del grupo; si falta alguna, error claro. */
+    private Map<String, ParametroSistema> bloquearGrupo(GrupoOrdenado grupo) {
+        Map<String, ParametroSistema> filas = parametroSistemaRepository.bloquearPorClaves(Set.copyOf(grupo.claves()))
                 .stream()
                 .collect(Collectors.toMap(ParametroSistema::getClave, Function.identity()));
-        for (String clave : List.of(ClavesParametro.MARGEN_REP_MIN, ClavesParametro.MARGEN_REP_DEFAULT,
-                ClavesParametro.MARGEN_REP_MAX)) {
-            if (!margenes.containsKey(clave)) {
+        for (String clave : grupo.claves()) {
+            if (!filas.containsKey(clave)) {
                 throw faltaParametro(clave);
             }
         }
-        return margenes;
+        return filas;
     }
 
     private ParametroSistema bloquearExistente(String clave) {

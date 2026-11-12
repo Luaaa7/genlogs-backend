@@ -36,21 +36,21 @@ public class ServicioController {
         return ResponseEntity.ok(servicioService.buscarPorId(id));
     }
 
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO')")
     @PostMapping
     public ResponseEntity<Servicio> registrar(@Valid @RequestBody Servicio nuevo) {
         Servicio creado = servicioService.registrar(nuevo);
         return ResponseEntity.status(HttpStatus.CREATED).body(creado);
     }
 
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO')")
     @PutMapping("/{id}")
     public ResponseEntity<Servicio> actualizar(@PathVariable Long id,
                                                 @Valid @RequestBody Servicio datos) {
         return ResponseEntity.ok(servicioService.actualizar(id, datos));
     }
 
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Long id) {
         servicioService.desactivar(id);
@@ -61,5 +61,12 @@ public class ServicioController {
     @PostMapping("/{id}/aprobar")
     public ResponseEntity<Servicio> aprobar(@PathVariable Long id) {
         return ResponseEntity.ok(servicioService.aprobar(id));
+    }
+
+    /** Solo el Jefe Administrativo, y no sobre un servicio que él mismo dejó pendiente. */
+    @PreAuthorize("hasRole('JEFE_ADMINISTRATIVO')")
+    @PostMapping("/{id}/rechazar")
+    public ResponseEntity<Servicio> rechazar(@PathVariable Long id) {
+        return ResponseEntity.ok(servicioService.rechazar(id));
     }
 }

@@ -78,6 +78,10 @@ class EdicionParametrosValidacionTest {
         parametro(ClavesParametro.MARGEN_REP_MIN, "15");
         parametro(ClavesParametro.MARGEN_REP_DEFAULT, "35");
         parametro(ClavesParametro.MARGEN_REP_MAX, "45");
+        parametro(ClavesParametro.MARGEN_SERV_MIN, "15");
+        parametro(ClavesParametro.MARGEN_SERV_SUGERIDO, "25");
+        parametro(ClavesParametro.MARGEN_SERV_AVISO, "35");
+        parametro(ClavesParametro.MARGEN_SERV_MAX, "45");
     }
 
     // ---- Valores iniciales ----
@@ -191,6 +195,34 @@ class EdicionParametrosValidacionTest {
     void unMargenQueNoEsNumeroEnElCambioConjunto() throws Exception {
         putMargenes("{\"min\":\"diez\",\"porDefecto\":35,\"max\":45}").andExpect(status().isBadRequest());
         assertMargenesIniciales();
+    }
+
+    // ---- Márgenes de servicios (MIN <= SUGERIDO <= AVISO <= MAX) ----
+
+    @Test
+    void elSugeridoDeServiciosNoPuedePasarDelAviso() throws Exception {
+        putClave(ClavesParametro.MARGEN_SERV_SUGERIDO, "40").andExpect(status().isBadRequest());
+        assertEquals("25", parametrosService.get(ClavesParametro.MARGEN_SERV_SUGERIDO));
+    }
+
+    @Test
+    void elMaximoDeServiciosNoPuedeQuedarBajoElAviso() throws Exception {
+        putClave(ClavesParametro.MARGEN_SERV_MAX, "30").andExpect(status().isBadRequest());
+        assertEquals("45", parametrosService.get(ClavesParametro.MARGEN_SERV_MAX));
+    }
+
+    @Test
+    void unMargenDeServiciosEnOrdenSeGuarda() throws Exception {
+        putClave(ClavesParametro.MARGEN_SERV_MIN, "20").andExpect(status().isOk());
+        putClave(ClavesParametro.MARGEN_SERV_MAX, "50").andExpect(status().isOk());
+        assertEquals("20", parametrosService.get(ClavesParametro.MARGEN_SERV_MIN));
+        assertEquals("50", parametrosService.get(ClavesParametro.MARGEN_SERV_MAX));
+    }
+
+    @Test
+    void unMargenDeServiciosNegativoSeRechaza() throws Exception {
+        putClave(ClavesParametro.MARGEN_SERV_MIN, "-1").andExpect(status().isBadRequest());
+        assertEquals("15", parametrosService.get(ClavesParametro.MARGEN_SERV_MIN));
     }
 
     // ---- Permisos ----
