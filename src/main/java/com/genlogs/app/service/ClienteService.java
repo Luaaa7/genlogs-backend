@@ -14,12 +14,10 @@ import com.genlogs.app.dto.ClienteResponse;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
 import com.genlogs.app.model.Cliente;
-import com.genlogs.app.model.Distrito;
 import com.genlogs.app.model.SectorEconomico;
 import com.genlogs.app.model.Tercero;
 import com.genlogs.app.model.TipoDocumento;
 import com.genlogs.app.repository.ClienteRepository;
-import com.genlogs.app.repository.DistritoRepository;
 import com.genlogs.app.repository.ProveedorRepository;
 import com.genlogs.app.repository.SectorEconomicoRepository;
 import com.genlogs.app.repository.TerceroRepository;
@@ -35,8 +33,8 @@ public class ClienteService {
     private final ProveedorRepository proveedorRepository;
     private final TerceroRepository terceroRepository;
     private final TipoDocumentoRepository tipoDocumentoRepository;
-    private final DistritoRepository distritoRepository;
     private final SectorEconomicoRepository sectorEconomicoRepository;
+    private final UbigeoService ubigeoService;
 
     /**
      * Da de alta un cliente. Si ya existe un Tercero con el mismo
@@ -99,8 +97,6 @@ public class ClienteService {
                     throw new BusinessException("Ya existe otro cliente o proveedor con ese documento");
                 });
 
-        Distrito distrito = distritoRepository.findById(request.getIdDistrito())
-                .orElseThrow(() -> new ResourceNotFoundException("Distrito no existe"));
         SectorEconomico sector = sectorEconomicoRepository.findById(request.getIdSectorEconomico())
                 .orElseThrow(() -> new ResourceNotFoundException("Sector económico no existe"));
 
@@ -108,7 +104,9 @@ public class ClienteService {
         tercero.setNumeroDocumento(numeroDocumento);
         DatosTercero.aplicarNombre(tercero, tipoDocumento, request.getRazonSocial(),
                 request.getNombres(), request.getApellidoPaterno(), request.getApellidoMaterno());
-        tercero.setDistrito(distrito);
+        // D-15: distrito obligatorio solo si el país es Perú; si no, ubicación en texto libre.
+        ubigeoService.aplicarUbicacion(tercero, request.getIdPais(), request.getIdDistrito(),
+                request.getRegionExtranjero(), request.getCiudadExtranjero(), request.getCodigoPostalExtranjero());
         tercero.setDireccion(request.getDireccion());
         tercero.setTelefono(request.getTelefono());
         tercero.setCorreo(request.getCorreo());
@@ -185,12 +183,8 @@ public class ClienteService {
     // ------------------------------------------------------------------
 
     private Tercero crearTercero(ClienteRequest request, TipoDocumento tipoDocumento) {
-        Distrito distrito = distritoRepository.findById(request.getIdDistrito())
-                .orElseThrow(() -> new ResourceNotFoundException("Distrito no existe"));
-
         Tercero tercero = Tercero.builder()
                 .tipoDocumento(tipoDocumento)
-                .distrito(distrito)
                 .numeroDocumento(request.getNumeroDocumento())
                 .direccion(request.getDireccion())
                 .telefono(request.getTelefono())
@@ -198,6 +192,9 @@ public class ClienteService {
                 .build();
         DatosTercero.aplicarNombre(tercero, tipoDocumento, request.getRazonSocial(),
                 request.getNombres(), request.getApellidoPaterno(), request.getApellidoMaterno());
+        // D-15: distrito obligatorio solo si el país es Perú; si no, ubicación en texto libre.
+        ubigeoService.aplicarUbicacion(tercero, request.getIdPais(), request.getIdDistrito(),
+                request.getRegionExtranjero(), request.getCiudadExtranjero(), request.getCodigoPostalExtranjero());
         tercero.setUserCreate(usuarioActual());
         tercero.setProcessCreate("ALTA_CLIENTE");
 
@@ -216,6 +213,10 @@ public class ClienteService {
                 .tipoDocumento(t.getTipoDocumento().getCodigoTipo())
                 .idTipoDocumento(t.getTipoDocumento().getIdTipoDocumento())
                 .idDistrito(t.getDistrito() != null ? t.getDistrito().getIdDistrito() : null)
+                .idPais(t.getPais() != null ? t.getPais().getIdPais() : null)
+                .regionExtranjero(t.getRegionExtranjero())
+                .ciudadExtranjero(t.getCiudadExtranjero())
+                .codigoPostalExtranjero(t.getCodigoPostalExtranjero())
                 .numeroDocumento(t.getNumeroDocumento())
                 .razonSocial(t.getRazonSocial())
                 .nombres(t.getNombres())

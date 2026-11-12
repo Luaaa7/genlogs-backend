@@ -15,6 +15,10 @@ public class ClienteResponse {
     private String tipoDocumento;      // codigo_tipo: RUC / DNI / CE / PAS
     private Integer idTipoDocumento;
     private Integer idDistrito;        // para que el formulario de edición muestre el distrito
+    private Integer idPais;            // D-15: null en datos viejos = Perú
+    private String regionExtranjero;   // solo si el país no es Perú
+    private String ciudadExtranjero;
+    private String codigoPostalExtranjero;
     private String numeroDocumento;
     private String razonSocial;
     private String nombres;            // DNI y pasaporte

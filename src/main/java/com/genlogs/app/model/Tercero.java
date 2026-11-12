@@ -28,9 +28,25 @@ public class Tercero extends Auditable {
     @JoinColumn(name = "id_tipo_documento", nullable = false)
     private TipoDocumento tipoDocumento;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "id_distrito", nullable = false)
+    /** Distrito del catálogo INEI. Obligatorio solo si el país es Perú (D-15, RF-81); v3_2.sql quita el NOT NULL. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_distrito")
     private Distrito distrito;
+
+    /** País del tercero (v3_2.sql). NULL en datos viejos equivale a Perú. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_pais")
+    private Pais pais;
+
+    /** Solo extranjeros (v3_2_ubigeo.sql): ubicación en texto libre, sin catálogo. */
+    @Column(name = "region_extranjero", length = 100)
+    private String regionExtranjero;
+
+    @Column(name = "ciudad_extranjero", length = 100)
+    private String ciudadExtranjero;
+
+    @Column(name = "codigo_postal_extranjero", length = 20)
+    private String codigoPostalExtranjero;
 
     /** RUC (11 dígitos), DNI (8 dígitos) o pasaporte (6 a 12 letras y números); validado en el service y por trigger en BD */
     @Column(name = "numero_documento", nullable = false, length = 11)

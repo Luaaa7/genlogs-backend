@@ -12,11 +12,9 @@ import org.springframework.transaction.annotation.Transactional;
 import com.genlogs.app.dto.ProveedorRequest;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
-import com.genlogs.app.model.Distrito;
 import com.genlogs.app.model.Proveedor;
 import com.genlogs.app.model.Tercero;
 import com.genlogs.app.model.TipoDocumento;
-import com.genlogs.app.repository.DistritoRepository;
 import com.genlogs.app.repository.ProveedorRepository;
 import com.genlogs.app.repository.TerceroRepository;
 import com.genlogs.app.repository.TipoDocumentoRepository;
@@ -31,7 +29,7 @@ public class ProveedorService {
     private final ProveedorRepository proveedorRepository;
     private final TerceroRepository terceroRepository;
     private final TipoDocumentoRepository tipoDocumentoRepository;
-    private final DistritoRepository distritoRepository;
+    private final UbigeoService ubigeoService;
 
     /**
      * Registra un proveedor.
@@ -113,10 +111,6 @@ public class ProveedorService {
         if (request.getNumeroDocumento() == null || request.getNumeroDocumento().isBlank()) {
             throw new BusinessException("El número de documento es obligatorio");
         }
-        if (request.getIdDistrito() == null) {
-            throw new BusinessException("Debe seleccionar un distrito para el proveedor");
-        }
-
         TipoDocumento tipoDocumento = tipoDocumentoRepository
                 .findById(request.getIdTipoDocumento())
                 .orElseThrow(() -> new ResourceNotFoundException("Tipo de documento no existe"));
@@ -133,16 +127,14 @@ public class ProveedorService {
                     throw new BusinessException("Ya existe otro cliente o proveedor con ese documento");
                 });
 
-        Distrito distrito = distritoRepository
-                .findById(request.getIdDistrito())
-                .orElseThrow(() -> new ResourceNotFoundException("Distrito no existe"));
-
         tercero.setTipoDocumento(tipoDocumento);
         tercero.setNumeroDocumento(numeroDocumento);
         DatosTercero.aplicarNombre(tercero, tipoDocumento,
                 request.getRazonSocial() != null ? request.getRazonSocial() : tercero.getRazonSocial(),
                 request.getNombres(), request.getApellidoPaterno(), request.getApellidoMaterno());
-        tercero.setDistrito(distrito);
+        // D-15: distrito obligatorio solo si el país es Perú; si no, ubicación en texto libre.
+        ubigeoService.aplicarUbicacion(tercero, request.getIdPais(), request.getIdDistrito(),
+                request.getRegionExtranjero(), request.getCiudadExtranjero(), request.getCodigoPostalExtranjero());
         tercero.setDireccion(request.getDireccion());
         tercero.setTelefono(request.getTelefono());
         tercero.setCorreo(request.getCorreo());
@@ -204,19 +196,8 @@ public class ProveedorService {
             TipoDocumento tipoDocumento,
             String numeroDocumento) {
 
-        if (request.getIdDistrito() == null) {
-            throw new BusinessException(
-                    "Debe seleccionar un distrito para el proveedor");
-        }
-
-        Distrito distrito = distritoRepository
-                .findById(request.getIdDistrito())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Distrito no existe"));
-
         Tercero tercero = Tercero.builder()
                 .tipoDocumento(tipoDocumento)
-                .distrito(distrito)
                 .numeroDocumento(numeroDocumento)
                 .direccion(request.getDireccion())
                 .telefono(request.getTelefono())
@@ -224,6 +205,9 @@ public class ProveedorService {
                 .build();
         DatosTercero.aplicarNombre(tercero, tipoDocumento, request.getRazonSocial(),
                 request.getNombres(), request.getApellidoPaterno(), request.getApellidoMaterno());
+        // D-15: distrito obligatorio solo si el país es Perú; si no, ubicación en texto libre.
+        ubigeoService.aplicarUbicacion(tercero, request.getIdPais(), request.getIdDistrito(),
+                request.getRegionExtranjero(), request.getCiudadExtranjero(), request.getCodigoPostalExtranjero());
 
         tercero.setUserCreate(usuarioActual());
         tercero.setProcessCreate("ALTA_PROVEEDOR");
