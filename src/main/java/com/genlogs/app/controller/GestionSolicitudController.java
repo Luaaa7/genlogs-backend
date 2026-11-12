@@ -48,6 +48,8 @@ import jakarta.validation.Valid;
 public class GestionSolicitudController {
 
     private static final String GESTIONAN = "hasAnyRole('ASISTENTE_LOGISTICO','JEFE_ADMINISTRATIVO')";
+    /** Matriz v3.2: ven las solicitudes el Gerente y el Asistente Administrativo; Contador y SST no. */
+    private static final String VEN = "hasAnyRole('GERENTE_GENERAL','JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO','ASISTENTE_ADMINISTRATIVO')";
 
     private final GestionSolicitudService gestion;
     private final VencimientoSolicitudService vencimientoService;
@@ -95,6 +97,7 @@ public class GestionSolicitudController {
 
     /** Lista interna por vencimiento con semáforo; ?soloMias=true filtra las asignadas a quien consulta. */
     @GetMapping("/vencimiento")
+    @PreAuthorize(VEN)
     public ResponseEntity<List<SolicitudVencimientoResponse>> vencimiento(
             @RequestParam(defaultValue = "false") boolean soloMias, Authentication auth) {
         return ResponseEntity.ok(vencimientoService.lista(LocalDateTime.now(), soloMias ? auth.getName() : null));
@@ -102,6 +105,7 @@ public class GestionSolicitudController {
 
     /** Repuestos de la solicitud con lo que escribió el cliente y lo confirmado por el asistente. */
     @GetMapping("/{id}/items")
+    @PreAuthorize(VEN)
     public ResponseEntity<List<ItemIdentificacionResponse>> items(@PathVariable Long id) {
         return ResponseEntity.ok(identificacion.items(id));
     }
@@ -115,6 +119,7 @@ public class GestionSolicitudController {
     }
 
     @GetMapping("/{id}/historial")
+    @PreAuthorize(VEN)
     public ResponseEntity<List<EventoSolicitudResponse>> historial(@PathVariable Long id) {
         return ResponseEntity.ok(gestion.historial(id));
     }
