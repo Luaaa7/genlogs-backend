@@ -48,4 +48,11 @@ INSERT INTO public.parametro_sistema (clave, valor, descripcion) VALUES
     ('MARGEN_REP_MAX',     '45', 'Margen máximo de repuestos (%)')
 ON CONFLICT (clave) DO NOTHING;
 
+-- Estado de aprobación del servicio según el margen (RF-80).
+ALTER TABLE public.servicio
+    ADD COLUMN IF NOT EXISTS estado_aprobacion VARCHAR(30) NOT NULL DEFAULT 'APROBADO';
+ALTER TABLE public.servicio DROP CONSTRAINT IF EXISTS ck_servicio_estado_aprobacion;
+ALTER TABLE public.servicio ADD CONSTRAINT ck_servicio_estado_aprobacion
+    CHECK (estado_aprobacion IN ('APROBADO', 'PENDIENTE_APROBACION'));
+
 COMMIT;

@@ -56,4 +56,10 @@ public class ServicioController {
         servicioService.desactivar(id);
         return ResponseEntity.noContent().build();
     }
+
+    @PreAuthorize("hasRole('JEFE_ADMINISTRATIVO')")
+    @PostMapping("/{id}/aprobar")
+    public ResponseEntity<Servicio> aprobar(@PathVariable Long id) {
+        return ResponseEntity.ok(servicioService.aprobar(id));
+    }
 }
