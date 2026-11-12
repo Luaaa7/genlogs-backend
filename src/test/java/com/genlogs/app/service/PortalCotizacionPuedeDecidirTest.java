@@ -15,6 +15,7 @@ class PortalCotizacionPuedeDecidirTest {
     @Test
     void enviadaDeHoyOSinFechaPuedeDecidirYAyerOAprobadaNo() {
         assertTrue(PortalCotizacionService.puedeDecidir(cotizacion("ENVIADA", LocalDate.now())));
+        assertTrue(PortalCotizacionService.puedeDecidir(cotizacion("EN_NEGOCIACION", LocalDate.now())));
         assertTrue(PortalCotizacionService.puedeDecidir(cotizacion("ENVIADA", null)));
         assertFalse(PortalCotizacionService.puedeDecidir(cotizacion("ENVIADA", LocalDate.now().minusDays(1))));
         assertFalse(PortalCotizacionService.puedeDecidir(cotizacion("APROBADA", LocalDate.now())));
