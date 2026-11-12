@@ -10,10 +10,14 @@ import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import com.genlogs.app.model.Cotizacion;
+import com.genlogs.app.service.CandidataVencimiento;
+
+import jakarta.persistence.LockModeType;
 
 public interface CotizacionRepository extends JpaRepository<Cotizacion, Long> {
 
@@ -23,6 +27,16 @@ public interface CotizacionRepository extends JpaRepository<Cotizacion, Long> {
 
     @Query("SELECT c FROM Cotizacion c WHERE c.cliente.idCliente = :idCliente AND c.status = 'A' ORDER BY c.fechaCotizacion DESC")
     List<Cotizacion> findByCliente(@Param("idCliente") Long idCliente);
+
+    /** Código, empresa y estado en una consulta, para el aviso de orden no creada. */
+    @Query("""
+            SELECT c FROM Cotizacion c
+            JOIN FETCH c.cliente cliente
+            JOIN FETCH cliente.tercero
+            JOIN FETCH c.estadoCotizacion
+            WHERE c.idCotizacion = :id
+            """)
+    Optional<Cotizacion> findConClienteParaAviso(@Param("id") Long id);
 
     List<Cotizacion> findByDateCreateBetween(LocalDateTime inicio, LocalDateTime fin);
 
@@ -183,4 +197,24 @@ public interface CotizacionRepository extends JpaRepository<Cotizacion, Long> {
             "GROUP BY m.codigo_moneda " +
             "ORDER BY COALESCE(SUM(v.total), 0) DESC", nativeQuery = true)
     List<MonedaMontoProjection> sumTotalPendientePorMoneda();
+
+    /**
+     * Candidatas a vencer, de la fecha más antigua a la más nueva.
+     * El límite es hoy menos 15 días: 15 exactos no entra, 16 sí.
+     */
+    @Query("""
+            SELECT new com.genlogs.app.service.CandidataVencimiento(
+                c.idCotizacion, c.codigoCotizacion, c.fechaCotizacion)
+            FROM Cotizacion c
+            WHERE c.estadoCotizacion.codigoEstado IN :codigos
+              AND c.fechaCotizacion < :limite
+            ORDER BY c.fechaCotizacion ASC, c.idCotizacion ASC
+            """)
+    List<CandidataVencimiento> candidatasPorVencer(@Param("limite") LocalDate limite,
+            @Param("codigos") Collection<String> codigos);
+
+    /** Bloquea esa fila hasta el fin de la transacción. Se llama en el orden de la consulta. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM Cotizacion c WHERE c.idCotizacion = :id")
+    Optional<Cotizacion> bloquearPorId(@Param("id") Long id);
 }

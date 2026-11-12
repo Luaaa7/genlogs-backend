@@ -1,5 +1,6 @@
 package com.genlogs.app.model;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -62,14 +63,36 @@ public class SolicitudCotizacion extends Auditable {
     @Column(name = "descripcion", nullable = false, columnDefinition = "TEXT")
     private String descripcion;
 
-    /** Plazo interno (v3_2.sql). Null si la solicitud todavía no tiene fecha límite. */
-    @Column(name = "fecha_limite_interna")
-    private LocalDateTime fechaLimiteInterna;
-
-    /** PENDIENTE, EN_REVISION, COTIZADA, RECHAZADA o CANCELADA. */
+    /** PENDIENTE, EN_REVISION, EN_ESPERA_TERCERO, COTIZADA, RECHAZADA o CANCELADA. */
     @Column(name = "estado_solicitud", nullable = false, length = 20)
     @Builder.Default
     private String estadoSolicitud = "PENDIENTE";
+
+    /** COMUN, IMPORTADO o ESPECIAL (RF-84). Define el plazo interno. */
+    @Column(name = "tipo_plazo", nullable = false, length = 12)
+    @Builder.Default
+    private String tipoPlazo = "COMUN";
+
+    /** Cierre del último día hábil del plazo. Solo lo ve el equipo interno (D-14). */
+    @Column(name = "fecha_limite_interna")
+    private LocalDateTime fechaLimiteInterna;
+
+    @Column(name = "pausada_desde")
+    private LocalDateTime pausadaDesde;
+
+    @Column(name = "motivo_pausa", length = 40)
+    private String motivoPausa;
+
+    @Column(name = "fecha_estimada_tercero")
+    private LocalDate fechaEstimadaTercero;
+
+    @Column(name = "reclasificaciones", nullable = false)
+    @Builder.Default
+    private Short reclasificaciones = 0;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_usuario_asignado")
+    private Usuario usuarioAsignado;
 
     @OneToMany(mappedBy = "solicitud", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
