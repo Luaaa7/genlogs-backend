@@ -23,5 +23,7 @@ public enum TipoAviso {
     DOCUMENTO_POR_VENCER,
     /** BE-E: repuesto con margen fuera de rango, queda en BORRADOR (D-26). */
     MARGEN_FUERA_RANGO,
+    /** BE-A: alguien pidió acceso al portal para una empresa que ya es cliente; lo activa el Jefe Adm. */
+    ACCESO_PORTAL_PENDIENTE,
     GENERAL
 }

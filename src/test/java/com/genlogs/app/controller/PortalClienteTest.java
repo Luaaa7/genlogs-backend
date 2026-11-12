@@ -9,7 +9,12 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.hamcrest.Matchers.hasItem;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -35,8 +40,11 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.genlogs.app.dto.ConsultaDocumentoResponse;
+import com.genlogs.app.enums.RolSistema;
+import com.genlogs.app.enums.TipoAviso;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.service.FactilizaService;
+import com.genlogs.app.service.NotificacionService;
 import com.genlogs.app.model.Auditable;
 import com.genlogs.app.model.CategoriaProducto;
 import com.genlogs.app.model.Cliente;
@@ -107,6 +115,8 @@ class PortalClienteTest {
     @Autowired private TipoOperacionMineraRepository tipoOperacionMineraRepository;
     /** El alta de una minera nueva consulta el RUC en Factiliza; en las pruebas se simula. */
     @MockitoBean private FactilizaService factilizaService;
+    /** Para verificar los avisos del acceso pendiente sin mandar correos. */
+    @MockitoBean private NotificacionService notificacionService;
 
     @Test
     void catalogoYCoberturaSonPublicosYNoTraenDatosInternos() throws Exception {
@@ -177,13 +187,19 @@ class PortalClienteTest {
                 .andExpect(jsonPath("$[?(@.descripcion == 'NOTA INTERNA DE COSTO')]").isEmpty());
     }
 
+    /**
+     * Revisión de seguridad (Nicole): con solo el RUC, que es público, nadie entra a los pedidos,
+     * precios y aprobaciones de una empresa que ya es cliente. El usuario nuevo queda pendiente,
+     * se avisa al Jefe Administrativo y a los usuarios de la empresa, y entra solo cuando el Jefe lo activa.
+     */
     @Test
-    void registroDaAccesoInmediatoYPermiteVariosUsuariosPorEmpresa() throws Exception {
+    void registroEnEmpresaQueYaEsClienteQuedaPendienteHastaQueElJefeLoActive() throws Exception {
         int n = SECUENCIA.incrementAndGet();
         String documento = "2055" + String.format("%07d", n);
         Distrito distrito = ubigeo("Lima", "Lima", "Miraflores", n);
         Cliente cliente = cliente(distrito, documento, "Cliente Portal " + n, "Comercio " + n);
-        rolCliente();
+        Rol rol = rolCliente();
+        usuarioPortal("titular." + n, "titular" + n + "@portal.pe", cliente, rol);
         String cuerpo = """
                 {"razonSocial":"Otra razon","documento":"%s","nombreContacto":"Ana Ruiz",
                  "correo":"ana%s@portal.pe","telefono":"999","password":"clave1234"}
@@ -191,27 +207,58 @@ class PortalClienteTest {
 
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.mensaje").value(MENSAJE_REGISTRO))
-                .andExpect(jsonPath("$.token").isNotEmpty())
+                .andExpect(jsonPath("$.mensaje").value(containsString("pendiente")))
+                .andExpect(jsonPath("$.token").doesNotExist())
                 .andExpect(jsonPath("$.nombre").value("Ana Ruiz"));
 
-        Usuario creado = usuarioRepository.findByCorreoIgnoreCaseAndStatus("ana" + n + "@portal.pe", "A").orElseThrow();
+        Usuario creado = usuarioRepository.findByCorreoIgnoreCaseAndStatus("ana" + n + "@portal.pe", "I").orElseThrow();
         assertEquals("CLIENTE", creado.getRol().getNombreRol());
         assertEquals(cliente.getIdCliente(), creado.getCliente().getIdCliente());
         assertTrue(passwordEncoder.matches("clave1234", creado.getPasswordHash()));
         assertNotEquals("clave1234", creado.getPasswordHash());
-        assertEquals("Cliente Portal " + n, cliente.getTercero().getRazonSocial());
 
-        // Segundo usuario de la misma empresa (antes lo impedía unique = true y existsByCliente).
+        // Aviso al Jefe Administrativo (campanita) y correo al usuario que ya tenía la empresa.
+        verify(notificacionService).avisarRol(eq(RolSistema.JEFE_ADMINISTRATIVO), eq(TipoAviso.ACCESO_PORTAL_PENDIENTE),
+                anyString(), contains("ana" + n + "@portal.pe"), eq("/usuarios"), eq(false));
+        verify(notificacionService).enviarCorreoCliente(eq("titular" + n + "@portal.pe"), anyString(), anyString(),
+                contains("ana" + n + "@portal.pe"));
+
+        // Pendiente: no puede entrar al portal.
+        mockMvc.perform(post("/api/portal/login").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"correo\":\"ana" + n + "@portal.pe\",\"password\":\"clave1234\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.token").doesNotExist());
+
+        // Un segundo usuario de la misma empresa también queda pendiente (varios usuarios por empresa).
         String segundo = """
                 {"razonSocial":"Otra razon","documento":"%s","nombreContacto":"Beto Paz",
                  "correo":"beto%s@portal.pe","password":"clave1234"}
                 """.formatted(documento, n);
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(segundo))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.token").isNotEmpty());
-        Usuario otro = usuarioRepository.findByCorreoIgnoreCaseAndStatus("beto" + n + "@portal.pe", "A").orElseThrow();
+                .andExpect(jsonPath("$.token").doesNotExist());
+        Usuario otro = usuarioRepository.findByCorreoIgnoreCaseAndStatus("beto" + n + "@portal.pe", "I").orElseThrow();
         assertEquals(cliente.getIdCliente(), otro.getCliente().getIdCliente());
+
+        // El Jefe Administrativo lo ve en pendientes y lo activa; el cliente no puede activarse solo.
+        mockMvc.perform(get("/api/usuarios/pendientes-portal").with(user("jefe." + n).roles("JEFE_ADMINISTRATIVO")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idUsuario == " + creado.getIdUsuario() + ")]").isNotEmpty());
+        mockMvc.perform(patch("/api/usuarios/" + creado.getIdUsuario() + "/activar").with(user("ana").roles("CLIENTE")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(patch("/api/usuarios/" + creado.getIdUsuario() + "/activar").with(user("jefe." + n).roles("JEFE_ADMINISTRATIVO")))
+                .andExpect(status().isOk());
+        assertEquals("A", usuarioRepository.findById(creado.getIdUsuario()).orElseThrow().getStatus().trim());
+
+        // Ya activo, entra con su correo.
+        mockMvc.perform(post("/api/portal/login").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"correo\":\"ana" + n + "@portal.pe\",\"password\":\"clave1234\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").isNotEmpty());
+
+        // Un usuario dado de baja (no pendiente) no se reactiva por aquí.
+        mockMvc.perform(patch("/api/usuarios/" + creado.getIdUsuario() + "/activar").with(user("jefe." + n).roles("JEFE_ADMINISTRATIVO")))
+                .andExpect(status().isNotFound());
 
         // El mismo correo no se registra dos veces.
         long antes = usuarioRepository.count();
@@ -352,16 +399,16 @@ class PortalClienteTest {
                 """.formatted(documento, local);
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.token").isNotEmpty());
+                .andExpect(jsonPath("$.token").doesNotExist());
 
-        Usuario creado = usuarioRepository.findByCorreoIgnoreCaseAndStatus(local + "@portal.pe", "A").orElseThrow();
+        Usuario creado = usuarioRepository.findByCorreoIgnoreCaseAndStatus(local + "@portal.pe", "I").orElseThrow();
         assertEquals("MS", creado.getIniciales());
         assertTrue(INICIALES.matcher(creado.getIniciales()).matches());
         assertNotEquals(local, creado.getNombreUsuario());
         assertEquals("Ana", creado.getNombres());
         assertEquals("portal", creado.getUserCreate());
-        assertEquals("REGISTRO_PORTAL", creado.getProcessCreate());
-        assertEquals("A", creado.getStatus().trim());
+        assertEquals("REGISTRO_PORTAL_PENDIENTE", creado.getProcessCreate());
+        assertEquals("I", creado.getStatus().trim());
         assertNotEquals("clave1234", creado.getPasswordHash());
 
         long antes = usuarioRepository.count();
@@ -387,7 +434,7 @@ class PortalClienteTest {
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
                 .andExpect(status().isOk());
 
-        Usuario creado = usuarioRepository.findByCorreoIgnoreCaseAndStatus("tresm" + n + "@portal.pe", "A").orElseThrow();
+        Usuario creado = usuarioRepository.findByCorreoIgnoreCaseAndStatus("tresm" + n + "@portal.pe", "I").orElseThrow();
         assertEquals("MP", creado.getIniciales());
         assertTrue(INICIALES.matcher(creado.getIniciales()).matches());
 
@@ -399,7 +446,7 @@ class PortalClienteTest {
                 """.formatted(documentoSinLetras, n);
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(sinLetras))
                 .andExpect(status().isOk());
-        Usuario fallback = usuarioRepository.findByCorreoIgnoreCaseAndStatus("sinletras" + n + "@portal.pe", "A").orElseThrow();
+        Usuario fallback = usuarioRepository.findByCorreoIgnoreCaseAndStatus("sinletras" + n + "@portal.pe", "I").orElseThrow();
         assertEquals("CL", fallback.getIniciales());
     }
 
@@ -421,7 +468,7 @@ class PortalClienteTest {
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
                 .andExpect(status().isOk());
 
-        Usuario creado = usuarioRepository.findByCorreoIgnoreCaseAndStatus("a".repeat(60) + "@portal.pe", "A").orElseThrow();
+        Usuario creado = usuarioRepository.findByCorreoIgnoreCaseAndStatus("a".repeat(60) + "@portal.pe", "I").orElseThrow();
         assertTrue(creado.getNombreUsuario().length() <= 50);
         assertEquals(50, creado.getNombreUsuario().length());
         assertNotEquals(ocupado, creado.getNombreUsuario());

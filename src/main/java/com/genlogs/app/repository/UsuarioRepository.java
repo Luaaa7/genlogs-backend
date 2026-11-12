@@ -21,6 +21,12 @@ public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
 
     boolean existsByCorreoIgnoreCase(String correo);
 
+    /** Accesos del portal pendientes de activación (status 'I' y process_create de registro pendiente). */
+    List<Usuario> findByStatusAndProcessCreate(String status, String processCreate);
+
+    /** Usuarios del portal de una empresa (para avisarles si alguien pide acceso con su RUC). */
+    List<Usuario> findByCliente_IdClienteAndStatus(Long idCliente, String status);
+
     Optional<Usuario> findByCorreoIgnoreCaseAndStatus(String correo, String status);
 
     boolean existsByNombreUsuario(String nombreUsuario);

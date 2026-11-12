@@ -33,6 +33,42 @@ public class UsuarioService {
     private final CotizacionRepository cotizacionRepository;
     private final SeguimientoCotizacionRepository seguimientoRepository;
     private final PasswordResetTokenRepository resetTokenRepository;
+    private final NotificacionService notificacionService;
+
+    /** Usuarios del portal que pidieron acceso a una empresa que ya es cliente y esperan activación. */
+    @Transactional(readOnly = true)
+    public List<UsuarioResponse> listarPendientesPortal() {
+        return usuarioRepository.findByStatusAndProcessCreate("I", PortalClienteService.PROCESO_PENDIENTE).stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    /**
+     * El Jefe Administrativo activa a un usuario pendiente del portal. Solo aplica a los
+     * que quedaron pendientes al registrarse: un usuario dado de baja no se reactiva aquí.
+     * Al cliente se le avisa por correo; si el correo falla, el usuario queda activo igual.
+     */
+    @Transactional
+    public UsuarioResponse activarPendientePortal(Long idUsuario) {
+        Usuario usuario = usuarioRepository.findById(idUsuario)
+                .filter(u -> "I".equals(u.getStatus() == null ? null : u.getStatus().trim()))
+                .filter(u -> PortalClienteService.PROCESO_PENDIENTE.equals(u.getProcessCreate()))
+                .orElseThrow(() -> new ResourceNotFoundException("No hay un acceso pendiente con ese usuario"));
+        usuario.setStatus("A");
+        usuario.setIntentosFallidos((short) 0);
+        usuario.setUserUpdate(usuarioActual());
+        usuario.setProcessUpdate("ACTIVAR_ACCESO_PORTAL");
+        usuario.setDateUpdate(LocalDateTime.now());
+        usuario = usuarioRepository.save(usuario);
+        try {
+            notificacionService.enviarCorreoCliente(usuario.getCorreo(), usuario.getNombres(),
+                    "Tu acceso al portal de GENLOGS está habilitado",
+                    "Ya puedes ingresar al portal de GENLOGS con tu correo y contraseña.");
+        } catch (RuntimeException ex) {
+            // El acceso ya quedó activo; el correo es solo un aviso.
+        }
+        return toResponse(usuario);
+    }
 
     @Transactional(readOnly = true)
     public List<UsuarioResponse> listar() {
