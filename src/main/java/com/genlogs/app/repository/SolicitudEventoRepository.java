@@ -9,4 +9,8 @@ import com.genlogs.app.model.SolicitudEvento;
 public interface SolicitudEventoRepository extends JpaRepository<SolicitudEvento, Long> {
 
     List<SolicitudEvento> findByIdSolicitudOrderByIdEventoAsc(Long idSolicitud);
+
+    /** Último cambio de plazo (RECLASIFICA o REANUDA): desde ahí las alertas vuelven a contar. */
+    java.util.Optional<SolicitudEvento> findFirstByIdSolicitudAndTipoEventoInOrderByFechaEventoDesc(
+            Long idSolicitud, java.util.Collection<String> tipos);
 }
