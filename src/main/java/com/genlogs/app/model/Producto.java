@@ -1,6 +1,11 @@
 package com.genlogs.app.model;
 
+import com.genlogs.app.enums.EstadoPublicacion;
+import com.genlogs.app.enums.OrigenRepuesto;
+import com.genlogs.app.enums.TipoRepuesto;
 import jakarta.persistence.*;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import lombok.*;
 
 /**
@@ -54,4 +59,49 @@ public class Producto extends Auditable {
 
     @Column(name = "descripcion", columnDefinition = "TEXT")
     private String descripcion;
+
+    // ---- v3.2 · Vitrina (BE-E, columnas de v3_2.sql) ----
+
+    /** N.º de parte del fabricante (D-01). */
+    @Column(name = "numero_parte", length = 60)
+    private String numeroParte;
+
+    /** "Original (OEM)" o "Alternativo compatible" (RF-83). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tipo_repuesto", nullable = false, length = 12)
+    @Builder.Default
+    private TipoRepuesto tipoRepuesto = TipoRepuesto.OEM;
+
+    /** Nacional (24-48 h) o importado (5-7 días hábiles). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "origen", nullable = false, length = 10)
+    @Builder.Default
+    private OrigenRepuesto origen = OrigenRepuesto.NACIONAL;
+
+    /** Los productos nuevos nacen como BORRADOR; al público solo llega PUBLICADO. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "estado_publicacion", nullable = false, length = 10)
+    @Builder.Default
+    private EstadoPublicacion estadoPublicacion = EstadoPublicacion.BORRADOR;
+
+    /** Precio referencial de GENLOGS en soles (costo puesto en Lima + margen de repuestos, D-17). */
+    @Column(name = "precio_referencial", precision = 12, scale = 2)
+    private BigDecimal precioReferencial;
+
+    @Column(name = "fecha_ultima_verificacion")
+    private LocalDateTime fechaUltimaVerificacion;
+
+    /** Cotizaciones en las que no se pudo conseguir; con OCULTAR_FALLAS se oculta (RF-83). */
+    @Column(name = "fallas_cotizacion", nullable = false)
+    @Builder.Default
+    private Short fallasCotizacion = 0;
+
+    /** Las columnas NOT NULL de la v3.2 nunca se envían vacías (también si se crea con new Producto()). */
+    @PrePersist
+    void valoresV32PorDefecto() {
+        if (tipoRepuesto == null) tipoRepuesto = TipoRepuesto.OEM;
+        if (origen == null) origen = OrigenRepuesto.NACIONAL;
+        if (estadoPublicacion == null) estadoPublicacion = EstadoPublicacion.BORRADOR;
+        if (fallasCotizacion == null) fallasCotizacion = 0;
+    }
 }

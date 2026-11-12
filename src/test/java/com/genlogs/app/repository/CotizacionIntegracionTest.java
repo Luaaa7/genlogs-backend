@@ -2,6 +2,7 @@ package com.genlogs.app.repository;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -144,6 +145,19 @@ class CotizacionIntegracionTest {
         // El importe de la línea lo calcula la BD; si no está, el servicio lo
         // recalcula (cantidad x (precio - descuento)).
         assertEquals(0, new BigDecimal("200.00").compareTo(detalle.getDetalles().get(0).getSubtotal()));
+    }
+
+    @Test
+    void buscarPorId_exponeElTipoDeCambioGuardadoYNoElMargen() {
+        Cotizacion cotizacion = crearCotizacion("ACME S.A.C.", "COT-2026-0004");
+        cotizacion.setTipoCambioUsado(new BigDecimal("3.7520"));
+        cotizacionRepository.saveAndFlush(cotizacion);
+
+        CotizacionResponse detalle = cotizacionService.buscarPorId(cotizacion.getIdCotizacion());
+
+        assertEquals(0, new BigDecimal("3.7520").compareTo(detalle.getTipoCambioUsado()));
+        assertNull(detalle.getMargen());
+        assertNull(detalle.getPrecioProveedor());
     }
 
     @Test
