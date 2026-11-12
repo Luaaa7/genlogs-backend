@@ -6,9 +6,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -46,7 +49,7 @@ class CotizacionControllerTest {
         when(cotizacionService.listar(any(), any(), any(), any()))
                 .thenReturn(paginaVacia);
 
-        mockMvc = MockMvcBuilders.standaloneSetup(new CotizacionController(cotizacionService, mock(com.genlogs.app.service.OrdenCompraService.class)))
+        mockMvc = MockMvcBuilders.standaloneSetup(new CotizacionController(cotizacionService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }
@@ -110,6 +113,37 @@ class CotizacionControllerTest {
         Pageable pageable = pageableCapturado();
         assertEquals(0, pageable.getPageNumber());
         assertEquals(1, pageable.getPageSize());
+    }
+
+    @Test
+    void origenDistintoDeNacionalOImportadoResponde400() throws Exception {
+        mockMvc.perform(post("/api/cotizaciones")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"lineas":[{"cantidad":1,"precioUnitario":10,"origen":"EUROPA"}]}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("origen")))
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("NACIONAL")))
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("IMPORTADO")));
+    }
+
+    @Test
+    void detalle_publicaElTipoDeCambioYOmiteMargenYPrecioDeProveedor() throws Exception {
+        when(cotizacionService.buscarPorId(1L)).thenReturn(CotizacionResponse.builder()
+                .idCotizacion(1L)
+                .id(1L)
+                .tipoCambioUsado(new BigDecimal("3.7500"))
+                .build());
+
+        mockMvc.perform(get("/api/cotizaciones/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tipoCambioUsado").value(3.75))
+                .andExpect(jsonPath("$.margen").doesNotExist())
+                .andExpect(jsonPath("$.precioProveedor").doesNotExist());
     }
 
     private Pageable pageableCapturado() {

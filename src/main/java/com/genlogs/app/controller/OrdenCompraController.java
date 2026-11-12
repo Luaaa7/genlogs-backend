@@ -16,10 +16,12 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.genlogs.app.dto.CambiarEstadoOrdenCompraRequest;
+import com.genlogs.app.dto.ConfirmarOcRequest;
 import com.genlogs.app.dto.OrdenCompraRequest;
 import com.genlogs.app.dto.OrdenCompraResponse;
 import com.genlogs.app.dto.PaginaResponse;
 import com.genlogs.app.service.OrdenCompraService;
+import com.genlogs.app.service.PermisosOrdenCompra;
 import com.genlogs.app.service.FacturacionService;
 import com.genlogs.app.dto.FacturacionResponse;
 import com.genlogs.app.exception.BusinessException;
@@ -39,7 +41,7 @@ public class OrdenCompraController {
     private final OrdenCompraService ordenCompraService;
     private final FacturacionService facturacionService;
 
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
+    @PreAuthorize(PermisosOrdenCompra.VER)
     @GetMapping
     public ResponseEntity<PaginaResponse<OrdenCompraResponse>> listar(
             @RequestParam(required = false) String estadoCodigo,
@@ -49,31 +51,31 @@ public class OrdenCompraController {
         return ResponseEntity.ok(ordenCompraService.listar(estadoCodigo, idCotizacion, page, size));
     }
 
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
+    @PreAuthorize(PermisosOrdenCompra.VER)
     @GetMapping("/{id}")
     public ResponseEntity<OrdenCompraResponse> buscarPorId(@PathVariable Long id) {
         return ResponseEntity.ok(ordenCompraService.buscarPorId(id));
     }
 
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
+    @PreAuthorize(PermisosOrdenCompra.VER)
     @GetMapping("/numero/{numero}")
     public ResponseEntity<OrdenCompraResponse> buscarPorNumero(@PathVariable String numero) {
         return ResponseEntity.ok(ordenCompraService.buscarPorNumero(numero));
     }
 
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
+    @PreAuthorize(PermisosOrdenCompra.VER)
     @GetMapping("/cliente/{idCliente}")
     public ResponseEntity<List<OrdenCompraResponse>> listarPorCliente(@PathVariable Long idCliente) {
         return ResponseEntity.ok(ordenCompraService.listarPorCliente(idCliente));
     }
 
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO')")
+    @PreAuthorize(PermisosOrdenCompra.GESTIONAR)
     @PostMapping
     public ResponseEntity<OrdenCompraResponse> crear(@Valid @RequestBody OrdenCompraRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(ordenCompraService.crear(request));
     }
 
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO')")
+    @PreAuthorize(PermisosOrdenCompra.GESTIONAR)
     @PatchMapping("/{id}/estado")
     public ResponseEntity<OrdenCompraResponse> cambiarEstado(
             @PathVariable Long id, @Valid @RequestBody CambiarEstadoOrdenCompraRequest request) {
@@ -96,10 +98,17 @@ public class OrdenCompraController {
         return ResponseEntity.ok(respuesta);
     }
 
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO')")
+    @PreAuthorize(PermisosOrdenCompra.GESTIONAR)
     @PostMapping(value = "/{id}/archivo", consumes = "multipart/form-data")
     public ResponseEntity<OrdenCompraResponse> agregarArchivo(
             @PathVariable Long id, @RequestParam("archivo") MultipartFile archivo) {
         return ResponseEntity.ok(ordenCompraService.agregarArchivo(id, archivo));
+    }
+
+    @PreAuthorize(PermisosOrdenCompra.CONFIRMAR)
+    @PatchMapping("/{id}/confirmar-oc")
+    public ResponseEntity<OrdenCompraResponse> confirmar(
+            @PathVariable Long id, @Valid @RequestBody ConfirmarOcRequest request) {
+        return ResponseEntity.ok(ordenCompraService.confirmar(id, request));
     }
 }
