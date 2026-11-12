@@ -32,21 +32,21 @@ public class SectorEconomicoController {
         return ResponseEntity.ok(sectorEconomicoService.buscarPorId(id));
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @PostMapping
     public ResponseEntity<SectorEconomico> registrar(@Valid @RequestBody SectorEconomico nuevo) {
         SectorEconomico creado = sectorEconomicoService.registrar(nuevo);
         return ResponseEntity.status(HttpStatus.CREATED).body(creado);
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @PutMapping("/{id}")
     public ResponseEntity<SectorEconomico> actualizar(@PathVariable Integer id,
                                                        @Valid @RequestBody SectorEconomico datos) {
         return ResponseEntity.ok(sectorEconomicoService.actualizar(id, datos));
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Integer id) {
         sectorEconomicoService.desactivar(id);

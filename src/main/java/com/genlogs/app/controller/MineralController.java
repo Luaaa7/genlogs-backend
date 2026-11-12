@@ -29,20 +29,20 @@ public class MineralController {
         return ResponseEntity.ok(mineralService.buscarPorId(id));
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @PostMapping
     public ResponseEntity<Mineral> registrar(@Valid @RequestBody Mineral nuevo) {
         Mineral creado = mineralService.registrar(nuevo);
         return ResponseEntity.status(HttpStatus.CREATED).body(creado);
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @PutMapping("/{id}")
     public ResponseEntity<Mineral> actualizar(@PathVariable Integer id, @Valid @RequestBody Mineral datos) {
         return ResponseEntity.ok(mineralService.actualizar(id, datos));
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Integer id) {
         mineralService.desactivar(id);

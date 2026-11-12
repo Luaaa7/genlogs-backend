@@ -32,21 +32,21 @@ public class MonedaController {
         return ResponseEntity.ok(monedaService.buscarPorId(id));
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @PostMapping
     public ResponseEntity<Moneda> registrar(@Valid @RequestBody Moneda nueva) {
         Moneda creada = monedaService.registrar(nueva);
         return ResponseEntity.status(HttpStatus.CREATED).body(creada);
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @PutMapping("/{id}")
     public ResponseEntity<Moneda> actualizar(@PathVariable Integer id,
                                               @Valid @RequestBody Moneda datos) {
         return ResponseEntity.ok(monedaService.actualizar(id, datos));
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Integer id) {
         monedaService.desactivar(id);

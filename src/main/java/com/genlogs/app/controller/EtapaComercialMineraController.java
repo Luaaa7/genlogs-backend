@@ -31,21 +31,21 @@ public class EtapaComercialMineraController {
         return ResponseEntity.ok(etapaComercialMineraService.buscarPorId(id));
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @PostMapping
     public ResponseEntity<EtapaComercialMinera> registrar(@Valid @RequestBody EtapaComercialMinera nueva) {
         EtapaComercialMinera creada = etapaComercialMineraService.registrar(nueva);
         return ResponseEntity.status(HttpStatus.CREATED).body(creada);
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @PutMapping("/{id}")
     public ResponseEntity<EtapaComercialMinera> actualizar(@PathVariable Integer id,
                                                             @Valid @RequestBody EtapaComercialMinera datos) {
         return ResponseEntity.ok(etapaComercialMineraService.actualizar(id, datos));
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Integer id) {
         etapaComercialMineraService.desactivar(id);

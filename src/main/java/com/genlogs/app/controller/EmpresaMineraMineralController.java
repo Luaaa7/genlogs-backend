@@ -23,7 +23,7 @@ public class EmpresaMineraMineralController {
         return ResponseEntity.ok(empresaMineraMineralService.listarPorEmpresaMinera(idEmpresaMinera));
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @PostMapping("/{idMineral}")
     public ResponseEntity<EmpresaMineraMineral> asociar(@PathVariable Long idEmpresaMinera,
                                                          @PathVariable Integer idMineral,
@@ -32,7 +32,7 @@ public class EmpresaMineraMineralController {
         return ResponseEntity.status(HttpStatus.CREATED).body(creada);
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @DeleteMapping("/{idMineral}")
     public ResponseEntity<Void> desasociar(@PathVariable Long idEmpresaMinera, @PathVariable Integer idMineral) {
         empresaMineraMineralService.desasociar(idEmpresaMinera, idMineral);
