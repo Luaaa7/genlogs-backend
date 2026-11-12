@@ -94,7 +94,18 @@ public class PortalClienteService {
     public List<CoberturaPublicaResponse> cobertura() {
         List<CoberturaPublicaResponse> respuesta = new ArrayList<>();
         for (EmpresaMinera empresa : empresaMineraRepository.findByStatus("A")) {
-            var distrito = empresa.getCliente().getTercero().getDistrito();
+            var tercero = empresa.getCliente().getTercero();
+            var distrito = tercero.getDistrito();
+            if (distrito == null) {
+                // D-15: cliente extranjero, sin distrito del catálogo; se muestra su ubicación en texto.
+                respuesta.add(CoberturaPublicaResponse.builder()
+                        .id(empresa.getIdEmpresaMinera())
+                        .nombre(empresa.getNombreUnidadMinera())
+                        .region(tercero.getRegionExtranjero())
+                        .descripcion(tercero.getCiudadExtranjero())
+                        .build());
+                continue;
+            }
             var provincia = distrito.getProvincia();
             respuesta.add(CoberturaPublicaResponse.builder()
                     .id(empresa.getIdEmpresaMinera())

@@ -36,8 +36,21 @@ public class ProveedorRequest {
     @Size(max = 60)
     private String apellidoMaterno;
 
-    @NotNull(message = "Debe indicar el distrito")
+    /** Obligatorio solo si el país es Perú (D-15); lo valida UbigeoService.aplicarUbicacion. */
     private Integer idDistrito;
+
+    /** País del tercero; si no se indica, Perú. */
+    private Integer idPais;
+
+    /** Solo si el país no es Perú: ubicación en texto libre (RF-81). */
+    @Size(max = 100)
+    private String regionExtranjero;
+
+    @Size(max = 100)
+    private String ciudadExtranjero;
+
+    @Size(max = 20)
+    private String codigoPostalExtranjero;
 
     @Size(max = 255)
     private String direccion;
@@ -69,6 +82,10 @@ public class ProveedorRequest {
         if (t.getDireccion() != null) direccion = vacioANulo(t.getDireccion());
         if (t.getTelefono() != null) telefono = vacioANulo(t.getTelefono());
         if (t.getCorreo() != null) correo = vacioANulo(t.getCorreo());
+        if (t.getIdPais() != null) idPais = t.getIdPais();
+        if (t.getRegionExtranjero() != null) regionExtranjero = vacioANulo(t.getRegionExtranjero());
+        if (t.getCiudadExtranjero() != null) ciudadExtranjero = vacioANulo(t.getCiudadExtranjero());
+        if (t.getCodigoPostalExtranjero() != null) codigoPostalExtranjero = vacioANulo(t.getCodigoPostalExtranjero());
     }
 
     private static String vacioANulo(String v) {

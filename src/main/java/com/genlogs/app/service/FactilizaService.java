@@ -5,11 +5,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.text.Normalizer;
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import org.slf4j.Logger;
@@ -66,16 +62,17 @@ public class FactilizaService {
     private final DistritoRepository distritoRepository;
     private final TerceroRepository terceroRepository;
     private final ConsultaDocumentoRepository consultaDocumentoRepository;
-
-    /** Distritos del catálogo por "DEPARTAMENTO|PROVINCIA|DISTRITO" (sin tildes); se arma una sola vez. */
-    private volatile Map<String, Integer> distritosPorNombre;
+    /** D-15: búsqueda del distrito por nombre en el catálogo del INEI (con NASCA = NAZCA). */
+    private final UbigeoService ubigeoService;
 
     public FactilizaService(DistritoRepository distritoRepository,
                             TerceroRepository terceroRepository,
-                            ConsultaDocumentoRepository consultaDocumentoRepository) {
+                            ConsultaDocumentoRepository consultaDocumentoRepository,
+                            UbigeoService ubigeoService) {
         this.distritoRepository = distritoRepository;
         this.terceroRepository = terceroRepository;
         this.consultaDocumentoRepository = consultaDocumentoRepository;
+        this.ubigeoService = ubigeoService;
     }
 
     public ConsultaDocumentoResponse consultarPorNumero(String numero) {
@@ -314,7 +311,8 @@ public class FactilizaService {
      * Distrito del catálogo de GenLogs para autocompletar departamento,
      * provincia y distrito. Primero por UBIGEO; si Factiliza no lo manda o no
      * está en el catálogo, por los nombres "departamento", "provincia" y
-     * "distrito" de la respuesta (sin importar tildes ni mayúsculas).
+     * "distrito" de la respuesta, normalizados (D-15: sin tildes ni signos y
+     * con NASCA = NAZCA; ver UbigeoService.buscarIdDistrito).
      */
     private Integer idDistritoDe(String ubigeo, JsonNode data) {
         if (ubigeo != null) {
@@ -326,43 +324,14 @@ public class FactilizaService {
         if (data == null) {
             return null;
         }
-        String departamento = primero(data, "departamento");
-        String provincia = primero(data, "provincia");
-        String distrito = primero(data, "distrito");
-        if (departamento == null || provincia == null || distrito == null) {
-            return null;
-        }
-        return indiceDistritos().get(clave(departamento, provincia, distrito));
+        return ubigeoService.buscarIdDistrito(
+                primero(data, "departamento"),
+                primero(data, "provincia"),
+                primero(data, "distrito")).orElse(null);
     }
 
     private Integer idDistritoDe(String ubigeo) {
         return idDistritoDe(ubigeo, null);
-    }
-
-    private Map<String, Integer> indiceDistritos() {
-        Map<String, Integer> indice = distritosPorNombre;
-        if (indice == null) {
-            indice = new HashMap<>();
-            List<Distrito> todos = distritoRepository.listarConProvinciaYDepartamento();
-            for (Distrito d : todos) {
-                indice.putIfAbsent(clave(
-                        d.getProvincia().getDepartamento().getNombreDepartamento(),
-                        d.getProvincia().getNombreProvincia(),
-                        d.getNombreDistrito()), d.getIdDistrito());
-            }
-            distritosPorNombre = indice;
-        }
-        return indice;
-    }
-
-    private static String clave(String departamento, String provincia, String distrito) {
-        return normalizar(departamento) + "|" + normalizar(provincia) + "|" + normalizar(distrito);
-    }
-
-    private static String normalizar(String texto) {
-        String sinTildes = Normalizer.normalize(texto == null ? "" : texto, Normalizer.Form.NFD)
-                .replaceAll("\\p{M}", "");
-        return sinTildes.toUpperCase().trim().replaceAll("\\s+", " ");
     }
 
     private String valorOVacio(String valor) {
