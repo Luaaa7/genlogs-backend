@@ -21,14 +21,14 @@ public class ClienteController {
     private final ClienteService clienteService;
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO','ADMINISTRADOR','VENDEDOR')")
     public ResponseEntity<ClienteResponse> registrar(@Valid @RequestBody ClienteRequest request) {
         ClienteResponse response = clienteService.registrar(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @PutMapping("/{idCliente}")
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO','ADMINISTRADOR','VENDEDOR')")
     public ResponseEntity<ClienteResponse> actualizar(@PathVariable Long idCliente,
                                                       @Valid @RequestBody ClienteRequest request) {
         return ResponseEntity.ok(clienteService.actualizar(idCliente, request));
@@ -62,6 +62,8 @@ public class ClienteController {
         return ResponseEntity.ok(clientes);
     }
 
+    // Baja lógica (status = 'I'): solo el Jefe Administrativo (D-29, D-33).
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @DeleteMapping("/{idCliente}")
     public ResponseEntity<Void> desactivar(@PathVariable Long idCliente) {
         clienteService.desactivar(idCliente);

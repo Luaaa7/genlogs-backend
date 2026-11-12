@@ -32,21 +32,21 @@ public class UnidadMedidaController {
         return ResponseEntity.ok(unidadMedidaService.buscarPorId(id));
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @PostMapping
     public ResponseEntity<UnidadMedida> registrar(@Valid @RequestBody UnidadMedida nueva) {
         UnidadMedida creada = unidadMedidaService.registrar(nueva);
         return ResponseEntity.status(HttpStatus.CREATED).body(creada);
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @PutMapping("/{id}")
     public ResponseEntity<UnidadMedida> actualizar(@PathVariable Integer id,
                                                     @Valid @RequestBody UnidadMedida datos) {
         return ResponseEntity.ok(unidadMedidaService.actualizar(id, datos));
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Integer id) {
         unidadMedidaService.desactivar(id);

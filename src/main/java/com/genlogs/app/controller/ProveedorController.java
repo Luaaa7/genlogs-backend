@@ -20,14 +20,14 @@ public class ProveedorController {
     private final ProveedorService proveedorService;
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO','ADMINISTRADOR','VENDEDOR')")
     public ResponseEntity<Proveedor> registrar(@Valid @RequestBody ProveedorRequest request) {
         Proveedor proveedor = proveedorService.registrar(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(proveedor);
     }
 
     @PutMapping("/{idProveedor}")
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO','ADMINISTRADOR','VENDEDOR')")
     public ResponseEntity<Proveedor> actualizar(@PathVariable Long idProveedor,
                                                 @Valid @RequestBody ProveedorRequest request) {
         return ResponseEntity.ok(proveedorService.actualizar(idProveedor, request));
@@ -43,6 +43,8 @@ public class ProveedorController {
         return ResponseEntity.ok(proveedorService.listarActivos());
     }
 
+    // Baja lógica (status = 'I'): solo el Jefe Administrativo (D-29, D-33).
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @DeleteMapping("/{idProveedor}")
     public ResponseEntity<Void> desactivar(@PathVariable Long idProveedor) {
         proveedorService.desactivar(idProveedor);
