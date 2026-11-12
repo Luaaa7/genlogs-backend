@@ -14,7 +14,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.math.BigDecimal;
@@ -41,6 +45,7 @@ import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 
 import com.genlogs.app.controller.MetaController;
+import com.genlogs.app.dto.MetaPeriodoResponse;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.repository.AccionCorrectivaRepository;
 import com.genlogs.app.repository.MetaPeriodoRepository;
@@ -138,6 +143,44 @@ class MetasPeriodoTest {
                 .andExpect(status().isForbidden());
 
         verify(servicioDelControlador, never()).registrarAccion(anyInt(), anyInt(), any());
+    }
+
+    @Test
+    void elGetDevuelvePorcentajeYCumple() throws Exception {
+        ResultadoPlazo resultado = CalculoPlazo.calcular(muestra(9, 1), META);
+        when(servicioDelControlador.consultar(2026, 11)).thenReturn(new MetaPeriodoResponse(
+                2026, 11, META, resultado.enPlazo(), resultado.consideradas(),
+                resultado.porcentaje(), resultado.cumple()));
+
+        mockMvc.perform(get("/api/metas")
+                        .param("anio", "2026")
+                        .param("mes", "11")
+                        .with(user("vendedor").roles("VENDEDOR")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.porcentaje").value(90.0))
+                .andExpect(jsonPath("$.cumple").value(true));
+    }
+
+    @Test
+    void quienNoEsJefeNoPuedeEditarLaMeta() throws Exception {
+        mockMvc.perform(put("/api/metas/2026/11")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"metaPorcentaje\":90}")
+                        .with(user("vendedor").roles("VENDEDOR")))
+                .andExpect(status().isForbidden());
+
+        verify(servicioDelControlador, never()).actualizarMeta(anyInt(), anyInt(), any());
+    }
+
+    @Test
+    void quienNoEsJefeNoPuedeCerrarLaAccion() throws Exception {
+        mockMvc.perform(patch("/api/metas/acciones/7")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"estado\":\"HECHA\"}")
+                        .with(user("vendedor").roles("VENDEDOR")))
+                .andExpect(status().isForbidden());
+
+        verify(servicioDelControlador, never()).cambiarEstado(any(), any());
     }
 
     private static List<PlazoDeCotizacion> muestra(int enPlazo, int fuera) {
