@@ -36,6 +36,9 @@ public class ReclamoResponse {
     private LocalDate fechaLimite;
     private LocalDateTime fechaCierre;
     private String solucion;
+    /** RF-70: calificación del cliente (1 a 5) y su comentario; null si no calificó. */
+    private Integer calificacion;
+    private String comentarioCalificacion;
     /** true si pasó la fecha límite y aún no está resuelto/cerrado/anulado. */
     private Boolean vencido;
     /** Estados a los que puede pasar desde el actual (para los botones del frontend). */
