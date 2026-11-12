@@ -14,4 +14,7 @@ public interface TipoCambioRepository extends JpaRepository<TipoCambio, Long> {
     /** El tipo de cambio de esa fecha o, si no hay, el ultimo anterior. */
     Optional<TipoCambio> findFirstByMoneda_CodigoMonedaAndFechaLessThanEqualOrderByFechaDesc(
             String codigoMoneda, LocalDate fecha);
+
+    /** La fila exacta de ese día, si existe. */
+    Optional<TipoCambio> findByMoneda_CodigoMonedaAndFecha(String codigoMoneda, LocalDate fecha);
 }
