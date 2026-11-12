@@ -59,7 +59,7 @@ public class GlobalExceptionHandler {
     /** Registro del portal: demasiados intentos desde el mismo documento o correo. */
     @ExceptionHandler(DemasiadasSolicitudesException.class)
     public ResponseEntity<Map<String, Object>> handleDemasiadasSolicitudes(DemasiadasSolicitudesException ex) {
-        log.warn("Registro de portal limitado: {}", ex.getMessage());
+        log.warn("Límite de intentos superado: {}", ex.getMessage());
         return buildResponse(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
     }
 
