@@ -24,6 +24,10 @@ public class PortalCotizacionResponse {
     private LocalDate fechaCotizacion;
     private LocalDate fechaValidez;
     private String estado;
+    /** Código del estado, el mismo texto que CotizacionResponse.estadoCodigo. */
+    private String codigoEstado;
+    /** True solo si el cliente todavía puede aprobar o rechazar. */
+    private boolean puedeDecidir;
     private BigDecimal total;
     private String moneda;
     /** N.º de la OC de la minera, solo si esta cotización ya tiene una. */

@@ -92,15 +92,31 @@ public class PortalCotizacionService {
     }
 
     private void exigirDecidible(Cotizacion cotizacion) {
-        if (cotizacion.getFechaValidez() != null && cotizacion.getFechaValidez().isBefore(LocalDate.now())) {
+        if (puedeDecidir(cotizacion)) {
+            return;
+        }
+        if (!fechaPermiteDecision(cotizacion)) {
             throw new BusinessException(VENCIDA);
         }
-        String codigo = cotizacion.getEstadoCotizacion().getCodigoEstado();
-        boolean abierta = CodigoEstadoCotizacion.ENVIADA.name().equals(codigo)
+        throw new BusinessException(YA_RESUELTA);
+    }
+
+    /** ENVIADA o EN_NEGOCIACION, y fechaValidez nula o no anterior a hoy. */
+    static boolean puedeDecidir(Cotizacion cotizacion) {
+        return estadoPermiteDecision(cotizacion) && fechaPermiteDecision(cotizacion);
+    }
+
+    private static boolean estadoPermiteDecision(Cotizacion cotizacion) {
+        String codigo = cotizacion.getEstadoCotizacion() == null
+                ? null
+                : cotizacion.getEstadoCotizacion().getCodigoEstado();
+        return CodigoEstadoCotizacion.ENVIADA.name().equals(codigo)
                 || CodigoEstadoCotizacion.EN_NEGOCIACION.name().equals(codigo);
-        if (!abierta) {
-            throw new BusinessException(YA_RESUELTA);
-        }
+    }
+
+    private static boolean fechaPermiteDecision(Cotizacion cotizacion) {
+        LocalDate fecha = cotizacion.getFechaValidez();
+        return fecha == null || !fecha.isBefore(LocalDate.now());
     }
 
     private Cotizacion visible(Long id) {
@@ -166,6 +182,9 @@ public class PortalCotizacionService {
                 .fechaValidez(cotizacion.getFechaValidez())
                 .estado(cotizacion.getEstadoCotizacion() != null
                         ? cotizacion.getEstadoCotizacion().getNombreEstado() : null)
+                .codigoEstado(cotizacion.getEstadoCotizacion() != null
+                        ? cotizacion.getEstadoCotizacion().getCodigoEstado() : null)
+                .puedeDecidir(puedeDecidir(cotizacion))
                 .total(total)
                 .moneda(cotizacion.getMoneda() != null ? cotizacion.getMoneda().getCodigoMoneda() : null)
                 .numeroOcCliente(numeroOc(cotizacion.getIdCotizacion()));
