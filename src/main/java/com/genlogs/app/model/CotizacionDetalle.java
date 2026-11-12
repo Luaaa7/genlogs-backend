@@ -60,4 +60,8 @@ public class CotizacionDetalle extends Auditable {
     
     @Column(name = "importe_linea", insertable = false, updatable = false)
     private BigDecimal importeLinea;
+
+    /** v3_2.sql: VARCHAR(10), nulo. NACIONAL, IMPORTADO o vacío. */
+    @Column(name = "origen", length = 10)
+    private String origen;
 }
