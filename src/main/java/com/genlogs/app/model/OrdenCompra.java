@@ -43,6 +43,10 @@ public class OrdenCompra extends Auditable {
     
     @Column(name = "numero_orden_compra", nullable = false, length = 20)
     private String numeroOrdenCompra;
+
+    /** N.º de OC de la minera (v3_2.sql). Null si todavía no se registró. */
+    @Column(name = "numero_oc_cliente", length = 40)
+    private String numeroOcCliente;
     
     @Column(name = "fecha_emision_cliente")
     private LocalDate fechaEmisionCliente;
