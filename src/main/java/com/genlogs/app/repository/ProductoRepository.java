@@ -8,6 +8,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import com.genlogs.app.model.Producto;
 
@@ -37,6 +38,13 @@ public interface ProductoRepository extends JpaRepository<Producto, Long>, JpaSp
     List<Producto> findByStatusAndVisibleWeb(String status, Boolean visibleWeb, Pageable pageable);
 
     List<Producto> findByCategoriaProducto_IdCategoriaProductoAndStatus(Integer idCategoriaProducto, String status);
+
+    /**
+     * origen de v3_2.sql, solo lectura. La entidad Producto no mapea la columna
+     * para no cambiar el resto del catálogo. Lista vacía si el producto no existe.
+     */
+    @Query(value = "SELECT origen FROM producto WHERE id_producto = :id", nativeQuery = true)
+    List<String> findOrigenById(@Param("id") Long id);
 
     @Query("""
            SELECT p FROM Producto p

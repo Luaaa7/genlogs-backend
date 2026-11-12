@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface HistorialSourcingRepository extends JpaRepository<HistorialSourcing, Long> {
 
@@ -20,4 +21,7 @@ public interface HistorialSourcingRepository extends JpaRepository<HistorialSour
     /** Todo el historial de un N.º de parte, para ver qué se encontró antes. */
     @EntityGraph(attributePaths = {"moneda", "solicitudItem"})
     List<HistorialSourcing> findByNumeroParteIgnoreCaseOrderByCreadoEnDesc(String numeroParte);
+
+    /** Referencia de la que salió un producto de la vitrina (para conocer su costo puesto en Lima). */
+    Optional<HistorialSourcing> findFirstByIdProductoOrderByCreadoEnDesc(Long idProducto);
 }
