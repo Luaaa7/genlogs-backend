@@ -32,6 +32,9 @@ import com.genlogs.app.dto.PedidoResponse;
 import com.genlogs.app.dto.ProductoPublicoResponse;
 import com.genlogs.app.dto.RegistroClienteRequest;
 import com.genlogs.app.dto.RegistroClienteResponse;
+import com.genlogs.app.enums.EstadoSolicitud;
+import com.genlogs.app.enums.TipoEventoSolicitud;
+import com.genlogs.app.exception.EstadoNoPermitidoException;
 import com.genlogs.app.exception.ResourceNotFoundException;
 import com.genlogs.app.model.Cliente;
 import com.genlogs.app.model.EmpresaMinera;
@@ -60,6 +63,8 @@ public class PortalClienteService {
     private static final String ROL_CLIENTE = "CLIENTE";
     private static final String ESTADO_INICIAL = "PENDIENTE";
     private static final int MAX_NOMBRE_USUARIO = 50;
+    private static final java.util.Set<String> ESTADOS_CANCELABLES = java.util.Set.of(
+            EstadoSolicitud.PENDIENTE.name(), EstadoSolicitud.EN_REVISION.name());
 
     private final ProductoRepository productoRepository;
     private final ProductoImagenRepository productoImagenRepository;
@@ -70,6 +75,7 @@ public class PortalClienteService {
     private final SolicitudCotizacionRepository solicitudRepository;
     private final PasswordEncoder passwordEncoder;
     private final LimitadorRegistroPortal limitadorRegistro;
+    private final BitacoraSolicitud bitacora;
 
     @Transactional(readOnly = true)
     public List<ProductoPublicoResponse> catalogo() {
@@ -231,6 +237,33 @@ public class PortalClienteService {
             imagenes.putIfAbsent(imagen.getProducto().getIdProducto(), imagen.getUrlImagen());
         }
         return imagenes;
+    }
+
+    /**
+     * El cliente cancela su pedido mientras no se haya cotizado (PENDIENTE o EN_REVISION).
+     * Después responde 409. Queda en la bitácora con el motivo, si lo escribió.
+     */
+    @Transactional
+    public void cancelarPedido(Long id, String motivo) {
+        Usuario usuario = exigirCliente();
+        SolicitudCotizacion solicitud = solicitudRepository
+                .findByIdSolicitudAndCliente_IdClienteAndStatus(id, usuario.getCliente().getIdCliente(), "A")
+                .orElseThrow(() -> new ResourceNotFoundException("Pedido no encontrado"));
+        String anterior = solicitud.getEstadoSolicitud();
+        if (!ESTADOS_CANCELABLES.contains(anterior)) {
+            throw new EstadoNoPermitidoException(
+                    "Este pedido ya no se puede cancelar porque está " + anterior.toLowerCase(Locale.ROOT).replace('_', ' ')
+                            + ". Escríbenos si necesitas cambiar algo.");
+        }
+        solicitud.setEstadoSolicitud(EstadoSolicitud.CANCELADA.name());
+        solicitud.setUserUpdate(usuario.getNombreUsuario());
+        solicitud.setProcessUpdate("CANCELAR_PORTAL");
+        solicitud.setDateUpdate(LocalDateTime.now());
+        solicitudRepository.save(solicitud);
+
+        String texto = motivo == null || motivo.isBlank() ? "sin motivo" : "motivo: " + motivo.trim();
+        bitacora.registrar(solicitud.getIdSolicitud(), usuario.getIdUsuario(), TipoEventoSolicitud.ESTADO,
+                anterior + " → CANCELADA por el cliente (" + texto + ")");
     }
 
     /** Sin fila de usuario o sin id_cliente no hay portal: 403, no una lista vacía. */

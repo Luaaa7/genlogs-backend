@@ -22,13 +22,11 @@ import com.genlogs.app.enums.TipoEventoSolicitud;
 import com.genlogs.app.enums.TipoPlazo;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.model.SolicitudCotizacion;
-import com.genlogs.app.model.SolicitudEvento;
 import com.genlogs.app.model.SolicitudItem;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.MarcaRepository;
 import com.genlogs.app.repository.ProductoRepository;
 import com.genlogs.app.repository.SolicitudCotizacionRepository;
-import com.genlogs.app.repository.SolicitudEventoRepository;
 import com.genlogs.app.repository.UsuarioRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -57,7 +55,7 @@ public class SolicitudService {
     private static final int MAX_URL_FOTO = 2048;
 
     private final SolicitudCotizacionRepository solicitudRepository;
-    private final SolicitudEventoRepository eventoRepository;
+    private final BitacoraSolicitud bitacora;
     private final UsuarioRepository usuarioRepository;
     private final MarcaRepository marcaRepository;
     private final ProductoRepository productoRepository;
@@ -110,14 +108,9 @@ public class SolicitudService {
         }
         SolicitudCotizacion guardada = solicitudRepository.save(solicitud);
 
-        SolicitudEvento evento = new SolicitudEvento();
-        evento.setIdSolicitud(guardada.getIdSolicitud());
-        evento.setIdUsuario(usuario.getIdUsuario());
-        evento.setTipoEvento(TipoEventoSolicitud.CREADA.name());
-        evento.setDetalle("Canal " + request.getCanal().name() + ", plazo " + tipoPlazo.name()
-                + ", " + request.getItems().size() + " repuesto(s)");
-        evento.setFechaEvento(ahora);
-        eventoRepository.save(evento);
+        bitacora.registrar(guardada.getIdSolicitud(), usuario.getIdUsuario(), TipoEventoSolicitud.CREADA,
+                "Canal " + request.getCanal().name() + ", plazo " + tipoPlazo.name()
+                        + ", " + request.getItems().size() + " repuesto(s)");
 
         return new SolicitudCreadaResponse(guardada.getIdSolicitud(), guardada.getCodigoSolicitud(),
                 EstadoSolicitud.PENDIENTE);
