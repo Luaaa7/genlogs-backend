@@ -55,4 +55,31 @@ ALTER TABLE public.servicio DROP CONSTRAINT IF EXISTS ck_servicio_estado_aprobac
 ALTER TABLE public.servicio ADD CONSTRAINT ck_servicio_estado_aprobacion
     CHECK (estado_aprobacion IN ('APROBADO', 'PENDIENTE_APROBACION'));
 
+-- Meta de cotizaciones en plazo, por año y mes. Si no hay fila, el sistema usa 90.
+CREATE TABLE IF NOT EXISTS public.meta_periodo (
+    anio            SMALLINT     NOT NULL,
+    mes             SMALLINT     NOT NULL,
+    meta_porcentaje NUMERIC(5,2) NOT NULL DEFAULT 90,
+    CONSTRAINT pk_meta_periodo PRIMARY KEY (anio, mes)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_meta_periodo_anio_mes
+    ON public.meta_periodo (anio, mes);
+ALTER TABLE public.meta_periodo DROP CONSTRAINT IF EXISTS ck_meta_periodo_porcentaje;
+ALTER TABLE public.meta_periodo ADD CONSTRAINT ck_meta_periodo_porcentaje
+    CHECK (meta_porcentaje BETWEEN 0 AND 100);
+
+-- Acciones correctivas del periodo. Las registra el Jefe; no se crean solas.
+CREATE TABLE IF NOT EXISTS public.accion_correctiva (
+    id_accion   BIGSERIAL    PRIMARY KEY,
+    anio        SMALLINT     NOT NULL,
+    mes         SMALLINT     NOT NULL,
+    descripcion TEXT         NOT NULL,
+    estado      VARCHAR(20)  NOT NULL DEFAULT 'PENDIENTE',
+    creada_por  BIGINT       NOT NULL REFERENCES public.usuario (id_usuario),
+    fecha       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE public.accion_correctiva DROP CONSTRAINT IF EXISTS ck_accion_correctiva_estado;
+ALTER TABLE public.accion_correctiva ADD CONSTRAINT ck_accion_correctiva_estado
+    CHECK (estado IN ('PENDIENTE', 'HECHA'));
+
 COMMIT;

@@ -1,5 +1,6 @@
 package com.genlogs.app.model;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -60,6 +61,10 @@ public class SolicitudCotizacion extends Auditable {
 
     @Column(name = "descripcion", nullable = false, columnDefinition = "TEXT")
     private String descripcion;
+
+    /** Plazo interno (v3_2.sql). Null si la solicitud todavía no tiene fecha límite. */
+    @Column(name = "fecha_limite_interna")
+    private LocalDateTime fechaLimiteInterna;
 
     /** PENDIENTE, EN_REVISION, COTIZADA, RECHAZADA o CANCELADA. */
     @Column(name = "estado_solicitud", nullable = false, length = 20)
