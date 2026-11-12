@@ -84,15 +84,51 @@ class OrdenCompraPermisosTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void elClienteSigueFuera() throws Exception {
+        mockMvc.perform(get("/api/ordenes-compra").with(user("u").roles("CLIENTE")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(multipart("/api/ordenes-compra/1/archivo")
+                        .file(new MockMultipartFile("archivo", "oc.pdf", "application/pdf", new byte[] {'%'}))
+                        .with(user("u").roles("CLIENTE")))
+                .andExpect(status().isForbidden());
+    }
+
+    /**
+     * Desde feat/be-a-security-config estos roles pasan el filtro de URL (ROLES_INTERNOS v3.2).
+     * Lo que pueden hacer lo decide PermisosOrdenCompra: ven (matriz: Pedidos y OC, V) pero no gestionan.
+     */
     @ParameterizedTest
-    @ValueSource(strings = {"CLIENTE", "ASISTENTE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO", "SUPERVISOR_SST"})
-    void elFiltroDeUrlSigueFueraDeEstosRoles(String rol) throws Exception {
+    @ValueSource(strings = {"ASISTENTE_LOGISTICO", "SUPERVISOR_SST"})
+    void asistenteLogisticoYSupervisorSstSoloVen(String rol) throws Exception {
         mockMvc.perform(get("/api/ordenes-compra").with(user("u").roles(rol)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/ordenes-compra")
+                        .with(user("u").roles(rol))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"idCotizacion\":1,\"numeroOrdenCompra\":\"0001-10\"}"))
                 .andExpect(status().isForbidden());
         mockMvc.perform(multipart("/api/ordenes-compra/1/archivo")
                         .file(new MockMultipartFile("archivo", "oc.pdf", "application/pdf", new byte[] {'%'}))
                         .with(user("u").roles(rol)))
                 .andExpect(status().isForbidden());
+        mockMvc.perform(patch("/api/ordenes-compra/1/confirmar-oc")
+                        .with(user("u").roles(rol))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"numeroOc\":\"4500012345\",\"monto\":10.50}"))
+                .andExpect(status().isForbidden());
+    }
+
+    /** El Asistente Administrativo ve y gestiona la OC (RF-85): pasa el permiso y la cotización 1 no existe. */
+    @Test
+    void elAsistenteAdministrativoVeYGestiona() throws Exception {
+        mockMvc.perform(get("/api/ordenes-compra").with(user("u").roles("ASISTENTE_ADMINISTRATIVO")))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/ordenes-compra")
+                        .with(user("u").roles("ASISTENTE_ADMINISTRATIVO"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"idCotizacion\":1,\"numeroOrdenCompra\":\"0001-10\"}"))
+                .andExpect(status().isNotFound());
     }
 
     @Test
