@@ -1,6 +1,8 @@
 package com.genlogs.app.service;
 
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -16,16 +18,14 @@ import com.genlogs.app.model.DespachoSst;
 import com.genlogs.app.repository.AlertaSstRepository;
 
 /**
- * Alertas de PASE y SCTR por vencer (BE-D): avisos en la campanita a los 30, 15 y 7 días.
+ * Alertas de PASE y SCTR por vencer (BE-D). Cada fila trae su tipo y su fechaVencimiento.
  *
  * <ul>
- *   <li>Cada documento recibe un aviso por tramo: de 16 a 30 días (aviso de 30), de 8 a 15
- *       (aviso de 15) y de 0 a 7 (aviso de 7). Si la tarea no corrió el día exacto, el aviso
- *       sale el primer día en que corra dentro del tramo.</li>
- *   <li>No se repite: el título lleva tipo, despacho, fecha de vencimiento y umbral, y antes
- *       de avisar se revisa si ya existe. Si renuevan el documento con otra fecha, vuelve a avisar.</li>
- *   <li>Solo despachos que aún no se entregan. Sin correo (D-21: el correo es solo para alto
- *       valor y plazos vencidos).</li>
+ *   <li>Solo fechas futuras: de 1 a 7 días el aviso de 7, de 8 a 15 el de 15 y de 16 a 30 el de 30.
+ *       Hoy y lo ya vencido no entran.</li>
+ *   <li>Un aviso por tramo. El título lleva tipo, despacho, fecha y umbral; si esa notificación
+ *       ya existe, no se repite. Otra fecha de vencimiento vuelve a avisar.</li>
+ *   <li>Campana y correo solo al SUPERVISOR_SST. Solo despachos que aún no se entregan.</li>
  *   <li>Un documento que falla no detiene a los demás.</li>
  * </ul>
  */
@@ -34,10 +34,9 @@ public class AlertasDocumentosSstService {
 
     private static final Logger log = LoggerFactory.getLogger(AlertasDocumentosSstService.class);
 
+    static final ZoneId LIMA = ZoneId.of("America/Lima");
     /** Umbrales en días, de menor a mayor. */
     static final List<Integer> UMBRALES = List.of(7, 15, 30);
-    /** Quién confirma PASE y SCTR y quién despacha. */
-    static final List<RolSistema> DESTINATARIOS = List.of(RolSistema.SUPERVISOR_SST, RolSistema.ASISTENTE_LOGISTICO);
     /** El despacho cuelga de la orden de compra; es la pantalla interna que existe hoy. */
     static final String ENLACE = "/ordenes-compra";
 
@@ -45,16 +44,27 @@ public class AlertasDocumentosSstService {
 
     private final AlertaSstRepository alertas;
     private final NotificacionService notificacionService;
+    private Clock clock = Clock.system(LIMA);
 
     public AlertasDocumentosSstService(AlertaSstRepository alertas, NotificacionService notificacionService) {
         this.alertas = alertas;
         this.notificacionService = notificacionService;
     }
 
+    /** La llama la tarea de las 08:30. */
+    public Resultado avisar() {
+        return avisar(LocalDate.now(clock));
+    }
+
+    /** Solo para pruebas. */
+    void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
     /** Revisa los documentos que vencen en los próximos 30 días y avisa los que falten. */
     public Resultado avisar(LocalDate hoy) {
         int maximo = UMBRALES.get(UMBRALES.size() - 1);
-        List<DespachoSst> documentos = alertas.porVencer(hoy, hoy.plusDays(maximo), EtapaDespacho.ENTREGADO);
+        List<DespachoSst> documentos = alertas.porVencer(hoy.plusDays(1), hoy.plusDays(maximo), EtapaDespacho.ENTREGADO);
         int enviados = 0;
         int repetidos = 0;
         int fallidos = 0;
@@ -71,9 +81,8 @@ public class AlertasDocumentosSstService {
                     continue;
                 }
                 String mensaje = mensaje(documento, dias);
-                for (RolSistema rol : DESTINATARIOS) {
-                    notificacionService.avisarRol(rol, TipoAviso.DOCUMENTO_POR_VENCER, titulo, mensaje, ENLACE, false);
-                }
+                notificacionService.avisarRol(RolSistema.SUPERVISOR_SST, TipoAviso.DOCUMENTO_POR_VENCER,
+                        titulo, mensaje, ENLACE, true);
                 enviados++;
             } catch (RuntimeException e) {
                 fallidos++;
@@ -85,9 +94,9 @@ public class AlertasDocumentosSstService {
         return resultado;
     }
 
-    /** El menor umbral que cubre los días que faltan; null si faltan más de 30 o ya venció. */
+    /** El menor umbral que cubre los días que faltan. Hoy, lo vencido y lo que pasa de 30 no avisan. */
     static Integer umbralDe(long dias) {
-        if (dias < 0) {
+        if (dias < 1) {
             return null;
         }
         for (Integer umbral : UMBRALES) {
