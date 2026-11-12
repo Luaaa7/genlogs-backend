@@ -1,6 +1,7 @@
 package com.genlogs.app.repository;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -19,6 +20,11 @@ public interface ReclamoRepository extends JpaRepository<Reclamo, Long> {
     List<String> codigosPorTipo(@Param("tipo") TipoReclamo tipo);
 
     boolean existsByCodigoReclamo(String codigoReclamo);
+
+    /** Portal (RF-70): solo los reclamos de la empresa del cliente. */
+    List<Reclamo> findByCliente_IdClienteAndStatusOrderByFechaRegistroDescIdReclamoDesc(Long idCliente, String status);
+
+    Optional<Reclamo> findByIdReclamoAndCliente_IdClienteAndStatus(Long idReclamo, Long idCliente, String status);
 
     // Listado paginado con filtros opcionales (null = sin filtro).
     @Query(value = "SELECT r FROM Reclamo r "

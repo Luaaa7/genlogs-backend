@@ -80,4 +80,14 @@ public class Reclamo extends Auditable {
 
     @Column(name = "solucion", columnDefinition = "TEXT")
     private String solucion;
+
+    /** RF-70: calificación del cliente a la atención (1 a 5), cuando ya está resuelto o cerrado. v3_2_be_a.sql. */
+    @Column(name = "calificacion")
+    private Short calificacion;
+
+    @Column(name = "comentario_calificacion", columnDefinition = "TEXT")
+    private String comentarioCalificacion;
+
+    @Column(name = "fecha_calificacion")
+    private LocalDateTime fechaCalificacion;
 }
