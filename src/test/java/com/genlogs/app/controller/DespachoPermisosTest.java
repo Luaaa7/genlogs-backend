@@ -38,8 +38,8 @@ class DespachoPermisosTest {
     }
 
     @Test
-    void contadorSupervisorYClienteNoEntranAlDespachoInterno() throws Exception {
-        for (String rol : new String[] {"CONTADOR_GENERAL", "SUPERVISOR_SST", "CLIENTE"}) {
+    void contadorYClienteNoEntranAlDespachoInterno() throws Exception {
+        for (String rol : new String[] {"CONTADOR_GENERAL", "CLIENTE"}) {
             mockMvc.perform(get("/api/despachos").with(user("u").roles(rol)))
                     .andExpect(status().isForbidden());
             mockMvc.perform(patch("/api/despachos/1/etapa")
@@ -50,11 +50,12 @@ class DespachoPermisosTest {
         }
     }
 
-    @Disabled("Depende de que SecurityConfig deje pasar a ASISTENTE_LOGISTICO y "
-            + "ASISTENTE_ADMINISTRATIVO en /api/despachos/**. Hoy anyRequest().hasAnyRole(ROLES_INTERNOS) "
-            + "responde 403 antes de @PreAuthorize.")
+    @Disabled("Depende de que SecurityConfig deje pasar en /api/despachos/** a "
+            + "ASISTENTE_LOGISTICO, ASISTENTE_ADMINISTRATIVO y SUPERVISOR_SST. "
+            + "Hoy anyRequest().hasAnyRole(ROLES_INTERNOS) responde 403 antes de @PreAuthorize. "
+            + "Con el filtro nuevo el supervisor entra, y PermisosDespacho igual le niega ver y avanzar.")
     @Test
-    void asistentesPasanElFiltroCuandoSecurityConfigLoIncluya() throws Exception {
+    void asistentesYSupervisorPasanElFiltroCuandoSecurityConfigLoIncluya() throws Exception {
         mockMvc.perform(get("/api/despachos").with(user("u").roles("ASISTENTE_ADMINISTRATIVO")))
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/despachos")
@@ -62,5 +63,12 @@ class DespachoPermisosTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/despachos").with(user("u").roles("SUPERVISOR_SST")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(patch("/api/despachos/1/etapa")
+                        .with(user("u").roles("SUPERVISOR_SST"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"etapa\":\"EN_PREPARACION\"}"))
+                .andExpect(status().isForbidden());
     }
 }

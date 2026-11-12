@@ -28,6 +28,7 @@ import com.genlogs.app.dto.EstadisticasCotizacionResponse;
 import com.genlogs.app.dto.PaginaResponse;
 import com.genlogs.app.dto.SeguimientoCotizacionResponse;
 import com.genlogs.app.enums.CodigoEstadoCotizacion;
+import com.genlogs.app.enums.OrigenRepuesto;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
 import com.genlogs.app.model.AdjuntoCotizacion;
@@ -672,6 +673,7 @@ public class CotizacionService {
                     .cantidad(lineaOriginal.getCantidad())
                     .precioUnitario(lineaOriginal.getPrecioUnitario())
                     .descuentoUnitario(lineaOriginal.getDescuentoUnitario())
+                    .origen(lineaOriginal.getOrigen())
                     .build();
 
             lineaCopia.setUserCreate(usuario.getNombreUsuario());
@@ -746,7 +748,7 @@ public class CotizacionService {
     // Construcción de líneas y resolución de unidades de medida
     // ------------------------------------------------------------
 
-    private CotizacionDetalle construirLinea(
+    CotizacionDetalle construirLinea(
             Cotizacion cotizacion,
             CotizacionDetalleRequest req,
             String usuario) {
@@ -802,10 +804,52 @@ public class CotizacionService {
                                 : BigDecimal.ZERO)
                 .build();
 
+        aplicarOrigen(linea, req, false);
         linea.setUserCreate(usuario);
         linea.setProcessCreate("ALTA_LINEA_COTIZACION");
 
         return linea;
+    }
+
+    /**
+     * Alta: el request manda; si no viene y hay producto, se copia producto.origen
+     * en ese momento; sin producto queda nulo.
+     * Edición: un origen ya guardado solo cambia cuando el request trae otro.
+     * Hoy no hay endpoint que edite líneas; la regla queda para no pisarlo.
+     */
+    void aplicarOrigen(CotizacionDetalle linea, CotizacionDetalleRequest req, boolean edicion) {
+        if (req.getOrigen() != null) {
+            linea.setOrigen(req.getOrigen());
+            return;
+        }
+        if (edicion) {
+            return;
+        }
+        Long idProducto = linea.getProducto() == null ? null : linea.getProducto().getIdProducto();
+        if (idProducto == null) {
+            linea.setOrigen(null);
+            return;
+        }
+        linea.setOrigen(origenDeProducto(idProducto));
+    }
+
+    private OrigenRepuesto origenDeProducto(Long idProducto) {
+        List<String> leidos = productoRepository.findOrigenById(idProducto);
+        if (leidos == null || leidos.isEmpty()) {
+            return null;
+        }
+        return codigoOrigen(leidos.get(0));
+    }
+
+    private static OrigenRepuesto codigoOrigen(String crudo) {
+        if (crudo == null || crudo.isBlank()) {
+            return null;
+        }
+        try {
+            return OrigenRepuesto.valueOf(crudo.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 
     private UnidadMedida resolverUnidadMedida(
@@ -1608,6 +1652,7 @@ public class CotizacionService {
                 .descuentoUnitario(d.getDescuentoUnitario())
                 .importeLinea(importe)
                 .subtotal(importe)
+                .origen(d.getOrigen())
                 .build();
     }
 

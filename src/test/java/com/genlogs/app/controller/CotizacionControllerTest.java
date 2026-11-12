@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -111,6 +113,22 @@ class CotizacionControllerTest {
         Pageable pageable = pageableCapturado();
         assertEquals(0, pageable.getPageNumber());
         assertEquals(1, pageable.getPageSize());
+    }
+
+    @Test
+    void origenDistintoDeNacionalOImportadoResponde400() throws Exception {
+        mockMvc.perform(post("/api/cotizaciones")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"lineas":[{"cantidad":1,"precioUnitario":10,"origen":"EUROPA"}]}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("origen")))
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("NACIONAL")))
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("IMPORTADO")));
     }
 
     @Test

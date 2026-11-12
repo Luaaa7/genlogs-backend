@@ -31,10 +31,12 @@ import com.genlogs.app.model.CotizacionDetalle;
 import com.genlogs.app.model.Despacho;
 import com.genlogs.app.model.EstadoCotizacion;
 import com.genlogs.app.model.OrdenCompra;
+import com.genlogs.app.model.Producto;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.CotizacionDetalleRepository;
 import com.genlogs.app.repository.DespachoRepository;
 import com.genlogs.app.repository.OrdenCompraRepository;
+import com.genlogs.app.repository.ProductoRepository;
 import com.genlogs.app.repository.UsuarioRepository;
 
 @ExtendWith(MockitoExtension.class)
@@ -43,6 +45,7 @@ class DespachoServiceTest {
     @Mock private DespachoRepository despachos;
     @Mock private OrdenCompraRepository ordenes;
     @Mock private CotizacionDetalleRepository detalles;
+    @Mock private ProductoRepository productos;
     @Mock private UsuarioRepository usuarios;
     @Mock private FeriadoService feriados;
 
@@ -74,7 +77,7 @@ class DespachoServiceTest {
 
     @Test
     void nacionalDuraUnDiaYDosDias() {
-        when(detalles.findByCotizacion(3L)).thenReturn(List.of(linea("NACIONAL"), linea("NACIONAL")));
+        when(detalles.findByCotizacion(3L)).thenReturn(List.of(linea(OrigenRepuesto.NACIONAL), linea(OrigenRepuesto.NACIONAL)));
         var respuesta = servicio().crear(8L, inicio);
 
         assertEquals(OrigenRepuesto.NACIONAL, respuesta.getOrigen());
@@ -84,8 +87,20 @@ class DespachoServiceTest {
     }
 
     @Test
+    void unaLineaImportadaSaleImportadaConPlazoLargo() {
+        when(detalles.findByCotizacion(3L)).thenReturn(List.of(linea(OrigenRepuesto.IMPORTADO)));
+        var respuesta = servicio().crear(8L, inicio);
+
+        assertEquals(OrigenRepuesto.IMPORTADO, respuesta.getOrigen());
+        assertEquals(false, respuesta.isOrigenIncompleto());
+        assertEquals(LocalDateTime.of(2026, 3, 20, 0, 0), respuesta.getPlazoDesde());
+        assertEquals(LocalDateTime.of(2026, 3, 24, 0, 0), respuesta.getPlazoHasta());
+    }
+
+    @Test
     void unImportadoLlevaElPlazoLargoYLoMixtoTambien() {
-        when(detalles.findByCotizacion(3L)).thenReturn(List.of(linea("NACIONAL"), linea("IMPORTADO")));
+        when(detalles.findByCotizacion(3L)).thenReturn(List.of(
+                linea(OrigenRepuesto.NACIONAL), linea(OrigenRepuesto.IMPORTADO)));
         var respuesta = servicio().crear(8L, inicio);
 
         assertEquals(OrigenRepuesto.IMPORTADO, respuesta.getOrigen());
@@ -94,13 +109,37 @@ class DespachoServiceTest {
     }
 
     @Test
-    void origenNuloCuentaComoNacionalYMarcaIncompleto() {
-        when(detalles.findByCotizacion(3L)).thenReturn(List.of(linea(null), linea("NACIONAL")));
+    void sinOrigenNiProductoQuedaNacionalEIncompleto() {
+        when(detalles.findByCotizacion(3L)).thenReturn(List.of(linea(null)));
         var respuesta = servicio().crear(8L, inicio);
 
         assertEquals(OrigenRepuesto.NACIONAL, respuesta.getOrigen());
         assertTrue(respuesta.isOrigenIncompleto());
         assertEquals(inicio.plusHours(24), respuesta.getPlazoDesde());
+    }
+
+    @Test
+    void productoImportadoCompletaElOrigenQueElDetalleNoTrae() {
+        when(detalles.findByCotizacion(3L)).thenReturn(List.of(lineaConProducto(null, 7L)));
+        when(productos.findOrigenById(7L)).thenReturn(List.of("IMPORTADO"));
+
+        var respuesta = servicio().crear(8L, inicio);
+
+        assertEquals(OrigenRepuesto.IMPORTADO, respuesta.getOrigen());
+        assertEquals(false, respuesta.isOrigenIncompleto());
+        assertEquals(LocalDateTime.of(2026, 3, 20, 0, 0), respuesta.getPlazoDesde());
+        assertEquals(LocalDateTime.of(2026, 3, 24, 0, 0), respuesta.getPlazoHasta());
+    }
+
+    @Test
+    void elDetalleImportadoMandaSobreElProductoNacional() {
+        when(detalles.findByCotizacion(3L)).thenReturn(List.of(lineaConProducto(OrigenRepuesto.IMPORTADO, 7L)));
+
+        var respuesta = servicio().crear(8L, inicio);
+
+        assertEquals(OrigenRepuesto.IMPORTADO, respuesta.getOrigen());
+        assertEquals(false, respuesta.isOrigenIncompleto());
+        org.mockito.Mockito.verify(productos, org.mockito.Mockito.never()).findOrigenById(any());
     }
 
     @Test
@@ -126,7 +165,7 @@ class DespachoServiceTest {
 
     @Test
     void aduanaSoloEnImportadoYNoSeSaltaEtapa() {
-        when(detalles.findByCotizacion(3L)).thenReturn(List.of(linea("NACIONAL")));
+        when(detalles.findByCotizacion(3L)).thenReturn(List.of(linea(OrigenRepuesto.NACIONAL)));
         servicio().crear(8L, inicio);
         Despacho guardado = capturar();
         when(despachos.findById(15L)).thenReturn(Optional.of(guardado));
@@ -137,12 +176,13 @@ class DespachoServiceTest {
 
         servicio().avanzar(15L, EtapaDespacho.EN_PREPARACION);
         assertEquals(EtapaDespacho.EN_PREPARACION, guardado.getEtapa());
+        assertThrows(BusinessException.class, () -> servicio().avanzar(15L, EtapaDespacho.REGISTRADO));
         assertThrows(BusinessException.class, () -> servicio().avanzar(15L, EtapaDespacho.ENTREGADO));
     }
 
     @Test
     void importadoSiEntraAAduana() {
-        when(detalles.findByCotizacion(3L)).thenReturn(List.of(linea("IMPORTADO")));
+        when(detalles.findByCotizacion(3L)).thenReturn(List.of(linea(OrigenRepuesto.IMPORTADO)));
         servicio().crear(8L, inicio);
         Despacho guardado = capturar();
         when(despachos.findById(15L)).thenReturn(Optional.of(guardado));
@@ -161,7 +201,7 @@ class DespachoServiceTest {
     }
 
     private DespachoService servicio() {
-        return new DespachoService(despachos, ordenes, detalles, usuarios, new PlazoDespacho(feriados));
+        return new DespachoService(despachos, ordenes, detalles, productos, usuarios, new PlazoDespacho(feriados));
     }
 
     private OrdenCompra orden(String estadoCodigo) {
@@ -182,10 +222,18 @@ class DespachoServiceTest {
         return ordenCompra;
     }
 
-    private static CotizacionDetalle linea(String origen) {
+    private static CotizacionDetalle linea(OrigenRepuesto origen) {
         CotizacionDetalle detalle = new CotizacionDetalle();
         detalle.setOrigen(origen);
         detalle.setCantidad(BigDecimal.ONE);
+        return detalle;
+    }
+
+    private static CotizacionDetalle lineaConProducto(OrigenRepuesto origen, long idProducto) {
+        Producto producto = new Producto();
+        producto.setIdProducto(idProducto);
+        CotizacionDetalle detalle = linea(origen);
+        detalle.setProducto(producto);
         return detalle;
     }
 }

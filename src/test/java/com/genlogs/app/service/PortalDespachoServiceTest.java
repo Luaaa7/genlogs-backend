@@ -1,11 +1,12 @@
 package com.genlogs.app.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDateTime;
-import java.util.Arrays;
 import java.util.Optional;
 
 import org.junit.jupiter.api.AfterEach;
@@ -17,6 +18,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.databind.JsonSerializer;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializerProvider;
+import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.genlogs.app.dto.PortalDespachoResponse;
 import com.genlogs.app.enums.EtapaDespacho;
 import com.genlogs.app.exception.ResourceNotFoundException;
@@ -62,21 +68,29 @@ class PortalDespachoServiceTest {
         assertEquals(ausente, ajeno);
 
         when(despachos.findById(3L)).thenReturn(Optional.of(despacho(2L)));
-        PortalDespachoResponse respuesta = servicio.detalle(3L);
-        String campos = Arrays.stream(PortalDespachoResponse.class.getDeclaredFields())
-                .map(java.lang.reflect.Field::getName)
-                .reduce("", (a, b) -> a + " " + b);
+        String json = jsonDe(servicio.detalle(3L));
 
-        assertEquals("0008-10", respuesta.getNumeroOrdenCompra());
-        assertEquals("En preparación", respuesta.getEtapaNombre());
-        assertEquals(EtapaDespacho.EN_PREPARACION, respuesta.getEtapa());
+        assertTrue(json.contains("0008-10"));
+        assertTrue(json.contains("En preparación"));
+        assertTrue(json.contains("EN_PREPARACION"));
         for (String interno : new String[] {
-                "origenIncompleto", "idUsuario", "fechaPreparacion", "fechaAduana",
-                "fechaTransito", "fechaEntrega", "userCreate", "origen"}) {
-            if (campos.contains(interno)) {
-                throw new AssertionError(campos);
-            }
+                "origenIncompleto", "idUsuario", "usuario", "fechaPreparacion", "fechaAduana",
+                "fechaTransito", "fechaEntrega", "userCreate", "userUpdate", "dateCreate",
+                "processCreate", "origen"}) {
+            assertFalse(json.contains(interno), json);
         }
+    }
+
+    private static String jsonDe(PortalDespachoResponse respuesta) throws Exception {
+        SimpleModule fechas = new SimpleModule();
+        fechas.addSerializer(LocalDateTime.class, new JsonSerializer<>() {
+            @Override
+            public void serialize(LocalDateTime value, JsonGenerator gen, SerializerProvider serializers)
+                    throws java.io.IOException {
+                gen.writeString(value.toString());
+            }
+        });
+        return new ObjectMapper().registerModule(fechas).writeValueAsString(respuesta);
     }
 
     private static Despacho despacho(Long idCliente) {

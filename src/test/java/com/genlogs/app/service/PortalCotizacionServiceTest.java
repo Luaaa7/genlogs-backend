@@ -23,10 +23,12 @@ import org.springframework.security.core.context.SecurityContextHolder;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.genlogs.app.dto.PortalCotizacionResponse;
+import com.genlogs.app.enums.OrigenRepuesto;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
 import com.genlogs.app.model.Cliente;
 import com.genlogs.app.model.Cotizacion;
+import com.genlogs.app.model.CotizacionDetalle;
 import com.genlogs.app.model.EstadoCotizacion;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.CotizacionDetalleRepository;
@@ -144,6 +146,27 @@ class PortalCotizacionServiceTest {
         assertFalse(json.contains("urlArchivo"));
         assertFalse(json.contains("margen"));
         assertFalse(json.contains("costo"));
+    }
+
+    @Test
+    void elJsonDelPortalNoTraeElOrigenDeLaLinea() throws Exception {
+        Cotizacion cotizacion = cotizacion(4L, mia, "ENVIADA");
+        cotizacion.setFechaCotizacion(null);
+        cotizacion.setFechaValidez(null);
+        CotizacionDetalle linea = new CotizacionDetalle();
+        linea.setOrigen(OrigenRepuesto.IMPORTADO);
+        linea.setDescripcionPersonalizada("rodamiento");
+        linea.setCantidad(BigDecimal.ONE);
+        when(cotizacionRepository.findById(4L)).thenReturn(Optional.of(cotizacion));
+        when(cotizacionRepository.findTotalesByCotizacion(4L)).thenReturn(Optional.empty());
+        when(cotizacionDetalleRepository.findByCotizacion(4L)).thenReturn(List.of(linea));
+        when(ordenCompraRepository.numerosOcCliente(4L)).thenReturn(List.of());
+
+        String json = new ObjectMapper().writeValueAsString(servicio.detalle(4L));
+
+        assertTrue(json.contains("rodamiento"));
+        assertFalse(json.contains("origen"), json);
+        assertFalse(json.contains("IMPORTADO"), json);
     }
 
     private static Cliente cliente(Long id) {

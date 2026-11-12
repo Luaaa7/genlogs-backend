@@ -2,6 +2,7 @@ package com.genlogs.app.service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +21,7 @@ import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.CotizacionDetalleRepository;
 import com.genlogs.app.repository.DespachoRepository;
 import com.genlogs.app.repository.OrdenCompraRepository;
+import com.genlogs.app.repository.ProductoRepository;
 import com.genlogs.app.repository.UsuarioRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -34,6 +36,7 @@ public class DespachoService {
     private final DespachoRepository despachoRepository;
     private final OrdenCompraRepository ordenCompraRepository;
     private final CotizacionDetalleRepository cotizacionDetalleRepository;
+    private final ProductoRepository productoRepository;
     private final UsuarioRepository usuarioRepository;
     private final PlazoDespacho plazoDespacho;
 
@@ -68,11 +71,7 @@ public class DespachoService {
 
         List<CotizacionDetalle> lineas = cotizacionDetalleRepository.findByCotizacion(
                 orden.getCotizacion().getIdCotizacion());
-        OrigenLeido leido = origenDe(lineas);
-        if (leido.incompleto()) {
-            log.warn("Cotización {}: hay ítems sin origen y se toman como NACIONAL",
-                    orden.getCotizacion().getIdCotizacion());
-        }
+        OrigenLeido leido = origenDe(lineas, true);
 
         Usuario usuario = usuarioActual();
         PlazoDespacho.Rango plazo = plazoDespacho.calcular(leido.origen(), inicio);
@@ -140,7 +139,7 @@ public class DespachoService {
 
     private DespachoResponse aRespuesta(Despacho despacho) {
         boolean incompleto = origenDe(cotizacionDetalleRepository.findByCotizacion(
-                despacho.getCotizacion().getIdCotizacion())).incompleto();
+                despacho.getCotizacion().getIdCotizacion()), false).incompleto();
         return DespachoResponse.builder()
                 .idDespacho(despacho.getIdDespacho())
                 .idOrdenCompra(despacho.getOrdenCompra().getIdOrdenCompra())
@@ -160,20 +159,51 @@ public class DespachoService {
                 .build();
     }
 
-    static OrigenLeido origenDe(List<CotizacionDetalle> lineas) {
+    private OrigenLeido origenDe(List<CotizacionDetalle> lineas, boolean avisar) {
         boolean incompleto = false;
         boolean importado = false;
         if (lineas != null) {
             for (CotizacionDetalle linea : lineas) {
-                String origen = linea.getOrigen();
-                if (origen == null || origen.isBlank()) {
+                OrigenRepuesto efectivo = origenEfectivo(linea);
+                if (efectivo == null) {
                     incompleto = true;
-                } else if (OrigenRepuesto.IMPORTADO.name().equalsIgnoreCase(origen.trim())) {
+                    if (avisar) {
+                        log.warn("Ítem {} sin origen en el detalle ni en el producto; se toma como NACIONAL",
+                                linea.getIdCotizacionDetalle());
+                    }
+                } else if (efectivo == OrigenRepuesto.IMPORTADO) {
                     importado = true;
                 }
             }
         }
         return new OrigenLeido(importado ? OrigenRepuesto.IMPORTADO : OrigenRepuesto.NACIONAL, incompleto);
+    }
+
+    /** El detalle manda. Si viene nulo, se lee producto.origen. Si tampoco, no se pudo determinar. */
+    private OrigenRepuesto origenEfectivo(CotizacionDetalle linea) {
+        if (linea.getOrigen() != null) {
+            return linea.getOrigen();
+        }
+        Long idProducto = linea.getProducto() == null ? null : linea.getProducto().getIdProducto();
+        if (idProducto == null) {
+            return null;
+        }
+        List<String> leidos = productoRepository.findOrigenById(idProducto);
+        if (leidos == null || leidos.isEmpty()) {
+            return null;
+        }
+        return codigoOrigen(leidos.get(0));
+    }
+
+    private static OrigenRepuesto codigoOrigen(String crudo) {
+        if (crudo == null || crudo.isBlank()) {
+            return null;
+        }
+        try {
+            return OrigenRepuesto.valueOf(crudo.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 
     record OrigenLeido(OrigenRepuesto origen, boolean incompleto) {

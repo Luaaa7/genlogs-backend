@@ -25,6 +25,6 @@ public class DespachoResponse {
     private LocalDateTime plazoDesde;
     private LocalDateTime plazoHasta;
     private Long idUsuario;
-    /** True si algún ítem no trae origen. No sale en el portal. */
+    /** True si algún ítem no se pudo determinar. No sale en el portal. */
     private boolean origenIncompleto;
 }
