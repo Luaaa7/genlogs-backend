@@ -17,6 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 import com.genlogs.app.dto.SolicitudCreadaResponse;
 import com.genlogs.app.dto.SolicitudRequest;
 import com.genlogs.app.enums.CanalSolicitud;
+import com.genlogs.app.enums.EstadoPublicacion;
 import com.genlogs.app.enums.EstadoSolicitud;
 import com.genlogs.app.enums.TipoEventoSolicitud;
 import com.genlogs.app.enums.TipoPlazo;
@@ -38,7 +39,7 @@ import lombok.RequiredArgsConstructor;
  *   - Con N.º de parte, siempre se pide la marca (catálogo o texto).
  *   - PORTAL: sin N.º de parte exige foto o plano.
  *   - LANDING: basta la descripción; el asistente pide la foto después.
- *   - VITRINA: un ítem con idProducto debe ser un producto visible de la vitrina; los
+ *   - VITRINA: un ítem con idProducto debe ser un producto PUBLICADO en la vitrina; los
  *     ítems sin idProducto (p. ej. "Volver a pedir" en el mismo carrito) siguen la regla del PORTAL.
  * El plazo interno (RF-84) es ESPECIAL si algún repuesto no está identificado (sin N.º de
  * parte ni producto de la vitrina) y COMUN en otro caso; el asistente lo reclasifica a
@@ -158,7 +159,8 @@ public class SolicitudService {
         }
         if (item.getIdProducto() != null) {
             boolean enVitrina = productoRepository.findById(item.getIdProducto())
-                    .filter(p -> p.getStatus() != null && "A".equals(p.getStatus().trim()) && Boolean.TRUE.equals(p.getVisibleWeb()))
+                    .filter(p -> p.getStatus() != null && "A".equals(p.getStatus().trim())
+                            && p.getEstadoPublicacion() == EstadoPublicacion.PUBLICADO)
                     .isPresent();
             if (!enVitrina) {
                 throw new BusinessException("El producto " + repuesto + " no está disponible en la vitrina.");

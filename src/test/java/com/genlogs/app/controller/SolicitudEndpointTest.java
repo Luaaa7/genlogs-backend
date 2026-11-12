@@ -60,7 +60,7 @@ import com.genlogs.app.service.CloudinaryService;
 /**
  * Endpoint único de solicitudes (BE-B). POST /api/solicitudes y POST /api/solicitudes/fotos.
  * D-01 por canal: PORTAL sin N.º de parte exige foto o plano; LANDING acepta solo descripción;
- * VITRINA: los ítems con idProducto deben ser productos visibles; los que vienen de
+ * VITRINA: los ítems con idProducto deben ser productos PUBLICADOS en la vitrina; los que vienen de
  * "Volver a pedir" (sin idProducto) siguen la regla del PORTAL. Con N.º de parte siempre se pide la marca.
  */
 @SpringBootTest
@@ -224,6 +224,22 @@ class SolicitudEndpointTest {
 
         assertThat(jdbc.queryForObject("SELECT id_producto FROM solicitud_item WHERE id_solicitud = ?",
                 Long.class, idDe(cuerpo))).isEqualTo(idProducto);
+    }
+
+    @Test
+    void vitrinaConProductoNoPublicado_responde400() throws Exception {
+        // Los productos viejos del catálogo están visibles pero nunca se publicaron en la vitrina.
+        for (com.genlogs.app.enums.EstadoPublicacion estado : new com.genlogs.app.enums.EstadoPublicacion[] {
+                com.genlogs.app.enums.EstadoPublicacion.BORRADOR, com.genlogs.app.enums.EstadoPublicacion.OCULTO,
+                com.genlogs.app.enums.EstadoPublicacion.RETIRADO }) {
+            String cliente = nuevoCliente();
+            long idProducto = nuevoProducto(estado);
+            mockMvc.perform(post("/api/solicitudes").with(user(cliente).roles("CLIENTE"))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(unItem("VITRINA", "\"descripcion\":\"Rodamiento\",\"cantidad\":1,\"idProducto\":" + idProducto)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("no está disponible en la vitrina")));
+        }
     }
 
     @Test
@@ -395,7 +411,12 @@ class SolicitudEndpointTest {
         return nombre;
     }
 
+    /** Producto PUBLICADO en la vitrina (el único que se puede pedir con canal VITRINA). */
     private long nuevoProducto() {
+        return nuevoProducto(com.genlogs.app.enums.EstadoPublicacion.PUBLICADO);
+    }
+
+    private long nuevoProducto(com.genlogs.app.enums.EstadoPublicacion estado) {
         int n = SECUENCIA.incrementAndGet();
         UnidadMedida unidad = unidadMedidaRepository.save(auditar(new UnidadMedida(), e -> {
             e.setCodigoUnidad("S" + n);
@@ -412,6 +433,7 @@ class SolicitudEndpointTest {
             e.setCodigoProducto("VIT-" + n);
             e.setNombreProducto("Rodamiento " + n);
             e.setVisibleWeb(true);
+            e.setEstadoPublicacion(estado);
         }));
         return p.getIdProducto();
     }
