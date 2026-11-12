@@ -6,6 +6,8 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import com.genlogs.app.enums.RolSistema;
@@ -23,6 +25,8 @@ import com.genlogs.app.repository.NotificacionRepository;
 public class FacturasVencidasService {
 
     static final ZoneId LIMA = ZoneId.of("America/Lima");
+    private static final Logger log = LoggerFactory.getLogger(FacturasVencidasService.class);
+
     private static final List<String> ABIERTAS = List.of("EMITIDA", "PARCIAL");
     private static final String TITULO = "Factura vencida";
 
@@ -42,13 +46,29 @@ public class FacturasVencidasService {
     /** La llama la tarea de las 09:00. Sin destinatarios, avisarRol solo registra el aviso vacío. */
     public void avisarVencidas() {
         LocalDate hoy = LocalDate.now(clock);
+        int avisadas = 0;
+        int yaAvisadas = 0;
+        int fallidas = 0;
         for (Facturacion factura : facturacionRepository.vencidas(hoy, ABIERTAS)) {
-            if (!estaVencida(factura, hoy) || yaAvisada(factura, hoy)) {
+            if (!estaVencida(factura, hoy)) {
                 continue;
             }
-            notificacionService.avisarRol(RolSistema.CONTADOR_GENERAL, TipoAviso.FACTURA_VENCIDA, TITULO,
-                    mensaje(factura), enlace(factura), true);
+            // Una factura que falla (BD, correo) no detiene a las demás.
+            try {
+                if (yaAvisada(factura, hoy)) {
+                    yaAvisadas++;
+                    continue;
+                }
+                notificacionService.avisarRol(RolSistema.CONTADOR_GENERAL, TipoAviso.FACTURA_VENCIDA, TITULO,
+                        mensaje(factura), enlace(factura), true);
+                avisadas++;
+            } catch (RuntimeException e) {
+                fallidas++;
+                log.warn("No se pudo avisar la factura vencida {}: {}", factura.getIdFacturacion(), e.getMessage());
+            }
         }
+        log.info("Facturas vencidas del {}: {} avisadas, {} ya avisadas hoy, {} con error",
+                hoy, avisadas, yaAvisadas, fallidas);
     }
 
     /** Solo para pruebas. */

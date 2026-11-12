@@ -41,6 +41,13 @@ public class MetaController {
         return ResponseEntity.ok(metasPeriodoService.consultar(anio, mes));
     }
 
+    /** Historial de resultados: los últimos {@code meses} periodos hasta anio/mes (por defecto 6). */
+    @GetMapping("/historial")
+    public ResponseEntity<List<MetaPeriodoResponse>> historial(@RequestParam int anio, @RequestParam int mes,
+            @RequestParam(defaultValue = "6") int meses) {
+        return ResponseEntity.ok(metasPeriodoService.historial(anio, mes, meses));
+    }
+
     @PreAuthorize("hasRole('JEFE_ADMINISTRATIVO')")
     @PutMapping("/{anio}/{mes}")
     public ResponseEntity<MetaPeriodoResponse> actualizar(@PathVariable int anio, @PathVariable int mes,

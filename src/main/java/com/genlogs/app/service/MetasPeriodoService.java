@@ -60,6 +60,31 @@ public class MetasPeriodoService {
                 resultado.porcentaje(), resultado.cumple());
     }
 
+    /** Máximo de meses que devuelve el historial. */
+    static final int MAX_MESES_HISTORIAL = 24;
+
+    /**
+     * Historial de resultados: los {@code meses} periodos que terminan en anio/mes, del más
+     * antiguo al más reciente, cada uno con su meta, su porcentaje y si cumplió.
+     */
+    @Transactional(readOnly = true)
+    public List<MetaPeriodoResponse> historial(int anio, int mes, int meses) {
+        exigirPeriodo(anio, mes);
+        if (meses < 1 || meses > MAX_MESES_HISTORIAL) {
+            throw new BusinessException("El historial admite entre 1 y " + MAX_MESES_HISTORIAL + " meses");
+        }
+        LocalDate fin = LocalDate.of(anio, mes, 1);
+        List<MetaPeriodoResponse> resultados = new java.util.ArrayList<>();
+        for (int atras = meses - 1; atras >= 0; atras--) {
+            LocalDate periodo = fin.minusMonths(atras);
+            if (periodo.getYear() < 2000) {
+                continue;
+            }
+            resultados.add(consultar(periodo.getYear(), periodo.getMonthValue()));
+        }
+        return resultados;
+    }
+
     @Transactional
     public MetaPeriodoResponse actualizarMeta(int anio, int mes, BigDecimal metaPorcentaje) {
         exigirPeriodo(anio, mes);
