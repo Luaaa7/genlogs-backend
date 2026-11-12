@@ -116,6 +116,16 @@ class PortalCotizacionServiceTest {
     }
 
     @Test
+    void unaVencidaNoSeApruebaNiSeRechaza() {
+        Cotizacion cotizacion = cotizacion(11L, mia, "VENCIDA");
+        when(cotizacionRepository.findById(11L)).thenReturn(Optional.of(cotizacion));
+
+        assertThrows(BusinessException.class, () -> servicio.aprobar(11L, null));
+        assertThrows(BusinessException.class, () -> servicio.rechazar(11L, null));
+        assertEquals("VENCIDA", cotizacion.getEstadoCotizacion().getCodigoEstado());
+    }
+
+    @Test
     void elJsonNoTraeMargenNiDatosInternos() throws Exception {
         String json = new ObjectMapper().writeValueAsString(
                 PortalCotizacionResponse.builder().id(1L).estado("Enviada").total(new BigDecimal("100")).build());

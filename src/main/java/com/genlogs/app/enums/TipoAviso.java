@@ -9,6 +9,8 @@ public enum TipoAviso {
     ALTO_VALOR,
     /** BE-C: la cotización quedó APROBADA y la orden de compra no se pudo crear. */
     ORDEN_NO_CREADA,
+    /** BE-C: un lote de cotizaciones pasó a VENCIDA por los 15 días. */
+    COTIZACION_VENCIDA,
     /** BE-B: solicitud al 75 % de su plazo interno. */
     PLAZO_POR_VENCER,
     /** BE-B: solicitud con el plazo interno vencido. */
