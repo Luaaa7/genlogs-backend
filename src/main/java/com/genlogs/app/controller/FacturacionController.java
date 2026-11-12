@@ -96,7 +96,12 @@ public class FacturacionController {
         return ResponseEntity.ok(facturacionService.enviar(id, request));
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    /**
+     * Cambio de estado del comprobante, que es como se anula (ANULADA). BE-A, D-33: la
+     * anulación es del JEFE_ADMINISTRATIVO. ADMINISTRADOR queda como transitorio hasta
+     * correr v3_0_roles.sql, que lo pasa a JEFE_ADMINISTRATIVO.
+     */
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @PatchMapping("/{id}/estado")
     public ResponseEntity<FacturacionResponse> cambiarEstado(
             @PathVariable Long id, @Valid @RequestBody CambiarEstadoFacturacionRequest request) {
