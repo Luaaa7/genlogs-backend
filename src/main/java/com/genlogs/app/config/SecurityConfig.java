@@ -92,7 +92,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/catalogo/**", "/api/catalogos/**", "/api/empresas-mineras/**").permitAll()
                 // ---- Paso 0 (v3.2): reglas de URL nuevas. Karla aprueba esta parte. ----
                 // Endpoint unico de solicitudes: portal, landing (con registro, D-16) y vitrina.
-                .requestMatchers(HttpMethod.POST, "/api/solicitudes").hasAnyRole(ROLES_INTERNOS_Y_CLIENTE)
+                .requestMatchers(HttpMethod.POST, "/api/solicitudes", "/api/solicitudes/fotos").hasAnyRole(ROLES_INTERNOS_Y_CLIENTE)
                 // Vitrina (Fase 3, apagada): catalogo de la landing sin precio, repuestos del portal con precio.
                 .requestMatchers(HttpMethod.GET, "/api/public/catalogo", "/api/public/catalogo/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/portal/repuestos", "/api/portal/repuestos/**").hasRole("CLIENTE")
