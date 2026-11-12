@@ -5,6 +5,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -78,6 +80,19 @@ public class CotizacionResponse {
     private String monedaSimbolo;
     private String monedaNombre;
     private String observaciones;
+
+    /** Tipo de cambio USD guardado al crear o enviar la cotización. */
+    private BigDecimal tipoCambioUsado;
+
+    /**
+     * Margen y precio de proveedor. Solo los arma {@code VisibilidadMargen}
+     * para Gerente, Jefe y Asistente Logístico. Null no sale en el JSON.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private BigDecimal margen;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private BigDecimal precioProveedor;
 
     /** Líneas, seguimientos y adjuntos: se llenan en el detalle (GET /{id}). */
     private List<CotizacionDetalleResponse> detalles;

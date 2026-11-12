@@ -2,6 +2,8 @@ package com.genlogs.app.dto;
 
 import java.math.BigDecimal;
 
+import com.genlogs.app.enums.OrigenRepuesto;
+
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
@@ -48,4 +50,10 @@ public class CotizacionDetalleRequest {
 
     @DecimalMin(value = "0.0", message = "El descuento no puede ser negativo")
     private BigDecimal descuentoUnitario = BigDecimal.ZERO;
+
+    /**
+     * Opcional. NACIONAL o IMPORTADO; otro valor responde 400.
+     * Si no viene, al crear la línea se copia del producto.
+     */
+    private OrigenRepuesto origen;
 }

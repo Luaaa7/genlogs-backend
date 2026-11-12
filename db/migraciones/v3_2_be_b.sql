@@ -1,8 +1,8 @@
 -- ============================================================================
 -- GenLogS - Migración v3.2 · Bloque BE-B: feriados (D-18)
 -- Archivo : db/migraciones/v3_2_be_b.sql
+-- Ramas   : luana/be-b-feriados, luana/be-b-endpoint-solicitudes
 -- Destino : Supabase (PostgreSQL), esquema public
--- Rama    : luana/be-b-feriados
 --
 -- Qué hace:
 --   1. Crea la tabla feriado (baja lógica con status = 'I', D-29).
@@ -10,6 +10,8 @@
 --   3. Precarga los 16 feriados nacionales de 2026 y de 2027
 --      (D. Leg. 713 y leyes 31381, 31788 y 31822).
 --   4. Activa RLS y quita permisos a la API REST de Supabase.
+--   5. solicitud_item.id_producto: el repuesto que se pidió desde la vitrina
+--      ("Cotizar"). Si el producto se borra, el pedido se conserva (SET NULL).
 --
 -- Cómo ejecutarlo:
 --   - Va después de v3_2.sql (orden del Paso 0) y ANTES de desplegar el
@@ -106,6 +108,14 @@ BEGIN
         END IF;
     END LOOP;
 END $$;
+
+-- ----------------------------------------------------------------------------
+-- 5. Producto de la vitrina en el repuesto pedido (endpoint único, canal VITRINA)
+-- ----------------------------------------------------------------------------
+ALTER TABLE public.solicitud_item
+    ADD COLUMN IF NOT EXISTS id_producto BIGINT
+        REFERENCES public.producto (id_producto) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS ix_solicitud_item_producto ON public.solicitud_item (id_producto);
 
 COMMIT;
 

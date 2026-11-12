@@ -86,3 +86,25 @@ petición tarda ~50 s en despertarlo. Hay dos pings:
 - **Al agregar código nuevo**: lanzar `BusinessException("mensaje para el usuario")` o
   `ResourceNotFoundException(...)` en los services, y en el frontend usar
   `mensajeError(err, 'No se pudo …')` en vez de leer `err.response.data.message` a mano.
+
+## 4. Vencimiento automático de cotizaciones
+
+Todos los días a la 01:00 (hora de Perú) las cotizaciones en `ENVIADA` o
+`EN_NEGOCIACION` con más de 15 días pasan a `VENCIDA`. Ese estado es final y la
+aplicación no lo revierte. La base de producción ya tiene cotizaciones antiguas:
+la primera corrida real no debe hacerse al arrancar ni de golpe.
+
+Variables de entorno (en Render o en el entorno local):
+
+| Variable | Por defecto | Qué hace |
+|---|---|---|
+| `VENCIMIENTO_ACTIVO` | `true` | Enciende o apaga todo: la programación de la 01:00 y la corrida al arrancar. |
+| `VENCIMIENTO_AL_ARRANCAR` | `false` | Si es `true`, al terminar de arrancar ejecuta una corrida. La de la 01:00 no depende de esta variable. |
+| `VENCIMIENTO_SIMULACION` | `true` | Si es `true`, no modifica nada ni crea seguimientos ni avisa: solo cuenta y escribe en el log hasta 50 códigos y fechas. |
+| `VENCIMIENTO_MAXIMO_POR_CORRIDA` | `500` | Tope de cada corrida, de la fecha más antigua a la más nueva. El resto queda para la siguiente. |
+
+El valor por defecto es simulación: no vence nada hasta que se apague a propósito.
+En producción hay que poner `VENCIMIENTO_SIMULACION=false` para vencer de verdad,
+después de revisar el log. Para trabajar en local contra la base de producción,
+dejar la simulación en `true` y `VENCIMIENTO_AL_ARRANCAR=false`. Con
+`VENCIMIENTO_ACTIVO=false` no corre ni la 01:00 ni el arranque.
