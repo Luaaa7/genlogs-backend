@@ -22,4 +22,7 @@ public interface ProductoImagenRepository extends JpaRepository<ProductoImagen, 
              AND i.producto.idProducto IN :ids
            """)
     List<ProductoImagen> buscarPrincipalesActivas(Collection<Long> ids);
+
+    /** Imágenes activas de varios productos de una vez (vitrina, sin N+1). */
+    List<ProductoImagen> findByProducto_IdProductoInAndStatus(Collection<Long> idsProducto, String status);
 }

@@ -17,6 +17,15 @@ public interface OrdenCompraRepository extends JpaRepository<OrdenCompra, Long> 
 
     boolean existsByCotizacion_IdCotizacionAndStatus(Long idCotizacion, String status);
 
+    @Query("""
+            SELECT o.numeroOcCliente FROM OrdenCompra o
+             WHERE o.cotizacion.idCotizacion = :id
+               AND o.status = 'A'
+               AND o.numeroOcCliente IS NOT NULL
+             ORDER BY o.idOrdenCompra DESC
+            """)
+    List<String> numerosOcCliente(@Param("id") Long id);
+
     @org.springframework.data.jpa.repository.Query("SELECT o.numeroOrdenCompra FROM OrdenCompra o")
     List<String> todosLosNumeros();
 

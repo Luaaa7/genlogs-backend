@@ -2,6 +2,8 @@ package com.genlogs.app.dto;
 
 import java.math.BigDecimal;
 
+import com.genlogs.app.enums.OrigenRepuesto;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -41,4 +43,6 @@ public class CotizacionDetalleResponse {
     private BigDecimal importeLinea;
     /** Alias de importeLinea. */
     private BigDecimal subtotal;
+    /** NACIONAL, IMPORTADO o nulo si la línea no lo pudo determinar. */
+    private OrigenRepuesto origen;
 }

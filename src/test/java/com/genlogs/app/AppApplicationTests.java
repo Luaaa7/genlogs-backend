@@ -1,5 +1,6 @@
 package com.genlogs.app;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,7 @@ import com.genlogs.app.repository.CondicionPagoRepository;
 import com.genlogs.app.repository.CotizacionRepository;
 import com.genlogs.app.repository.EstadoCotizacionRepository;
 import com.genlogs.app.service.CotizacionService;
+import com.genlogs.app.service.VencimientoCotizacionesTarea;
 
 /**
  * Arranque del contexto de Spring: valida el cableado de beans (servicios,
@@ -50,5 +52,6 @@ class AppApplicationTests {
         assertNotNull(condicionPagoRepository);
         assertNotNull(estadoCotizacionRepository);
         assertNotNull(transactionManager);
+        assertEquals(0, context.getBeansOfType(VencimientoCotizacionesTarea.class).size());
     }
 }

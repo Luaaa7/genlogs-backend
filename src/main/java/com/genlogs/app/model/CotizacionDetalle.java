@@ -4,6 +4,8 @@ import java.math.BigDecimal;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -17,6 +19,8 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+
+import com.genlogs.app.enums.OrigenRepuesto;
 
 @Entity
 @Table(name = "cotizacion_detalle")
@@ -60,4 +64,9 @@ public class CotizacionDetalle extends Auditable {
     
     @Column(name = "importe_linea", insertable = false, updatable = false)
     private BigDecimal importeLinea;
+
+    /** v3_2.sql: VARCHAR(10), nulo. El valor guardado es NACIONAL o IMPORTADO. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "origen", length = 10)
+    private OrigenRepuesto origen;
 }
