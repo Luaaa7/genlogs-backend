@@ -2,6 +2,7 @@ package com.genlogs.app.repository;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -18,6 +19,16 @@ public interface FacturacionRepository extends JpaRepository<Facturacion, Long> 
 
     /** true si la orden tiene algún comprobante que no esté anulado. */
     boolean existsByOrdenCompra_IdOrdenCompraAndEstadoFacturacion_CodigoEstadoNot(Long idOrdenCompra, String codigoEstado);
+
+    /** Activas con vencimiento anterior a hoy y estado abierto (EMITIDA o PARCIAL). */
+    @Query("""
+            SELECT f FROM Facturacion f
+             WHERE f.status = 'A'
+               AND f.fechaVencimiento < :hoy
+               AND f.estadoFacturacion.codigoEstado IN :estados
+             ORDER BY f.fechaVencimiento ASC, f.idFacturacion ASC
+            """)
+    List<Facturacion> vencidas(@Param("hoy") LocalDate hoy, @Param("estados") Collection<String> estados);
 
     /** Números ya usados en una serie, para dar el siguiente correlativo al emitir. */
     @Query("SELECT f.numeroComprobante FROM Facturacion f WHERE f.serieComprobante = :serie")

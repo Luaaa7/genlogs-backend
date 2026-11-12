@@ -6,7 +6,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -64,13 +63,8 @@ class SourcingSeguridadTest {
                 .andExpect(status().isForbidden());
     }
 
-    /**
-     * Hoy ASISTENTE_LOGISTICO no está en ROLES_INTERNOS de SecurityConfig y el filtro
-     * lo corta con 403. Lo agrega Karla en feat/be-a-security-config (Ola 1).
-     * Cuando ese PR entre a release/v3.0, quita el @Disabled.
-     */
+    /** ASISTENTE_LOGISTICO pasa el filtro de URL desde feat/be-a-security-config (ROLES_INTERNOS v3.2). */
     @Test
-    @Disabled("Activar cuando feat/be-a-security-config agregue ASISTENTE_LOGISTICO a ROLES_INTERNOS")
     void asistenteLogisticoBuscaYSinFuentesSugierePegarUrl() throws Exception {
         mockMvc.perform(post(BUSCAR).with(user("asistente").roles("ASISTENTE_LOGISTICO"))
                         .contentType(MediaType.APPLICATION_JSON).content(CUERPO))
@@ -80,7 +74,6 @@ class SourcingSeguridadTest {
     }
 
     @Test
-    @Disabled("Activar cuando feat/be-a-security-config agregue ASISTENTE_LOGISTICO a ROLES_INTERNOS")
     void numeroParteVacioResponde400() throws Exception {
         mockMvc.perform(post(BUSCAR).with(user("asistente").roles("ASISTENTE_LOGISTICO"))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"numeroParte\":\"\"}"))
