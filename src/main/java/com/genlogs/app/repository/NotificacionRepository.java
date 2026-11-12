@@ -1,5 +1,6 @@
 package com.genlogs.app.repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -20,6 +21,10 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Long
     long countByIdUsuarioAndLeidaFalse(Long idUsuario);
 
     Optional<Notificacion> findByIdNotificacionAndIdUsuario(Long idNotificacion, Long idUsuario);
+
+    /** true si esa factura ya se avisó en el día (desde inclusive, hasta exclusive). */
+    boolean existsByTipoAndEnlaceAndFechaCreacionGreaterThanEqualAndFechaCreacionLessThan(
+            String tipo, String enlace, LocalDateTime desde, LocalDateTime hasta);
 
     /**
      * Usuarios activos y no bloqueados de un rol. Va aqui (solo lectura) para no

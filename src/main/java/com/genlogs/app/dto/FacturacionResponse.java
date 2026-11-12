@@ -15,6 +15,8 @@ public class FacturacionResponse {
     /** id del cliente de la cotización de origen (para enlazar a su ficha). */
     private Long clienteId;
     private String numeroOrdenCompra;
+    /** N.º de OC de la minera. Null si la orden no lo tiene. */
+    private String numeroOcCliente;
     private String numeroComprobante;
     private String codigoComprobante;
     private String cliente;

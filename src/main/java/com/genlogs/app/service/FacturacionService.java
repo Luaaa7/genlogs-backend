@@ -782,6 +782,7 @@ public class FacturacionService {
                 .idFacturacion(f.getIdFacturacion())
                 .idOrdenCompra(f.getOrdenCompra() != null ? f.getOrdenCompra().getIdOrdenCompra() : null)
                 .numeroOrdenCompra(f.getOrdenCompra() != null ? f.getOrdenCompra().getNumeroOrdenCompra() : null)
+                .numeroOcCliente(numeroOcCliente(f))
                 .numeroComprobante(f.getSerieComprobante() + "-" + f.getNumeroComprobante())
                 .codigoComprobante(f.getSerieComprobante() + "-" + f.getNumeroComprobante())
                 .cliente(clienteNombre)
@@ -803,6 +804,14 @@ public class FacturacionService {
                 .sunatMensaje(f.getSunatMensaje())
                 .clienteEmail(terceroDe(f) != null ? terceroDe(f).getCorreo() : null)
                 .build();
+    }
+
+    private static String numeroOcCliente(Facturacion f) {
+        if (f.getOrdenCompra() == null) {
+            return null;
+        }
+        String numero = f.getOrdenCompra().getNumeroOcCliente();
+        return numero == null || numero.isBlank() ? null : numero;
     }
 
     private DetalleFacturacionResponse toDetalleResponse(DetalleFacturacion d) {
