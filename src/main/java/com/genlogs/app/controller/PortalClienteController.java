@@ -15,9 +15,12 @@ import org.springframework.web.bind.annotation.RestController;
 import com.genlogs.app.dto.CancelarPedidoRequest;
 import com.genlogs.app.dto.CrearSolicitudRequest;
 import com.genlogs.app.dto.CrearSolicitudResponse;
+import com.genlogs.app.dto.IngresoClienteRequest;
+import com.genlogs.app.dto.IngresoClienteResponse;
 import com.genlogs.app.dto.PedidoResponse;
 import com.genlogs.app.dto.RegistroClienteRequest;
 import com.genlogs.app.dto.RegistroClienteResponse;
+import com.genlogs.app.service.AuthService;
 import com.genlogs.app.service.PortalClienteService;
 
 import jakarta.validation.Valid;
@@ -29,11 +32,18 @@ import lombok.RequiredArgsConstructor;
 public class PortalClienteController {
 
     private final PortalClienteService portalClienteService;
+    private final AuthService authService;
 
-    /** Público. No devuelve token: el usuario queda pendiente de activación. */
+    /** Público. Acceso inmediato (D-10): devuelve el token del cliente. */
     @PostMapping("/registro")
     public ResponseEntity<RegistroClienteResponse> registrar(@Valid @RequestBody RegistroClienteRequest request) {
         return ResponseEntity.ok(portalClienteService.registrar(request));
+    }
+
+    /** Público. Ingreso del cliente con correo y contraseña, separado del login interno. */
+    @PostMapping("/login")
+    public ResponseEntity<IngresoClienteResponse> login(@Valid @RequestBody IngresoClienteRequest request) {
+        return ResponseEntity.ok(authService.loginCliente(request));
     }
 
     @GetMapping("/pedidos")

@@ -94,8 +94,8 @@ public class SecurityConfig {
                 .requestMatchers("/", "/health", "/api/health", "/api/health/db").permitAll()
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers("/api/public/**").permitAll()
-                // El alta del portal no lleva token. Va antes que /api/portal/** para no pedir rol CLIENTE.
-                .requestMatchers(HttpMethod.POST, "/api/portal/registro").permitAll()
+                // El alta y el ingreso del portal no llevan token. Van antes que /api/portal/** para no pedir rol CLIENTE.
+                .requestMatchers(HttpMethod.POST, "/api/portal/registro", "/api/portal/login").permitAll()
                 // Público SOLO para consultar los catálogos (combos). Crear/editar/borrar exige rol interno.
                 // /api/empresas-mineras/** ya no es público: cae en la regla interna (sin token -> 401).
                 .requestMatchers(HttpMethod.GET, "/api/catalogos/**").permitAll()

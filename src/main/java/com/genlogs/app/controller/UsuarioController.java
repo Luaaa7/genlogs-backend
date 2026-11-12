@@ -65,4 +65,18 @@ public class UsuarioController {
         usuarioService.desactivar(id);
         return ResponseEntity.noContent().build();
     }
+
+    /** Accesos del portal que esperan activación (empresa que ya era cliente). */
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
+    @GetMapping("/pendientes-portal")
+    public ResponseEntity<List<UsuarioResponse>> pendientesPortal() {
+        return ResponseEntity.ok(usuarioService.listarPendientesPortal());
+    }
+
+    /** El Jefe Administrativo activa un acceso pendiente del portal. ADMINISTRADOR es transitorio (v3_0_roles.sql). */
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
+    @PatchMapping("/{id}/activar")
+    public ResponseEntity<UsuarioResponse> activar(@PathVariable Long id) {
+        return ResponseEntity.ok(usuarioService.activarPendientePortal(id));
+    }
 }

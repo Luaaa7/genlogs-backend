@@ -10,10 +10,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.access.AccessDeniedException;
@@ -25,6 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.genlogs.app.dto.CoberturaPublicaResponse;
+import com.genlogs.app.dto.ConsultaDocumentoResponse;
 import com.genlogs.app.dto.CrearSolicitudRequest;
 import com.genlogs.app.dto.CrearSolicitudResponse;
 import com.genlogs.app.dto.PedidoItemResponse;
@@ -33,23 +34,35 @@ import com.genlogs.app.dto.ProductoPublicoResponse;
 import com.genlogs.app.dto.RegistroClienteRequest;
 import com.genlogs.app.dto.RegistroClienteResponse;
 import com.genlogs.app.enums.EstadoSolicitud;
+import com.genlogs.app.enums.RolSistema;
+import com.genlogs.app.enums.TipoAviso;
 import com.genlogs.app.enums.TipoEventoSolicitud;
+import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.EstadoNoPermitidoException;
 import com.genlogs.app.exception.ResourceNotFoundException;
+import com.genlogs.app.model.Auditable;
 import com.genlogs.app.model.Cliente;
+import com.genlogs.app.model.Distrito;
 import com.genlogs.app.model.EmpresaMinera;
 import com.genlogs.app.model.Producto;
 import com.genlogs.app.model.ProductoImagen;
 import com.genlogs.app.model.Rol;
+import com.genlogs.app.model.SectorEconomico;
 import com.genlogs.app.model.SolicitudCotizacion;
 import com.genlogs.app.model.SolicitudItem;
+import com.genlogs.app.model.Tercero;
+import com.genlogs.app.model.TipoDocumento;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.ClienteRepository;
+import com.genlogs.app.repository.DistritoRepository;
 import com.genlogs.app.repository.EmpresaMineraRepository;
 import com.genlogs.app.repository.ProductoImagenRepository;
 import com.genlogs.app.repository.ProductoRepository;
 import com.genlogs.app.repository.RolRepository;
+import com.genlogs.app.repository.SectorEconomicoRepository;
 import com.genlogs.app.repository.SolicitudCotizacionRepository;
+import com.genlogs.app.repository.TerceroRepository;
+import com.genlogs.app.repository.TipoDocumentoRepository;
 import com.genlogs.app.repository.UsuarioRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -63,6 +76,11 @@ public class PortalClienteService {
     private static final String ROL_CLIENTE = "CLIENTE";
     private static final String ESTADO_INICIAL = "PENDIENTE";
     private static final int MAX_NOMBRE_USUARIO = 50;
+    /** RUC de empresa (20) o de persona con negocio (10), igual que FactilizaService. */
+    private static final Pattern RUC_VALIDO = Pattern.compile("^(10|20)\\d{9}$");
+    private static final String SECTOR_CAPTACION = "MINERIA";
+    /** Marca del usuario que pidió acceso a una empresa que ya es cliente (lo usa UsuarioService.activar). */
+    public static final String PROCESO_PENDIENTE = "REGISTRO_PORTAL_PENDIENTE";
     private static final java.util.Set<String> ESTADOS_CANCELABLES = java.util.Set.of(
             EstadoSolicitud.PENDIENTE.name(), EstadoSolicitud.EN_REVISION.name());
 
@@ -76,6 +94,13 @@ public class PortalClienteService {
     private final PasswordEncoder passwordEncoder;
     private final LimitadorRegistroPortal limitadorRegistro;
     private final BitacoraSolicitud bitacora;
+    private final AuthService authService;
+    private final FactilizaService factilizaService;
+    private final TerceroRepository terceroRepository;
+    private final TipoDocumentoRepository tipoDocumentoRepository;
+    private final DistritoRepository distritoRepository;
+    private final SectorEconomicoRepository sectorEconomicoRepository;
+    private final NotificacionService notificacionService;
 
     @Transactional(readOnly = true)
     public List<ProductoPublicoResponse> catalogo() {
@@ -124,64 +149,171 @@ public class PortalClienteService {
     }
 
     /**
-     * Siempre la misma respuesta. El usuario, si se crea, queda inactivo y sin token.
-     * La contraseña se hashea aunque el documento no corresponda a un cliente.
+     * Registro del portal (D-10). El acceso inmediato es solo para la empresa nueva:
+     * <ul>
+     *   <li>Si el RUC no es cliente, se valida en Factiliza, se da de alta la empresa
+     *       (captación de mineras, proceso 3) y el usuario nace activo con su token,
+     *       así sigue sin esperar (y la landing envía su pedido guardado, D-30).</li>
+     *   <li>Si el RUC ya es cliente, el usuario nuevo queda PENDIENTE (status 'I', sin
+     *       token) hasta que lo active el Jefe Administrativo. El RUC es público y el
+     *       portal muestra los pedidos, precios y despachos de la empresa y deja aprobar
+     *       cotizaciones: nadie debe entrar a eso solo por conocer el RUC. Se avisa al
+     *       Jefe Administrativo y, por correo, a los usuarios activos de la empresa.</li>
+     * </ul>
      */
+    @Transactional
     public RegistroClienteResponse registrar(RegistroClienteRequest request) {
-        String documento = soloDigitos(request.getDocumento());
+        String ruc = soloDigitos(request.getDocumento());
         String correo = request.getCorreo().trim();
-        limitadorRegistro.verificar(documento, correo);
-        String hash = passwordEncoder.encode(request.getPassword());
+        limitadorRegistro.verificar(ruc, correo);
 
-        try {
-            crearSiCorresponde(request, documento, correo, hash);
-        } catch (DataIntegrityViolationException ex) {
-            log.info("Registro de portal no aplicado por un dato ya existente");
+        if (!RUC_VALIDO.matcher(ruc).matches()) {
+            throw new BusinessException("Ingresa un RUC válido de 11 dígitos (empieza con 10 o 20).");
         }
-        return RegistroClienteResponse.pendiente();
-    }
+        if (usuarioRepository.existsByCorreoIgnoreCase(correo)) {
+            throw new BusinessException("Ese correo ya tiene una cuenta. Ingresa al portal con tu correo y contraseña.");
+        }
+        Rol rol = rolRepository.findByNombreRolIgnoreCase(ROL_CLIENTE).orElseThrow(() -> {
+            log.error("Registro de portal rechazado: no existe el rol CLIENTE. Ejecuta la migración.");
+            return new BusinessException("El registro no está disponible en este momento. Inténtalo más tarde.");
+        });
 
-    private void crearSiCorresponde(RegistroClienteRequest request, String documento, String correo, String hash) {
-        if (documento.length() < 8 || documento.length() > 11) {
-            log.debug("Registro de portal omitido: documento fuera de rango");
-            return;
-        }
-        Cliente cliente = clienteRepository.findByNumeroDocumento(documento).orElse(null);
-        if (cliente == null || !"ACTIVO".equals(cliente.getSituacion())) {
-            log.debug("Registro de portal omitido: sin cliente activo para el documento");
-            return;
-        }
-        if (usuarioRepository.existsByCliente_IdCliente(cliente.getIdCliente())
-                || usuarioRepository.existsByCorreoIgnoreCase(correo)) {
-            log.debug("Registro de portal omitido: el cliente o el correo ya tienen usuario");
-            return;
-        }
-        Rol rol = rolRepository.findByNombreRolIgnoreCase(ROL_CLIENTE).orElse(null);
-        if (rol == null) {
-            log.error("Registro de portal omitido: no existe el rol CLIENTE. Ejecuta la migración.");
-            return;
+        Cliente existente = clienteRepository.findByNumeroDocumento(ruc).orElse(null);
+        boolean empresaNueva = existente == null;
+        Cliente cliente = empresaNueva ? altaClienteDesdeRuc(ruc, request) : existente;
+        if (!"ACTIVO".equals(cliente.getSituacion())) {
+            throw new BusinessException("Tu empresa no tiene el acceso al portal habilitado. Escríbenos para ayudarte.");
         }
 
+        String nombreUsuario = nombreUsuarioDisponible(correo);
+        if (nombreUsuario == null) {
+            throw new BusinessException("No pudimos crear tu usuario. Inténtalo de nuevo en unos minutos.");
+        }
         Usuario usuario = new Usuario();
         usuario.setRol(rol);
         usuario.setCliente(cliente);
-        String nombreUsuario = nombreUsuarioDisponible(correo);
-        if (nombreUsuario == null) {
-            log.info("Registro de portal omitido: no quedó un nombre de usuario libre");
-            return;
-        }
         usuario.setNombreUsuario(nombreUsuario);
         usuario.setNombres(request.getNombreContacto().trim());
         usuario.setCorreo(correo);
         usuario.setIniciales(iniciales(request.getNombreContacto(), request.getRazonSocial()));
-        usuario.setPasswordHash(hash);
+        usuario.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         usuario.setBloqueado(false);
         usuario.setIntentosFallidos((short) 0);
-        usuario.setStatus("I");
+        // Empresa que ya es cliente: queda pendiente (status 'I') hasta que la active el Jefe Administrativo.
+        usuario.setStatus(empresaNueva ? "A" : "I");
         usuario.setUserCreate("portal");
-        usuario.setProcessCreate("REGISTRO_PORTAL");
+        usuario.setProcessCreate(empresaNueva ? "REGISTRO_PORTAL" : PROCESO_PENDIENTE);
         usuario.setDateCreate(LocalDateTime.now());
         usuarioRepository.saveAndFlush(usuario);
+
+        if (!empresaNueva) {
+            avisarAccesoPendiente(cliente, usuario);
+            return RegistroClienteResponse.pendiente(usuario.getNombres());
+        }
+        return RegistroClienteResponse.conAcceso(authService.emitirToken(usuario), usuario.getNombres(), nombreUsuario);
+    }
+
+    /**
+     * Aviso de un acceso pendiente: en la campanita del Jefe Administrativo (que lo
+     * activa desde Usuarios) y por correo a los usuarios activos de la empresa, para
+     * que sepan si alguien que no conocen pidió entrar con su RUC. Si el aviso falla,
+     * el registro sigue: el usuario ya quedó pendiente y no ve nada.
+     */
+    private void avisarAccesoPendiente(Cliente cliente, Usuario nuevo) {
+        String empresa = cliente.getTercero().getRazonSocial();
+        String ruc = cliente.getTercero().getNumeroDocumento();
+        try {
+            notificacionService.avisarRol(RolSistema.JEFE_ADMINISTRATIVO, TipoAviso.ACCESO_PORTAL_PENDIENTE,
+                    "Acceso al portal pendiente",
+                    nuevo.getNombres() + " (" + nuevo.getCorreo() + ") pidió acceso al portal para "
+                            + empresa + " (RUC " + ruc + "). Revísalo y actívalo en Usuarios si corresponde.",
+                    "/usuarios", false);
+            for (Usuario colega : usuarioRepository.findByCliente_IdClienteAndStatus(cliente.getIdCliente(), "A")) {
+                notificacionService.enviarCorreoCliente(colega.getCorreo(), colega.getNombres(),
+                        "Pidieron acceso al portal de GENLOGS para " + empresa,
+                        nuevo.getNombres() + " (" + nuevo.getCorreo() + ") pidió acceso al portal de GENLOGS para "
+                                + empresa + ". No tendrá acceso hasta que GENLOGS lo revise. "
+                                + "Si no reconoces a esta persona, respóndenos para bloquear la solicitud.");
+            }
+        } catch (RuntimeException ex) {
+            log.warn("No se pudo avisar el acceso pendiente del usuario {}: {}", nuevo.getIdUsuario(), ex.getMessage());
+        }
+    }
+
+    /**
+     * Empresa nueva: el RUC se valida en Factiliza y con esos datos se crea el
+     * tercero y el cliente. Sin domicilio fiscal ubicable en el catálogo no se
+     * puede crear el tercero (tercero.id_distrito), así que se pide contacto.
+     */
+    private Cliente altaClienteDesdeRuc(String ruc, RegistroClienteRequest request) {
+        ConsultaDocumentoResponse datos;
+        try {
+            datos = factilizaService.consultarPorNumero(ruc);
+        } catch (BusinessException ex) {
+            log.info("Registro de portal rechazado: no se pudo validar el RUC {} ({})", ruc, ex.getMessage());
+            throw new BusinessException("No pudimos validar tu RUC en SUNAT. Revisa el número o escríbenos para ayudarte.");
+        }
+        if (datos.getIdDistrito() == null) {
+            log.info("Registro de portal rechazado: el RUC {} no tiene un distrito del catálogo", ruc);
+            throw new BusinessException("No pudimos ubicar el domicilio fiscal de tu RUC. Escríbenos y te damos acceso.");
+        }
+        TipoDocumento tipoRuc = tipoDocumentoRepository.findByCodigoTipo("RUC")
+                .orElseThrow(() -> new BusinessException("El registro no está disponible en este momento. Inténtalo más tarde."));
+        Distrito distrito = distritoRepository.findById(datos.getIdDistrito())
+                .orElseThrow(() -> new BusinessException("No pudimos ubicar el domicilio fiscal de tu RUC. Escríbenos y te damos acceso."));
+
+        // En modo simulado (sin llave de Factiliza) la razón social de prueba no sirve: se usa la escrita.
+        String razonSocial = datos.isSimulado() || datos.getRazonSocial() == null || datos.getRazonSocial().isBlank()
+                ? request.getRazonSocial().trim()
+                : datos.getRazonSocial().trim();
+
+        Tercero tercero = new Tercero();
+        tercero.setTipoDocumento(tipoRuc);
+        tercero.setNumeroDocumento(ruc);
+        tercero.setRazonSocial(recortar(razonSocial, 200));
+        tercero.setDistrito(distrito);
+        tercero.setDireccion(recortar(datos.getDireccion(), 255));
+        tercero.setTelefono(vacioComoNull(request.getTelefono()));
+        tercero.setCorreo(request.getCorreo().trim());
+        auditarAlta(tercero);
+        tercero = terceroRepository.save(tercero);
+
+        Cliente cliente = new Cliente();
+        cliente.setTercero(tercero);
+        cliente.setSectorEconomico(sectorDeCaptacion());
+        cliente.setSituacion("ACTIVO");
+        auditarAlta(cliente);
+        log.info("Cliente nuevo desde el registro del portal: RUC {}", ruc);
+        return clienteRepository.save(cliente);
+    }
+
+    /** Las empresas que se registran solas entran al sector "Minería"; el Jefe Administrativo lo corrige si hace falta. */
+    private SectorEconomico sectorDeCaptacion() {
+        return sectorEconomicoRepository.findByStatus("A").stream()
+                .filter(s -> SECTOR_CAPTACION.equalsIgnoreCase(sinTildes(s.getNombreSector()).trim()))
+                .findFirst()
+                .orElseGet(() -> {
+                    SectorEconomico sector = new SectorEconomico();
+                    sector.setNombreSector("Minería");
+                    sector.setDescripcion("Creado por el registro del portal");
+                    auditarAlta(sector);
+                    return sectorEconomicoRepository.save(sector);
+                });
+    }
+
+    private void auditarAlta(Auditable entidad) {
+        entidad.setStatus("A");
+        entidad.setUserCreate("portal");
+        entidad.setProcessCreate("REGISTRO_PORTAL");
+        entidad.setDateCreate(LocalDateTime.now());
+    }
+
+    private static String recortar(String valor, int maximo) {
+        if (valor == null || valor.isBlank()) {
+            return null;
+        }
+        String v = valor.trim();
+        return v.length() > maximo ? v.substring(0, maximo) : v;
     }
 
     @Transactional(readOnly = true)

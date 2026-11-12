@@ -15,9 +15,17 @@ public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
     @EntityGraph(attributePaths = "cliente")
     Optional<Usuario> findWithClienteByNombreUsuario(String nombreUsuario);
 
-    boolean existsByCliente_IdCliente(Long idCliente);
+    /** Ingreso del cliente al portal: se busca por correo (único) con su rol. */
+    @EntityGraph(attributePaths = "rol")
+    Optional<Usuario> findWithRolByCorreoIgnoreCase(String correo);
 
     boolean existsByCorreoIgnoreCase(String correo);
+
+    /** Accesos del portal pendientes de activación (status 'I' y process_create de registro pendiente). */
+    List<Usuario> findByStatusAndProcessCreate(String status, String processCreate);
+
+    /** Usuarios del portal de una empresa (para avisarles si alguien pide acceso con su RUC). */
+    List<Usuario> findByCliente_IdClienteAndStatus(Long idCliente, String status);
 
     Optional<Usuario> findByCorreoIgnoreCaseAndStatus(String correo, String status);
 

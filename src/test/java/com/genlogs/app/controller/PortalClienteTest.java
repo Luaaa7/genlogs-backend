@@ -9,6 +9,12 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.hamcrest.Matchers.hasItem;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -29,9 +35,16 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.genlogs.app.dto.ConsultaDocumentoResponse;
+import com.genlogs.app.enums.RolSistema;
+import com.genlogs.app.enums.TipoAviso;
+import com.genlogs.app.exception.BusinessException;
+import com.genlogs.app.service.FactilizaService;
+import com.genlogs.app.service.NotificacionService;
 import com.genlogs.app.model.Auditable;
 import com.genlogs.app.model.CategoriaProducto;
 import com.genlogs.app.model.Cliente;
@@ -76,7 +89,7 @@ class PortalClienteTest {
 
     private static final AtomicInteger SECUENCIA = new AtomicInteger(200);
     private static final String MENSAJE_REGISTRO =
-            "Registro recibido. Ya puedes ingresar cuando tu acceso sea habilitado.";
+            "Registro completado. Ya puedes usar el portal.";
 
     private static final Pattern INICIALES = Pattern.compile("^[A-Z]{2,3}$");
 
@@ -100,6 +113,10 @@ class PortalClienteTest {
     @Autowired private EmpresaMineraRepository empresaMineraRepository;
     @Autowired private EtapaComercialMineraRepository etapaComercialMineraRepository;
     @Autowired private TipoOperacionMineraRepository tipoOperacionMineraRepository;
+    /** El alta de una minera nueva consulta el RUC en Factiliza; en las pruebas se simula. */
+    @MockitoBean private FactilizaService factilizaService;
+    /** Para verificar los avisos del acceso pendiente sin mandar correos. */
+    @MockitoBean private NotificacionService notificacionService;
 
     @Test
     void catalogoYCoberturaSonPublicosYNoTraenDatosInternos() throws Exception {
@@ -170,13 +187,19 @@ class PortalClienteTest {
                 .andExpect(jsonPath("$[?(@.descripcion == 'NOTA INTERNA DE COSTO')]").isEmpty());
     }
 
+    /**
+     * Revisión de seguridad (Nicole): con solo el RUC, que es público, nadie entra a los pedidos,
+     * precios y aprobaciones de una empresa que ya es cliente. El usuario nuevo queda pendiente,
+     * se avisa al Jefe Administrativo y a los usuarios de la empresa, y entra solo cuando el Jefe lo activa.
+     */
     @Test
-    void registroCreaClienteInactivoSinTokenYNoRevelaSiElDocumentoExiste() throws Exception {
+    void registroEnEmpresaQueYaEsClienteQuedaPendienteHastaQueElJefeLoActive() throws Exception {
         int n = SECUENCIA.incrementAndGet();
         String documento = "2055" + String.format("%07d", n);
         Distrito distrito = ubigeo("Lima", "Lima", "Miraflores", n);
         Cliente cliente = cliente(distrito, documento, "Cliente Portal " + n, "Comercio " + n);
-        rolCliente();
+        Rol rol = rolCliente();
+        usuarioPortal("titular." + n, "titular" + n + "@portal.pe", cliente, rol);
         String cuerpo = """
                 {"razonSocial":"Otra razon","documento":"%s","nombreContacto":"Ana Ruiz",
                  "correo":"ana%s@portal.pe","telefono":"999","password":"clave1234"}
@@ -184,32 +207,174 @@ class PortalClienteTest {
 
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.mensaje").value(MENSAJE_REGISTRO))
-                .andExpect(jsonPath("$.token").doesNotExist());
+                .andExpect(jsonPath("$.mensaje").value(containsString("pendiente")))
+                .andExpect(jsonPath("$.token").doesNotExist())
+                .andExpect(jsonPath("$.nombre").value("Ana Ruiz"));
 
         Usuario creado = usuarioRepository.findByCorreoIgnoreCaseAndStatus("ana" + n + "@portal.pe", "I").orElseThrow();
         assertEquals("CLIENTE", creado.getRol().getNombreRol());
         assertEquals(cliente.getIdCliente(), creado.getCliente().getIdCliente());
-        assertEquals("I", creado.getStatus());
         assertTrue(passwordEncoder.matches("clave1234", creado.getPasswordHash()));
         assertNotEquals("clave1234", creado.getPasswordHash());
-        assertEquals("Cliente Portal " + n, cliente.getTercero().getRazonSocial());
 
-        String desconocido = """
-                {"razonSocial":"Nadie","documento":"20999999999","nombreContacto":"Nadie",
-                 "correo":"nadie%s@portal.pe","password":"clave1234"}
-                """.formatted(n);
-        mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(desconocido))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.mensaje").value(MENSAJE_REGISTRO))
+        // Aviso al Jefe Administrativo (campanita) y correo al usuario que ya tenía la empresa.
+        verify(notificacionService).avisarRol(eq(RolSistema.JEFE_ADMINISTRATIVO), eq(TipoAviso.ACCESO_PORTAL_PENDIENTE),
+                anyString(), contains("ana" + n + "@portal.pe"), eq("/usuarios"), eq(false));
+        verify(notificacionService).enviarCorreoCliente(eq("titular" + n + "@portal.pe"), anyString(), anyString(),
+                contains("ana" + n + "@portal.pe"));
+
+        // Pendiente: no puede entrar al portal.
+        mockMvc.perform(post("/api/portal/login").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"correo\":\"ana" + n + "@portal.pe\",\"password\":\"clave1234\"}"))
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.token").doesNotExist());
-        assertFalse(usuarioRepository.existsByCorreoIgnoreCase("nadie" + n + "@portal.pe"));
 
+        // Un segundo usuario de la misma empresa también queda pendiente (varios usuarios por empresa).
+        String segundo = """
+                {"razonSocial":"Otra razon","documento":"%s","nombreContacto":"Beto Paz",
+                 "correo":"beto%s@portal.pe","password":"clave1234"}
+                """.formatted(documento, n);
+        mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(segundo))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").doesNotExist());
+        Usuario otro = usuarioRepository.findByCorreoIgnoreCaseAndStatus("beto" + n + "@portal.pe", "I").orElseThrow();
+        assertEquals(cliente.getIdCliente(), otro.getCliente().getIdCliente());
+
+        // El Jefe Administrativo lo ve en pendientes y lo activa; el cliente no puede activarse solo.
+        mockMvc.perform(get("/api/usuarios/pendientes-portal").with(user("jefe." + n).roles("JEFE_ADMINISTRATIVO")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idUsuario == " + creado.getIdUsuario() + ")]").isNotEmpty());
+        mockMvc.perform(patch("/api/usuarios/" + creado.getIdUsuario() + "/activar").with(user("ana").roles("CLIENTE")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(patch("/api/usuarios/" + creado.getIdUsuario() + "/activar").with(user("jefe." + n).roles("JEFE_ADMINISTRATIVO")))
+                .andExpect(status().isOk());
+        assertEquals("A", usuarioRepository.findById(creado.getIdUsuario()).orElseThrow().getStatus().trim());
+
+        // Ya activo, entra con su correo.
+        mockMvc.perform(post("/api/portal/login").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"correo\":\"ana" + n + "@portal.pe\",\"password\":\"clave1234\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").isNotEmpty());
+
+        // Un usuario dado de baja (no pendiente) no se reactiva por aquí.
+        mockMvc.perform(patch("/api/usuarios/" + creado.getIdUsuario() + "/activar").with(user("jefe." + n).roles("JEFE_ADMINISTRATIVO")))
+                .andExpect(status().isNotFound());
+
+        // El mismo correo no se registra dos veces.
         long antes = usuarioRepository.count();
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.mensaje").value(MENSAJE_REGISTRO));
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(containsString("ya tiene una cuenta")));
         assertEquals(antes, usuarioRepository.count());
+    }
+
+    @Test
+    void registroDeUnaMineraNuevaValidaElRucYCreaElCliente() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        String ruc = "2071" + String.format("%07d", n);
+        Distrito distrito = ubigeo("Ica", "Nasca", "Nasca", n);
+        rolCliente();
+        tipoRuc();
+        when(factilizaService.consultarPorNumero(ruc)).thenReturn(ConsultaDocumentoResponse.builder()
+                .numeroDocumento(ruc)
+                .tipoDocumento("RUC")
+                .razonSocial("MINERA NUEVA S.A.C.")
+                .direccion("Av. Principal 123")
+                .idDistrito(distrito.getIdDistrito())
+                .origen("FACTILIZA")
+                .simulado(false)
+                .build());
+        String cuerpo = """
+                {"razonSocial":"Minera Nueva","documento":"%s","nombreContacto":"Carla Soto",
+                 "correo":"carla%s@nueva.pe","password":"clave1234"}
+                """.formatted(ruc, n);
+
+        mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").isNotEmpty());
+
+        Cliente nuevo = clienteRepository.findByNumeroDocumento(ruc).orElseThrow();
+        assertEquals("MINERA NUEVA S.A.C.", nuevo.getTercero().getRazonSocial());
+        assertEquals("ACTIVO", nuevo.getSituacion());
+        assertEquals("Minería", nuevo.getSectorEconomico().getNombreSector());
+        Usuario creado = usuarioRepository.findByCorreoIgnoreCaseAndStatus("carla" + n + "@nueva.pe", "A").orElseThrow();
+        assertEquals(nuevo.getIdCliente(), creado.getCliente().getIdCliente());
+    }
+
+    @Test
+    void registroRechazaRucInvalidoONoValidadoSinCrearNada() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        rolCliente();
+        String rucMalo = """
+                {"razonSocial":"Nadie","documento":"12345678","nombreContacto":"Nadie",
+                 "correo":"nadie%s@portal.pe","password":"clave1234"}
+                """.formatted(n);
+        mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(rucMalo))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.token").doesNotExist());
+
+        String ruc = "2099" + String.format("%07d", n);
+        when(factilizaService.consultarPorNumero(ruc)).thenThrow(new BusinessException("Factiliza no encontró datos"));
+        String sinSunat = """
+                {"razonSocial":"Nadie","documento":"%s","nombreContacto":"Nadie",
+                 "correo":"nadie%s@portal.pe","password":"clave1234"}
+                """.formatted(ruc, n);
+        mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(sinSunat))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(containsString("RUC")));
+
+        assertFalse(usuarioRepository.existsByCorreoIgnoreCase("nadie" + n + "@portal.pe"));
+        assertTrue(clienteRepository.findByNumeroDocumento(ruc).isEmpty());
+    }
+
+    @Test
+    void ingresoDelClienteConCorreoDaTokenDelPortal() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        Distrito distrito = ubigeo("Junin", "Huancayo", "El Tambo", n);
+        Cliente cliente = cliente(distrito, "2072" + String.format("%07d", n), "Ingreso " + n, "Ingreso " + n);
+        usuarioPortal("ingreso." + n, "Ingreso" + n + "@Portal.pe", cliente, rolCliente());
+
+        String respuesta = mockMvc.perform(post("/api/portal/login").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"correo\":\"ingreso" + n + "@portal.pe\",\"password\":\"clave1234\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nombreRol").value("CLIENTE"))
+                .andExpect(jsonPath("$.nombreUsuario").value("ingreso." + n))
+                .andReturn().getResponse().getContentAsString();
+        String token = new ObjectMapper().readTree(respuesta).get("token").asText();
+
+        // El token sirve en el portal (pasa por el filtro JWT real).
+        mockMvc.perform(get("/api/portal/pedidos").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/portal/login").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"correo\":\"ingreso" + n + "@portal.pe\",\"password\":\"otra-clave\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.token").doesNotExist());
+    }
+
+    @Test
+    void ingresoDelPortalRechazaAlPersonalInterno() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        Rol jefe = rolRepository.findByNombreRolIgnoreCase("JEFE_ADMINISTRATIVO")
+                .orElseGet(() -> rolRepository.save(auditar(new Rol(), e -> {
+                    e.setNombreRol("JEFE_ADMINISTRATIVO");
+                    e.setDescripcion("Interno");
+                })));
+        usuarioRepository.save(auditar(new Usuario(), e -> {
+            e.setRol(jefe);
+            e.setNombreUsuario("jefe." + n);
+            e.setNombres("Jefe Interno");
+            e.setCorreo("jefe" + n + "@genlogs.pe");
+            e.setPasswordHash(passwordEncoder.encode("clave1234"));
+            e.setIniciales("JI");
+            e.setBloqueado(false);
+            e.setIntentosFallidos((short) 0);
+        }));
+
+        mockMvc.perform(post("/api/portal/login").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"correo\":\"jefe" + n + "@genlogs.pe\",\"password\":\"clave1234\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.token").doesNotExist());
     }
 
     @Test
@@ -242,13 +407,13 @@ class PortalClienteTest {
         assertNotEquals(local, creado.getNombreUsuario());
         assertEquals("Ana", creado.getNombres());
         assertEquals("portal", creado.getUserCreate());
-        assertEquals("REGISTRO_PORTAL", creado.getProcessCreate());
+        assertEquals("REGISTRO_PORTAL_PENDIENTE", creado.getProcessCreate());
         assertEquals("I", creado.getStatus().trim());
         assertNotEquals("clave1234", creado.getPasswordHash());
 
         long antes = usuarioRepository.count();
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
-                .andExpect(status().isOk());
+                .andExpect(status().isBadRequest());
         assertEquals(antes, usuarioRepository.count());
     }
 
@@ -455,6 +620,18 @@ class PortalClienteTest {
             e.setIntentosFallidos((short) 0);
             e.setStatus("A");
         }));
+    }
+
+    private TipoDocumento tipoRuc() {
+        return tipoDocumentoRepository.findAll().stream()
+                .filter(t -> "RUC".equals(t.getCodigoTipo()))
+                .findFirst()
+                .orElseGet(() -> tipoDocumentoRepository.save(auditar(new TipoDocumento(), e -> {
+                    e.setCodigoTipo("RUC");
+                    e.setNombreTipo("RUC");
+                    e.setLongitudDocumento((short) 11);
+                    e.setSoloNumerico(true);
+                })));
     }
 
     private Cliente cliente(Distrito distrito, String documento, String razonSocial, String sectorNombre) {
