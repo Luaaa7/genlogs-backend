@@ -32,21 +32,21 @@ public class CondicionPagoController {
         return ResponseEntity.ok(condicionPagoService.buscarPorId(id));
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @PostMapping
     public ResponseEntity<CondicionPago> registrar(@Valid @RequestBody CondicionPago nueva) {
         CondicionPago creada = condicionPagoService.registrar(nueva);
         return ResponseEntity.status(HttpStatus.CREATED).body(creada);
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @PutMapping("/{id}")
     public ResponseEntity<CondicionPago> actualizar(@PathVariable Integer id,
                                                      @Valid @RequestBody CondicionPago datos) {
         return ResponseEntity.ok(condicionPagoService.actualizar(id, datos));
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Integer id) {
         condicionPagoService.desactivar(id);

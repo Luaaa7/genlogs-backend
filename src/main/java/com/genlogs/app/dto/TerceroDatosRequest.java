@@ -20,6 +20,23 @@ public class TerceroDatosRequest {
     private String direccion;
     private String telefono;
     private String correo;
+    /** D-15 / RF-81: país (null = Perú) y ubicación en texto libre si no es Perú. */
+    private Integer idPais;
+    private String regionExtranjero;
+    private String ciudadExtranjero;
+    private String codigoPostalExtranjero;
+
+    public Integer getIdPais() { return idPais; }
+    public void setIdPais(Integer idPais) { this.idPais = idPais; }
+
+    public String getRegionExtranjero() { return regionExtranjero; }
+    public void setRegionExtranjero(String regionExtranjero) { this.regionExtranjero = regionExtranjero; }
+
+    public String getCiudadExtranjero() { return ciudadExtranjero; }
+    public void setCiudadExtranjero(String ciudadExtranjero) { this.ciudadExtranjero = ciudadExtranjero; }
+
+    public String getCodigoPostalExtranjero() { return codigoPostalExtranjero; }
+    public void setCodigoPostalExtranjero(String codigoPostalExtranjero) { this.codigoPostalExtranjero = codigoPostalExtranjero; }
 
     public Integer getIdTipoDocumento() { return idTipoDocumento; }
     public void setIdTipoDocumento(Integer idTipoDocumento) { this.idTipoDocumento = idTipoDocumento; }

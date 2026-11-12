@@ -51,6 +51,12 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.UNAUTHORIZED, ex.getMessage());
     }
 
+    /** Acción no permitida en el estado actual (cancelar algo ya cotizado, etc.): 409. */
+    @ExceptionHandler(EstadoNoPermitidoException.class)
+    public ResponseEntity<Map<String, Object>> handleEstadoNoPermitido(EstadoNoPermitidoException ex) {
+        return buildResponse(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<Map<String, Object>> handleBusiness(BusinessException ex) {
         return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
@@ -59,7 +65,7 @@ public class GlobalExceptionHandler {
     /** Registro del portal: demasiados intentos desde el mismo documento o correo. */
     @ExceptionHandler(DemasiadasSolicitudesException.class)
     public ResponseEntity<Map<String, Object>> handleDemasiadasSolicitudes(DemasiadasSolicitudesException ex) {
-        log.warn("Registro de portal limitado: {}", ex.getMessage());
+        log.warn("Límite de intentos superado: {}", ex.getMessage());
         return buildResponse(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
     }
 

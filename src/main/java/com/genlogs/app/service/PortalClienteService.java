@@ -32,6 +32,9 @@ import com.genlogs.app.dto.PedidoResponse;
 import com.genlogs.app.dto.ProductoPublicoResponse;
 import com.genlogs.app.dto.RegistroClienteRequest;
 import com.genlogs.app.dto.RegistroClienteResponse;
+import com.genlogs.app.enums.EstadoSolicitud;
+import com.genlogs.app.enums.TipoEventoSolicitud;
+import com.genlogs.app.exception.EstadoNoPermitidoException;
 import com.genlogs.app.exception.ResourceNotFoundException;
 import com.genlogs.app.model.Cliente;
 import com.genlogs.app.model.EmpresaMinera;
@@ -60,6 +63,8 @@ public class PortalClienteService {
     private static final String ROL_CLIENTE = "CLIENTE";
     private static final String ESTADO_INICIAL = "PENDIENTE";
     private static final int MAX_NOMBRE_USUARIO = 50;
+    private static final java.util.Set<String> ESTADOS_CANCELABLES = java.util.Set.of(
+            EstadoSolicitud.PENDIENTE.name(), EstadoSolicitud.EN_REVISION.name());
 
     private final ProductoRepository productoRepository;
     private final ProductoImagenRepository productoImagenRepository;
@@ -70,6 +75,7 @@ public class PortalClienteService {
     private final SolicitudCotizacionRepository solicitudRepository;
     private final PasswordEncoder passwordEncoder;
     private final LimitadorRegistroPortal limitadorRegistro;
+    private final BitacoraSolicitud bitacora;
 
     @Transactional(readOnly = true)
     public List<ProductoPublicoResponse> catalogo() {
@@ -94,7 +100,18 @@ public class PortalClienteService {
     public List<CoberturaPublicaResponse> cobertura() {
         List<CoberturaPublicaResponse> respuesta = new ArrayList<>();
         for (EmpresaMinera empresa : empresaMineraRepository.findByStatus("A")) {
-            var distrito = empresa.getCliente().getTercero().getDistrito();
+            var tercero = empresa.getCliente().getTercero();
+            var distrito = tercero.getDistrito();
+            if (distrito == null) {
+                // D-15: cliente extranjero, sin distrito del catálogo; se muestra su ubicación en texto.
+                respuesta.add(CoberturaPublicaResponse.builder()
+                        .id(empresa.getIdEmpresaMinera())
+                        .nombre(empresa.getNombreUnidadMinera())
+                        .region(tercero.getRegionExtranjero())
+                        .descripcion(tercero.getCiudadExtranjero())
+                        .build());
+                continue;
+            }
             var provincia = distrito.getProvincia();
             respuesta.add(CoberturaPublicaResponse.builder()
                     .id(empresa.getIdEmpresaMinera())
@@ -233,6 +250,33 @@ public class PortalClienteService {
         return imagenes;
     }
 
+    /**
+     * El cliente cancela su pedido mientras no se haya cotizado (PENDIENTE o EN_REVISION).
+     * Después responde 409. Queda en la bitácora con el motivo, si lo escribió.
+     */
+    @Transactional
+    public void cancelarPedido(Long id, String motivo) {
+        Usuario usuario = exigirCliente();
+        SolicitudCotizacion solicitud = solicitudRepository
+                .findByIdSolicitudAndCliente_IdClienteAndStatus(id, usuario.getCliente().getIdCliente(), "A")
+                .orElseThrow(() -> new ResourceNotFoundException("Pedido no encontrado"));
+        String anterior = solicitud.getEstadoSolicitud();
+        if (!ESTADOS_CANCELABLES.contains(anterior)) {
+            throw new EstadoNoPermitidoException(
+                    "Este pedido ya no se puede cancelar porque está " + anterior.toLowerCase(Locale.ROOT).replace('_', ' ')
+                            + ". Escríbenos si necesitas cambiar algo.");
+        }
+        solicitud.setEstadoSolicitud(EstadoSolicitud.CANCELADA.name());
+        solicitud.setUserUpdate(usuario.getNombreUsuario());
+        solicitud.setProcessUpdate("CANCELAR_PORTAL");
+        solicitud.setDateUpdate(LocalDateTime.now());
+        solicitudRepository.save(solicitud);
+
+        String texto = motivo == null || motivo.isBlank() ? "sin motivo" : "motivo: " + motivo.trim();
+        bitacora.registrar(solicitud.getIdSolicitud(), usuario.getIdUsuario(), TipoEventoSolicitud.ESTADO,
+                anterior + " → CANCELADA por el cliente (" + texto + ")");
+    }
+
     /** Sin fila de usuario o sin id_cliente no hay portal: 403, no una lista vacía. */
     private Usuario exigirCliente() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -246,6 +290,19 @@ public class PortalClienteService {
         return usuario;
     }
 
+    /** Barra del cliente (D-14): solo etapas, nunca plazos ni motivos internos. */
+    static String etapaCliente(String estado) {
+        if (estado == null) {
+            return "RECIBIDA";
+        }
+        return switch (estado) {
+            case "PENDIENTE" -> "RECIBIDA";
+            case "EN_REVISION" -> "EN_BUSQUEDA";
+            case "EN_ESPERA_TERCERO" -> "EN_ESPERA_PROVEEDOR";
+            default -> estado;
+        };
+    }
+
     private PedidoResponse aPedido(SolicitudCotizacion solicitud) {
         List<PedidoItemResponse> items = solicitud.getItems().stream()
                 .filter(item -> "A".equals(item.getStatus()))
@@ -254,6 +311,10 @@ public class PortalClienteService {
                         .descripcion(item.getDescripcion())
                         .cantidad(item.getCantidad())
                         .unidad(item.getUnidad())
+                        .marca(item.getMarcaTexto())
+                        .numeroParte(item.getNumeroParte())
+                        .gtin(item.getGtin())
+                        .urlFoto(item.getUrlFoto())
                         .build())
                 .toList();
         return PedidoResponse.builder()
@@ -261,6 +322,8 @@ public class PortalClienteService {
                 .codigo(solicitud.getCodigoSolicitud())
                 .fecha(solicitud.getDateCreate().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
                 .estado(solicitud.getEstadoSolicitud())
+                .etapa(etapaCliente(solicitud.getEstadoSolicitud()))
+                .puedeCancelar(ESTADOS_CANCELABLES.contains(solicitud.getEstadoSolicitud()))
                 .asunto(solicitud.getAsunto())
                 .descripcion(solicitud.getDescripcion())
                 .items(items)

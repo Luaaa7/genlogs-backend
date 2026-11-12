@@ -27,16 +27,19 @@ import lombok.RequiredArgsConstructor;
 @RestController
 @RequestMapping("/api/usuarios")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('ADMINISTRADOR')")
+@PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
 public class UsuarioController {
 
     private final UsuarioService usuarioService;
 
+    // El Gerente General solo consulta (matriz v3.2: Usuarios = V).
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','GERENTE_GENERAL','ADMINISTRADOR')")
     @GetMapping
     public ResponseEntity<List<UsuarioResponse>> listar() {
         return ResponseEntity.ok(usuarioService.listar()); // Corregido: listar() en lugar de listarTodos()
     }
 
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','GERENTE_GENERAL','ADMINISTRADOR')")
     @GetMapping("/{id}")
     public ResponseEntity<UsuarioResponse> buscarPorId(@PathVariable Long id) {
         return ResponseEntity.ok(usuarioService.buscarPorId(id));

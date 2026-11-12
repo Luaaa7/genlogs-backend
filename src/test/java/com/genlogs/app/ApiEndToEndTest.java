@@ -20,6 +20,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 
+import com.genlogs.app.enums.RolSistema;
 import com.genlogs.app.model.CategoriaProducto;
 import com.genlogs.app.model.Producto;
 import com.genlogs.app.model.Rol;
@@ -76,8 +77,8 @@ class ApiEndToEndTest {
             return;
         }
         Rol rol = rolRepository.save(auditar(new Rol(), e -> {
-            e.setNombreRol("VENDEDOR");
-            e.setDescripcion("Vendedor");
+            e.setNombreRol(RolSistema.GERENTE_GENERAL.name());
+            e.setDescripcion("Gerente general");
         }));
         usuarioRepository.save(auditar(new Usuario(), e -> {
             e.setRol(rol);

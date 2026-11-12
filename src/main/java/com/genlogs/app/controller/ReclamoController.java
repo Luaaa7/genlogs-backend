@@ -38,7 +38,7 @@ public class ReclamoController {
 
     private final ReclamoService reclamoService;
 
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
+    @PreAuthorize("hasAnyRole('GERENTE_GENERAL','JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO','ASISTENTE_ADMINISTRATIVO','ADMINISTRADOR','VENDEDOR')")
     @GetMapping
     public ResponseEntity<PaginaResponse<ReclamoResponse>> listar(
             @RequestParam(required = false) TipoReclamo tipo,
@@ -51,53 +51,53 @@ public class ReclamoController {
         return ResponseEntity.ok(reclamoService.listar(tipo, estado, prioridad, idCliente, idResponsable, page, size));
     }
 
-    /** Usuarios activos para asignar como responsables (GET /api/usuarios es solo de administrador). */
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
+    /** Usuarios activos para asignar como responsables (GET /api/usuarios es solo del Jefe Administrativo y el Gerente). */
+    @PreAuthorize("hasAnyRole('GERENTE_GENERAL','JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO','ASISTENTE_ADMINISTRATIVO','ADMINISTRADOR','VENDEDOR')")
     @GetMapping("/responsables")
     public ResponseEntity<List<java.util.Map<String, Object>>> listarResponsables() {
         return ResponseEntity.ok(reclamoService.listarResponsables());
     }
 
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
+    @PreAuthorize("hasAnyRole('GERENTE_GENERAL','JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO','ASISTENTE_ADMINISTRATIVO','ADMINISTRADOR','VENDEDOR')")
     @GetMapping("/{id}")
     public ResponseEntity<ReclamoResponse> buscarPorId(@PathVariable Long id) {
         return ResponseEntity.ok(reclamoService.buscarPorId(id));
     }
 
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
+    @PreAuthorize("hasAnyRole('GERENTE_GENERAL','JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO','ASISTENTE_ADMINISTRATIVO','ADMINISTRADOR','VENDEDOR')")
     @GetMapping("/{id}/seguimientos")
     public ResponseEntity<List<SeguimientoReclamoResponse>> listarSeguimientos(@PathVariable Long id) {
         return ResponseEntity.ok(reclamoService.listarSeguimientos(id));
     }
 
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO')")
+    @PreAuthorize("hasAnyRole('GERENTE_GENERAL','JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO','ADMINISTRADOR','VENDEDOR')")
     @PostMapping
     public ResponseEntity<ReclamoResponse> crear(@Valid @RequestBody ReclamoRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(reclamoService.crear(request));
     }
 
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO')")
+    @PreAuthorize("hasAnyRole('GERENTE_GENERAL','JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO','ADMINISTRADOR','VENDEDOR')")
     @PutMapping("/{id}")
     public ResponseEntity<ReclamoResponse> actualizar(@PathVariable Long id,
                                                       @Valid @RequestBody ReclamoRequest request) {
         return ResponseEntity.ok(reclamoService.actualizar(id, request));
     }
 
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO')")
+    @PreAuthorize("hasAnyRole('GERENTE_GENERAL','JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO','ADMINISTRADOR','VENDEDOR')")
     @PatchMapping("/{id}/estado")
     public ResponseEntity<ReclamoResponse> cambiarEstado(@PathVariable Long id,
                                                          @Valid @RequestBody CambiarEstadoReclamoRequest request) {
         return ResponseEntity.ok(reclamoService.cambiarEstado(id, request));
     }
 
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR','JEFE_ADMINISTRATIVO')")
+    @PreAuthorize("hasAnyRole('GERENTE_GENERAL','JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO','ADMINISTRADOR','VENDEDOR')")
     @PostMapping("/{id}/seguimientos")
     public ResponseEntity<SeguimientoReclamoResponse> agregarComentario(@PathVariable Long id,
                                                                         @Valid @RequestBody ComentarioReclamoRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(reclamoService.agregarComentario(id, request));
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> eliminar(@PathVariable Long id) {
         reclamoService.eliminar(id);

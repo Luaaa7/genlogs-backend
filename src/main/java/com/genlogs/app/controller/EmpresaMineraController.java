@@ -36,21 +36,21 @@ public class EmpresaMineraController {
         return ResponseEntity.ok(empresaMineraService.buscarPorCliente(idCliente));
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @PostMapping
     public ResponseEntity<EmpresaMinera> registrar(@Valid @RequestBody EmpresaMinera nueva) {
         EmpresaMinera creada = empresaMineraService.registrar(nueva);
         return ResponseEntity.status(HttpStatus.CREATED).body(creada);
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @PutMapping("/{id}")
     public ResponseEntity<EmpresaMinera> actualizar(@PathVariable Long id,
                                                      @Valid @RequestBody EmpresaMinera datos) {
         return ResponseEntity.ok(empresaMineraService.actualizar(id, datos));
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivar(@PathVariable Long id) {
         empresaMineraService.desactivar(id);

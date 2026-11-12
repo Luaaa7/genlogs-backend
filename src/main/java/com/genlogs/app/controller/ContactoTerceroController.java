@@ -33,7 +33,7 @@ public class ContactoTerceroController {
         return ResponseEntity.ok(contactoTerceroService.listarPorTercero(idTercero));
     }
 
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO','ADMINISTRADOR','VENDEDOR')")
     @PostMapping("/terceros/{idTercero}/contactos")
     public ResponseEntity<ContactoTerceroResponse> crear(
             @PathVariable Long idTercero, @Valid @RequestBody ContactoTerceroRequest request) {
@@ -41,14 +41,14 @@ public class ContactoTerceroController {
                 .body(contactoTerceroService.crear(idTercero, request));
     }
 
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO','ADMINISTRADOR','VENDEDOR')")
     @PutMapping("/contactos/{idContacto}")
     public ResponseEntity<ContactoTerceroResponse> actualizar(
             @PathVariable Long idContacto, @Valid @RequestBody ContactoTerceroRequest request) {
         return ResponseEntity.ok(contactoTerceroService.actualizar(idContacto, request));
     }
 
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')")
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO','ADMINISTRADOR','VENDEDOR')")
     @DeleteMapping("/contactos/{idContacto}")
     public ResponseEntity<Void> eliminar(@PathVariable Long idContacto) {
         contactoTerceroService.eliminar(idContacto);
