@@ -3,13 +3,10 @@ package com.genlogs.app.sourcing;
 import java.util.List;
 
 /**
- * PROVISIONAL — esta interfaz la sube Mell en el Paso 0 (chore/paso-0).
- * NO se incluye en el PR de feat/be-e-historial: cuando el Paso 0 esté en
- * release/v3.0, borra este archivo, haz rebase y ajusta SourcingService si la
- * firma oficial cambia.
- *
- * Cada fuente externa (eBay, Mercado Libre, Alibaba) la implementa Mell en su
- * paquete "fuentes". SourcingService recibe todas las que Spring encuentre.
+ * Contrato de una fuente externa de busqueda (Paso 0). Cada conexion (eBay,
+ * Mercado Libre y, si pasan la prueba, Amazon y Alibaba) la implementa en el
+ * paquete "fuentes" como un @Component; SourcingService recibe todas las que
+ * Spring encuentre. Si no hay ninguna, la busqueda sigue con la captura por URL.
  */
 public interface FuenteBusqueda {
 
