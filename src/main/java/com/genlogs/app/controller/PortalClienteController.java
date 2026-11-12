@@ -6,11 +6,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.genlogs.app.dto.CancelarPedidoRequest;
 import com.genlogs.app.dto.CrearSolicitudRequest;
 import com.genlogs.app.dto.CrearSolicitudResponse;
 import com.genlogs.app.dto.IngresoClienteRequest;
@@ -52,6 +54,13 @@ public class PortalClienteController {
     @GetMapping("/pedidos/{id}")
     public ResponseEntity<PedidoResponse> pedido(@PathVariable Long id) {
         return ResponseEntity.ok(portalClienteService.pedido(id));
+    }
+
+    /** El cliente cancela su pedido antes de que se cotice. 204; 409 si ya no se puede. */
+    @PatchMapping("/pedidos/{id}/cancelar")
+    public ResponseEntity<Void> cancelar(@PathVariable Long id, @Valid @RequestBody CancelarPedidoRequest request) {
+        portalClienteService.cancelarPedido(id, request.motivo());
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/solicitudes")

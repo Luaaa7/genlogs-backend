@@ -22,13 +22,11 @@ import com.genlogs.app.enums.TipoEventoSolicitud;
 import com.genlogs.app.enums.TipoPlazo;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.model.SolicitudCotizacion;
-import com.genlogs.app.model.SolicitudEvento;
 import com.genlogs.app.model.SolicitudItem;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.MarcaRepository;
 import com.genlogs.app.repository.ProductoRepository;
 import com.genlogs.app.repository.SolicitudCotizacionRepository;
-import com.genlogs.app.repository.SolicitudEventoRepository;
 import com.genlogs.app.repository.UsuarioRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -57,12 +55,11 @@ public class SolicitudService {
     private static final int MAX_URL_FOTO = 2048;
 
     private final SolicitudCotizacionRepository solicitudRepository;
-    private final SolicitudEventoRepository eventoRepository;
+    private final BitacoraSolicitud bitacora;
     private final UsuarioRepository usuarioRepository;
     private final MarcaRepository marcaRepository;
     private final ProductoRepository productoRepository;
-    private final ParametrosService parametrosService;
-    private final CalendarioHabil calendarioHabil;
+    private final PlazoSolicitud plazo;
     private final LimitadorSolicitudes limitador;
     private final CloudinaryService cloudinaryService;
 
@@ -91,7 +88,7 @@ public class SolicitudService {
                 : request.getDescripcion().trim());
         solicitud.setEstadoSolicitud(EstadoSolicitud.PENDIENTE.name());
         solicitud.setTipoPlazo(tipoPlazo.name());
-        solicitud.setFechaLimiteInterna(calendarioHabil.fechaLimite(ahora, diasDePlazo(tipoPlazo)));
+        solicitud.setFechaLimiteInterna(plazo.fechaLimite(ahora, tipoPlazo));
         auditar(solicitud, usuario, proceso, ahora);
 
         for (SolicitudRequest.Item item : request.getItems()) {
@@ -110,14 +107,9 @@ public class SolicitudService {
         }
         SolicitudCotizacion guardada = solicitudRepository.save(solicitud);
 
-        SolicitudEvento evento = new SolicitudEvento();
-        evento.setIdSolicitud(guardada.getIdSolicitud());
-        evento.setIdUsuario(usuario.getIdUsuario());
-        evento.setTipoEvento(TipoEventoSolicitud.CREADA.name());
-        evento.setDetalle("Canal " + request.getCanal().name() + ", plazo " + tipoPlazo.name()
-                + ", " + request.getItems().size() + " repuesto(s)");
-        evento.setFechaEvento(ahora);
-        eventoRepository.save(evento);
+        bitacora.registrar(guardada.getIdSolicitud(), usuario.getIdUsuario(), TipoEventoSolicitud.CREADA,
+                "Canal " + request.getCanal().name() + ", plazo " + tipoPlazo.name()
+                        + ", " + request.getItems().size() + " repuesto(s)");
 
         return new SolicitudCreadaResponse(guardada.getIdSolicitud(), guardada.getCodigoSolicitud(),
                 EstadoSolicitud.PENDIENTE);
@@ -172,28 +164,6 @@ public class SolicitudService {
                 throw new BusinessException("El producto " + repuesto + " no está disponible en la vitrina.");
             }
         }
-    }
-
-    /** Días hábiles del parámetro; si falta la fila se usa el valor de v3_2.sql para no frenar el pedido. */
-    private int diasDePlazo(TipoPlazo tipo) {
-        String clave = switch (tipo) {
-            case COMUN -> ClavesParametro.PLAZO_COMUN_DIAS;
-            case IMPORTADO -> ClavesParametro.PLAZO_IMPORTADO_DIAS;
-            case ESPECIAL -> ClavesParametro.PLAZO_ESPECIAL_DIAS;
-        };
-        int porDefecto = switch (tipo) {
-            case COMUN -> 1;
-            case IMPORTADO -> 3;
-            case ESPECIAL -> 5;
-        };
-        return parametrosService.buscar(clave).map(valor -> {
-            try {
-                int dias = Integer.parseInt(valor);
-                return dias >= 1 ? dias : porDefecto;
-            } catch (NumberFormatException e) {
-                return porDefecto;
-            }
-        }).orElse(porDefecto);
     }
 
     /**

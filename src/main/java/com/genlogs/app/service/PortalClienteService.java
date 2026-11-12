@@ -33,7 +33,12 @@ import com.genlogs.app.dto.PedidoResponse;
 import com.genlogs.app.dto.ProductoPublicoResponse;
 import com.genlogs.app.dto.RegistroClienteRequest;
 import com.genlogs.app.dto.RegistroClienteResponse;
+import com.genlogs.app.enums.EstadoSolicitud;
+import com.genlogs.app.enums.RolSistema;
+import com.genlogs.app.enums.TipoAviso;
+import com.genlogs.app.enums.TipoEventoSolicitud;
 import com.genlogs.app.exception.BusinessException;
+import com.genlogs.app.exception.EstadoNoPermitidoException;
 import com.genlogs.app.exception.ResourceNotFoundException;
 import com.genlogs.app.model.Auditable;
 import com.genlogs.app.model.Cliente;
@@ -74,6 +79,10 @@ public class PortalClienteService {
     /** RUC de empresa (20) o de persona con negocio (10), igual que FactilizaService. */
     private static final Pattern RUC_VALIDO = Pattern.compile("^(10|20)\\d{9}$");
     private static final String SECTOR_CAPTACION = "MINERIA";
+    /** Marca del usuario que pidió acceso a una empresa que ya es cliente (lo usa UsuarioService.activar). */
+    public static final String PROCESO_PENDIENTE = "REGISTRO_PORTAL_PENDIENTE";
+    private static final java.util.Set<String> ESTADOS_CANCELABLES = java.util.Set.of(
+            EstadoSolicitud.PENDIENTE.name(), EstadoSolicitud.EN_REVISION.name());
 
     private final ProductoRepository productoRepository;
     private final ProductoImagenRepository productoImagenRepository;
@@ -84,12 +93,14 @@ public class PortalClienteService {
     private final SolicitudCotizacionRepository solicitudRepository;
     private final PasswordEncoder passwordEncoder;
     private final LimitadorRegistroPortal limitadorRegistro;
+    private final BitacoraSolicitud bitacora;
     private final AuthService authService;
     private final FactilizaService factilizaService;
     private final TerceroRepository terceroRepository;
     private final TipoDocumentoRepository tipoDocumentoRepository;
     private final DistritoRepository distritoRepository;
     private final SectorEconomicoRepository sectorEconomicoRepository;
+    private final NotificacionService notificacionService;
 
     @Transactional(readOnly = true)
     public List<ProductoPublicoResponse> catalogo() {
@@ -127,14 +138,16 @@ public class PortalClienteService {
     }
 
     /**
-     * Registro con acceso inmediato (D-10). El usuario nace activo y la respuesta
-     * trae su token, así el cliente sigue sin esperar (y la landing envía su
-     * pedido guardado, D-30).
+     * Registro del portal (D-10). El acceso inmediato es solo para la empresa nueva:
      * <ul>
-     *   <li>Si el RUC ya es cliente activo, se suma un usuario más a esa empresa
-     *       (varios usuarios CLIENTE por empresa).</li>
-     *   <li>Si el RUC no es cliente, se valida en Factiliza y se da de alta la
-     *       empresa como cliente nuevo (captación de mineras, proceso 3).</li>
+     *   <li>Si el RUC no es cliente, se valida en Factiliza, se da de alta la empresa
+     *       (captación de mineras, proceso 3) y el usuario nace activo con su token,
+     *       así sigue sin esperar (y la landing envía su pedido guardado, D-30).</li>
+     *   <li>Si el RUC ya es cliente, el usuario nuevo queda PENDIENTE (status 'I', sin
+     *       token) hasta que lo active el Jefe Administrativo. El RUC es público y el
+     *       portal muestra los pedidos, precios y despachos de la empresa y deja aprobar
+     *       cotizaciones: nadie debe entrar a eso solo por conocer el RUC. Se avisa al
+     *       Jefe Administrativo y, por correo, a los usuarios activos de la empresa.</li>
      * </ul>
      */
     @Transactional
@@ -154,8 +167,9 @@ public class PortalClienteService {
             return new BusinessException("El registro no está disponible en este momento. Inténtalo más tarde.");
         });
 
-        Cliente cliente = clienteRepository.findByNumeroDocumento(ruc)
-                .orElseGet(() -> altaClienteDesdeRuc(ruc, request));
+        Cliente existente = clienteRepository.findByNumeroDocumento(ruc).orElse(null);
+        boolean empresaNueva = existente == null;
+        Cliente cliente = empresaNueva ? altaClienteDesdeRuc(ruc, request) : existente;
         if (!"ACTIVO".equals(cliente.getSituacion())) {
             throw new BusinessException("Tu empresa no tiene el acceso al portal habilitado. Escríbenos para ayudarte.");
         }
@@ -174,13 +188,45 @@ public class PortalClienteService {
         usuario.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         usuario.setBloqueado(false);
         usuario.setIntentosFallidos((short) 0);
-        usuario.setStatus("A");
+        // Empresa que ya es cliente: queda pendiente (status 'I') hasta que la active el Jefe Administrativo.
+        usuario.setStatus(empresaNueva ? "A" : "I");
         usuario.setUserCreate("portal");
-        usuario.setProcessCreate("REGISTRO_PORTAL");
+        usuario.setProcessCreate(empresaNueva ? "REGISTRO_PORTAL" : PROCESO_PENDIENTE);
         usuario.setDateCreate(LocalDateTime.now());
         usuarioRepository.saveAndFlush(usuario);
 
+        if (!empresaNueva) {
+            avisarAccesoPendiente(cliente, usuario);
+            return RegistroClienteResponse.pendiente(usuario.getNombres());
+        }
         return RegistroClienteResponse.conAcceso(authService.emitirToken(usuario), usuario.getNombres(), nombreUsuario);
+    }
+
+    /**
+     * Aviso de un acceso pendiente: en la campanita del Jefe Administrativo (que lo
+     * activa desde Usuarios) y por correo a los usuarios activos de la empresa, para
+     * que sepan si alguien que no conocen pidió entrar con su RUC. Si el aviso falla,
+     * el registro sigue: el usuario ya quedó pendiente y no ve nada.
+     */
+    private void avisarAccesoPendiente(Cliente cliente, Usuario nuevo) {
+        String empresa = cliente.getTercero().getRazonSocial();
+        String ruc = cliente.getTercero().getNumeroDocumento();
+        try {
+            notificacionService.avisarRol(RolSistema.JEFE_ADMINISTRATIVO, TipoAviso.ACCESO_PORTAL_PENDIENTE,
+                    "Acceso al portal pendiente",
+                    nuevo.getNombres() + " (" + nuevo.getCorreo() + ") pidió acceso al portal para "
+                            + empresa + " (RUC " + ruc + "). Revísalo y actívalo en Usuarios si corresponde.",
+                    "/usuarios", false);
+            for (Usuario colega : usuarioRepository.findByCliente_IdClienteAndStatus(cliente.getIdCliente(), "A")) {
+                notificacionService.enviarCorreoCliente(colega.getCorreo(), colega.getNombres(),
+                        "Pidieron acceso al portal de GENLOGS para " + empresa,
+                        nuevo.getNombres() + " (" + nuevo.getCorreo() + ") pidió acceso al portal de GENLOGS para "
+                                + empresa + ". No tendrá acceso hasta que GENLOGS lo revise. "
+                                + "Si no reconoces a esta persona, respóndenos para bloquear la solicitud.");
+            }
+        } catch (RuntimeException ex) {
+            log.warn("No se pudo avisar el acceso pendiente del usuario {}: {}", nuevo.getIdUsuario(), ex.getMessage());
+        }
     }
 
     /**
@@ -325,6 +371,33 @@ public class PortalClienteService {
         return imagenes;
     }
 
+    /**
+     * El cliente cancela su pedido mientras no se haya cotizado (PENDIENTE o EN_REVISION).
+     * Después responde 409. Queda en la bitácora con el motivo, si lo escribió.
+     */
+    @Transactional
+    public void cancelarPedido(Long id, String motivo) {
+        Usuario usuario = exigirCliente();
+        SolicitudCotizacion solicitud = solicitudRepository
+                .findByIdSolicitudAndCliente_IdClienteAndStatus(id, usuario.getCliente().getIdCliente(), "A")
+                .orElseThrow(() -> new ResourceNotFoundException("Pedido no encontrado"));
+        String anterior = solicitud.getEstadoSolicitud();
+        if (!ESTADOS_CANCELABLES.contains(anterior)) {
+            throw new EstadoNoPermitidoException(
+                    "Este pedido ya no se puede cancelar porque está " + anterior.toLowerCase(Locale.ROOT).replace('_', ' ')
+                            + ". Escríbenos si necesitas cambiar algo.");
+        }
+        solicitud.setEstadoSolicitud(EstadoSolicitud.CANCELADA.name());
+        solicitud.setUserUpdate(usuario.getNombreUsuario());
+        solicitud.setProcessUpdate("CANCELAR_PORTAL");
+        solicitud.setDateUpdate(LocalDateTime.now());
+        solicitudRepository.save(solicitud);
+
+        String texto = motivo == null || motivo.isBlank() ? "sin motivo" : "motivo: " + motivo.trim();
+        bitacora.registrar(solicitud.getIdSolicitud(), usuario.getIdUsuario(), TipoEventoSolicitud.ESTADO,
+                anterior + " → CANCELADA por el cliente (" + texto + ")");
+    }
+
     /** Sin fila de usuario o sin id_cliente no hay portal: 403, no una lista vacía. */
     private Usuario exigirCliente() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -338,6 +411,19 @@ public class PortalClienteService {
         return usuario;
     }
 
+    /** Barra del cliente (D-14): solo etapas, nunca plazos ni motivos internos. */
+    static String etapaCliente(String estado) {
+        if (estado == null) {
+            return "RECIBIDA";
+        }
+        return switch (estado) {
+            case "PENDIENTE" -> "RECIBIDA";
+            case "EN_REVISION" -> "EN_BUSQUEDA";
+            case "EN_ESPERA_TERCERO" -> "EN_ESPERA_PROVEEDOR";
+            default -> estado;
+        };
+    }
+
     private PedidoResponse aPedido(SolicitudCotizacion solicitud) {
         List<PedidoItemResponse> items = solicitud.getItems().stream()
                 .filter(item -> "A".equals(item.getStatus()))
@@ -346,6 +432,10 @@ public class PortalClienteService {
                         .descripcion(item.getDescripcion())
                         .cantidad(item.getCantidad())
                         .unidad(item.getUnidad())
+                        .marca(item.getMarcaTexto())
+                        .numeroParte(item.getNumeroParte())
+                        .gtin(item.getGtin())
+                        .urlFoto(item.getUrlFoto())
                         .build())
                 .toList();
         return PedidoResponse.builder()
@@ -353,6 +443,8 @@ public class PortalClienteService {
                 .codigo(solicitud.getCodigoSolicitud())
                 .fecha(solicitud.getDateCreate().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
                 .estado(solicitud.getEstadoSolicitud())
+                .etapa(etapaCliente(solicitud.getEstadoSolicitud()))
+                .puedeCancelar(ESTADOS_CANCELABLES.contains(solicitud.getEstadoSolicitud()))
                 .asunto(solicitud.getAsunto())
                 .descripcion(solicitud.getDescripcion())
                 .items(items)

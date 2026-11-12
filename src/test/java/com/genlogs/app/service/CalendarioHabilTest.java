@@ -115,4 +115,62 @@ class CalendarioHabilTest {
         assertEquals(LocalDateTime.of(2026, 12, 8, 18, 0),
                 calendario.fechaLimite(LocalDateTime.of(2026, 12, 7, 10, 0), 1));
     }
+
+    // ---------------------------------------------------------- tiempo hábil (pausas)
+
+    @Test
+    void minutosHabiles_dentroDelMismoDia() {
+        assertEquals(120, calendario.minutosHabiles(nov(9, 10, 0), nov(9, 12, 0)));
+    }
+
+    @Test
+    void minutosHabiles_deViernesASabado_soloCuentaElHorario() {
+        assertEquals(120, calendario.minutosHabiles(nov(13, 17, 0), nov(14, 9, 0)));
+    }
+
+    @Test
+    void minutosHabiles_saltaElDomingo() {
+        assertEquals(120, calendario.minutosHabiles(nov(14, 12, 0), nov(16, 9, 0)));
+    }
+
+    @Test
+    void minutosHabiles_fueraDeHorario_noCuenta() {
+        assertEquals(30, calendario.minutosHabiles(nov(9, 19, 0), nov(10, 8, 30)));
+    }
+
+    @Test
+    void minutosHabiles_alReves_esCero() {
+        assertEquals(0, calendario.minutosHabiles(nov(10, 9, 0), nov(9, 9, 0)));
+    }
+
+    @Test
+    void minutosHabiles_saltaFeriados() {
+        CalendarioHabil conFeriado = new CalendarioHabil(fecha -> fecha.equals(LocalDate.of(2026, 11, 10)));
+        assertEquals(120, conFeriado.minutosHabiles(nov(9, 17, 0), nov(11, 9, 0)));
+    }
+
+    @Test
+    void sumarMinutosHabiles_pasaAlDiaSiguiente() {
+        assertEquals(nov(10, 9, 0), calendario.sumarMinutosHabiles(nov(9, 17, 0), 120));
+    }
+
+    @Test
+    void sumarMinutosHabiles_terminaJustoAlCierre() {
+        assertEquals(nov(9, 18, 0), calendario.sumarMinutosHabiles(nov(9, 16, 0), 120));
+    }
+
+    @Test
+    void sumarMinutosHabiles_delSabadoAlLunes() {
+        assertEquals(nov(16, 8, 30), calendario.sumarMinutosHabiles(nov(14, 12, 30), 60));
+    }
+
+    @Test
+    void sumarMinutosHabiles_desdeFueraDeHorario_empiezaEnLaApertura() {
+        assertEquals(nov(10, 8, 30), calendario.sumarMinutosHabiles(nov(9, 19, 0), 30));
+    }
+
+    @Test
+    void sumarCero_devuelveLaMismaFecha() {
+        assertEquals(nov(9, 19, 0), calendario.sumarMinutosHabiles(nov(9, 19, 0), 0));
+    }
 }
