@@ -1,5 +1,6 @@
 package com.genlogs.app.controller;
 
+import com.genlogs.app.dto.ServicioResponse;
 import com.genlogs.app.model.Servicio;
 import com.genlogs.app.service.ServicioService;
 import jakarta.validation.Valid;
@@ -12,20 +13,25 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Set;
 
-import org.springframework.beans.BeanUtils;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+/**
+ * S2 (matriz v3.2): ven los servicios Gerente General y Asistente Administrativo; editan
+ * Jefe Administrativo y Asistente Logístico. Contador y Supervisor SST no entran.
+ * Las reglas de cada método (registrar, aprobar...) reemplazan a la de la clase.
+ */
 @RestController
 @RequestMapping("/api/servicios")
 @RequiredArgsConstructor
+@PreAuthorize("hasAnyRole('GERENTE_GENERAL','JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO','ASISTENTE_ADMINISTRATIVO')")
 public class ServicioController {
 
     private final ServicioService servicioService;
 
     @GetMapping
-    public ResponseEntity<List<Servicio>> listar(
+    public ResponseEntity<List<ServicioResponse>> listar(
             @RequestParam(defaultValue = "true") boolean soloActivos,
             @RequestParam(required = false) Integer idCategoriaServicio) {
         List<Servicio> resultado;
@@ -35,26 +41,26 @@ public class ServicioController {
             resultado = soloActivos ? servicioService.listarActivos() : servicioService.listarTodos();
         }
         boolean veCosto = veCostoYMargen();
-        return ResponseEntity.ok(resultado.stream().map(s -> paraElRol(s, veCosto)).toList());
+        return ResponseEntity.ok(resultado.stream().map(s -> ServicioResponse.de(s, veCosto)).toList());
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Servicio> buscarPorId(@PathVariable Long id) {
-        return ResponseEntity.ok(paraElRol(servicioService.buscarPorId(id), veCostoYMargen()));
+    public ResponseEntity<ServicioResponse> buscarPorId(@PathVariable Long id) {
+        return ResponseEntity.ok(ServicioResponse.de(servicioService.buscarPorId(id), veCostoYMargen()));
     }
 
     @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO')")
     @PostMapping
-    public ResponseEntity<Servicio> registrar(@Valid @RequestBody Servicio nuevo) {
+    public ResponseEntity<ServicioResponse> registrar(@Valid @RequestBody Servicio nuevo) {
         Servicio creado = servicioService.registrar(nuevo);
-        return ResponseEntity.status(HttpStatus.CREATED).body(creado);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ServicioResponse.de(creado, veCostoYMargen()));
     }
 
     @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO')")
     @PutMapping("/{id}")
-    public ResponseEntity<Servicio> actualizar(@PathVariable Long id,
-                                                @Valid @RequestBody Servicio datos) {
-        return ResponseEntity.ok(servicioService.actualizar(id, datos));
+    public ResponseEntity<ServicioResponse> actualizar(@PathVariable Long id,
+                                                        @Valid @RequestBody Servicio datos) {
+        return ResponseEntity.ok(ServicioResponse.de(servicioService.actualizar(id, datos), veCostoYMargen()));
     }
 
     @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO')")
@@ -66,21 +72,21 @@ public class ServicioController {
 
     @PreAuthorize("hasRole('JEFE_ADMINISTRATIVO')")
     @PostMapping("/{id}/aprobar")
-    public ResponseEntity<Servicio> aprobar(@PathVariable Long id) {
-        return ResponseEntity.ok(servicioService.aprobar(id));
+    public ResponseEntity<ServicioResponse> aprobar(@PathVariable Long id) {
+        return ResponseEntity.ok(ServicioResponse.de(servicioService.aprobar(id), veCostoYMargen()));
     }
 
     /** Solo el Jefe Administrativo, y no sobre un servicio que él mismo dejó pendiente. */
     @PreAuthorize("hasRole('JEFE_ADMINISTRATIVO')")
     @PostMapping("/{id}/rechazar")
-    public ResponseEntity<Servicio> rechazar(@PathVariable Long id) {
-        return ResponseEntity.ok(servicioService.rechazar(id));
+    public ResponseEntity<ServicioResponse> rechazar(@PathVariable Long id) {
+        return ResponseEntity.ok(ServicioResponse.de(servicioService.rechazar(id), veCostoYMargen()));
     }
 
     // ------------------------------------------------------------------------
     // Costo y margen son datos internos (matriz v3.2: márgenes solo para Gerente
     // General, Jefe Administrativo y Asistente Logístico). Los demás roles ven el
-    // servicio con su precio referencial, pero sin costo ni margen.
+    // servicio con su precio referencial, pero sin costo ni margen (ServicioResponse).
     // ------------------------------------------------------------------------
 
     static final Set<String> ROLES_CON_COSTO = Set.of(
@@ -91,17 +97,5 @@ public class ServicioController {
         return autenticacion != null && autenticacion.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .anyMatch(ROLES_CON_COSTO::contains);
-    }
-
-    /** Copia sin costo ni margen para quien no puede verlos (no toca la entidad guardada). */
-    static Servicio paraElRol(Servicio servicio, boolean veCosto) {
-        if (servicio == null || veCosto) {
-            return servicio;
-        }
-        Servicio copia = new Servicio();
-        BeanUtils.copyProperties(servicio, copia);
-        copia.setCosto(null);
-        copia.setMargen(null);
-        return copia;
     }
 }

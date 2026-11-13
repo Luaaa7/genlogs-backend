@@ -55,8 +55,6 @@ import com.genlogs.app.repository.UsuarioRepository;
  * <p>Diferencias con la matriz que este test NO cubre todavía, porque hoy el backend
  * las deja más abiertas (cada una es de su bloque; al cerrarlas, agregar su caso aquí):
  * <ul>
- *   <li>GET /api/facturacion (BE-D): Supervisor SST y Asistente Logístico entran; la matriz no les da acceso.</li>
- *   <li>GET /api/servicios (BE-D): Contador y Supervisor SST entran; la matriz no les da acceso.</li>
  *   <li>GET /api/metas (BE-D, dashboard): Supervisor SST y Asistente Administrativo entran; la matriz no les da acceso.</li>
  * </ul>
  */
@@ -143,8 +141,11 @@ class MatrizRolesTest {
                 caso("Comprobantes", "PATCH", "/api/facturacion/" + id + "/pago",
                         "{\"montoPagado\":1,\"fechaPago\":\"2026-11-01\",\"medioPago\":\"TRANSFERENCIA\"}",
                         "CONTADOR_GENERAL"),
-                caso("Comprobantes", "PATCH", "/api/facturacion/" + id + "/estado", "{\"codigoEstado\":\"ANULADA\"}",
+                                caso("Comprobantes", "PATCH", "/api/facturacion/" + id + "/estado", "{\"codigoEstado\":\"ANULADA\"}",
                         "JEFE_ADMINISTRATIVO"),
+                // S2: ver comprobantes, sin Supervisor SST ni Asistente Logístico.
+                caso("Comprobantes", "GET", "/api/facturacion", null,
+                        "GERENTE_GENERAL", "JEFE_ADMINISTRATIVO", "CONTADOR_GENERAL", "ASISTENTE_ADMINISTRATIVO"),
 
                 // ---- Reclamos (BE-A): sin Contador ni SST; el Asistente Administrativo solo ve ----
                 caso("Reclamos", "GET", "/api/reclamos", null,
@@ -167,8 +168,11 @@ class MatrizRolesTest {
                         "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO"),
 
                 // ---- Servicios: crean el Jefe y el Asistente Logístico ----
-                caso("Servicios", "POST", "/api/servicios", "{}",
+                                caso("Servicios", "POST", "/api/servicios", "{}",
                         "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO"),
+                // S2: ver servicios, sin Contador ni Supervisor SST.
+                caso("Servicios", "GET", "/api/servicios", null,
+                        "GERENTE_GENERAL", "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO", "ASISTENTE_ADMINISTRATIVO"),
 
                 // ---- Usuarios, parámetros, feriados y tipo de cambio (BE-A / BE-B / BE-D) ----
                 caso("Administración", "GET", "/api/usuarios", null,
