@@ -23,4 +23,8 @@ public class Pais extends Auditable {
 
     @Column(name = "nombre_pais", nullable = false, unique = true, length = 100)
     private String nombrePais;
+
+    /** Prefijo telefónico con "+" (p. ej. +51). Null si se comparte (+1) o no se cargó. */
+    @Column(name = "codigo_telefono", length = 8)
+    private String codigoTelefono;
 }
