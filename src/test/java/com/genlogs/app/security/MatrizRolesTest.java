@@ -116,8 +116,9 @@ class MatrizRolesTest {
                 // ---- Cotizaciones y márgenes: sin Contador ni SST; aprueba el Jefe ----
                 caso("Cotizaciones", "GET", "/api/cotizaciones", null,
                         "GERENTE_GENERAL", "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO", "ASISTENTE_ADMINISTRATIVO"),
+                // El Jefe también crea (decisión del equipo, 13/11/2026).
                 caso("Cotizaciones", "POST", "/api/cotizaciones", "{}",
-                        "ASISTENTE_LOGISTICO"),
+                        "ASISTENTE_LOGISTICO", "JEFE_ADMINISTRATIVO"),
                 caso("Cotizaciones", "POST", "/api/cotizaciones/" + id + "/aprobar", null,
                         "JEFE_ADMINISTRATIVO"),
 
@@ -141,7 +142,7 @@ class MatrizRolesTest {
                 caso("Comprobantes", "PATCH", "/api/facturacion/" + id + "/pago",
                         "{\"montoPagado\":1,\"fechaPago\":\"2026-11-01\",\"medioPago\":\"TRANSFERENCIA\"}",
                         "CONTADOR_GENERAL"),
-                                caso("Comprobantes", "PATCH", "/api/facturacion/" + id + "/estado", "{\"codigoEstado\":\"ANULADA\"}",
+                caso("Comprobantes", "PATCH", "/api/facturacion/" + id + "/estado", "{\"codigoEstado\":\"ANULADA\"}",
                         "JEFE_ADMINISTRATIVO"),
                 // S2: ver comprobantes, sin Supervisor SST ni Asistente Logístico.
                 caso("Comprobantes", "GET", "/api/facturacion", null,
@@ -168,7 +169,7 @@ class MatrizRolesTest {
                         "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO"),
 
                 // ---- Servicios: crean el Jefe y el Asistente Logístico ----
-                                caso("Servicios", "POST", "/api/servicios", "{}",
+                caso("Servicios", "POST", "/api/servicios", "{}",
                         "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO"),
                 // S2: ver servicios, sin Contador ni Supervisor SST.
                 caso("Servicios", "GET", "/api/servicios", null,

@@ -147,11 +147,13 @@ class SeguridadRolesTest {
                         .content(cuerpo))
                 .andExpect(status().isForbidden());
 
+        // El Jefe también crea cotizaciones (decisión del equipo, 13/11/2026): no es 403.
         mockMvc.perform(post("/api/cotizaciones")
                         .with(user("jefe").roles("JEFE_ADMINISTRATIVO"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
-                .andExpect(status().isForbidden());
+                .andExpect(resultado -> org.junit.jupiter.api.Assertions.assertNotEquals(403,
+                        resultado.getResponse().getStatus()));
 
         mockMvc.perform(patch("/api/cotizaciones/1/estado")
                         .with(user("jefe").roles("JEFE_ADMINISTRATIVO"))
@@ -180,10 +182,12 @@ class SeguridadRolesTest {
     }
 
     @Test
-    void elJefeNoSolicitaYDevolverSinMotivoEs400() throws Exception {
+    void elJefeSolicitaLaSuyaYDevolverSinMotivoEs400() throws Exception {
+        // El Jefe también crea, así que puede pedir la aprobación de la suya: no es 403.
         mockMvc.perform(post("/api/cotizaciones/1/solicitar-aprobacion")
                         .with(user("jefe").roles("JEFE_ADMINISTRATIVO")))
-                .andExpect(status().isForbidden());
+                .andExpect(resultado -> org.junit.jupiter.api.Assertions.assertNotEquals(403,
+                        resultado.getResponse().getStatus()));
 
         mockMvc.perform(post("/api/cotizaciones/1/devolver")
                         .with(user("jefe").roles("JEFE_ADMINISTRATIVO"))
