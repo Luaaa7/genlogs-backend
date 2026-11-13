@@ -32,9 +32,15 @@ import com.genlogs.app.service.FacturacionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
+/**
+ * S2 (matriz v3.2, Comprobantes y cobranza): ven Gerente General, Jefe Administrativo y
+ * Asistente Administrativo; registra el Contador. Supervisor SST y Asistente Logístico no
+ * entran. Las reglas de cada método (emitir, pago, anular...) reemplazan a la de la clase.
+ */
 @RestController
 @RequestMapping("/api/facturacion")
 @RequiredArgsConstructor
+@PreAuthorize("hasAnyRole('GERENTE_GENERAL','JEFE_ADMINISTRATIVO','CONTADOR_GENERAL','ASISTENTE_ADMINISTRATIVO')")
 public class FacturacionController {
 
     private final FacturacionService facturacionService;

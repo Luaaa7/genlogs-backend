@@ -9,8 +9,10 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -59,6 +61,43 @@ class ServicioRolesTest {
         when(servicioService.registrar(any())).thenReturn(new Servicio());
         when(servicioService.actualizar(any(), any())).thenReturn(new Servicio());
         when(servicioService.rechazar(any())).thenReturn(new Servicio());
+        when(servicioService.buscarPorId(7L)).thenReturn(ServicioCostoVisibleTest.servicio());
+    }
+
+    /** S1: el Asistente Administrativo ve el servicio, pero sin costo, margen ni precio manual. */
+    @Test
+    void sinPermisoLaRespuestaNoTraeCostoNiMargen() throws Exception {
+        for (String rol : new String[] {"ASISTENTE_ADMINISTRATIVO"}) {
+            mockMvc.perform(get("/api/servicios/7").with(user("u").roles(rol)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.precioReferencial").value(1250))
+                    .andExpect(jsonPath("$.costo").doesNotExist())
+                    .andExpect(jsonPath("$.margen").doesNotExist())
+                    .andExpect(jsonPath("$.precioManual").doesNotExist());
+        }
+    }
+
+    /** S2: Contador, Supervisor SST y Cliente no ven servicios. */
+    @Test
+    void contadorSstYClienteNoVenServicios() throws Exception {
+        for (String rol : new String[] {"CONTADOR_GENERAL", "SUPERVISOR_SST", "CLIENTE"}) {
+            mockMvc.perform(get("/api/servicios/7").with(user("u").roles(rol)))
+                    .andExpect(status().isForbidden());
+            mockMvc.perform(get("/api/servicios").with(user("u").roles(rol)))
+                    .andExpect(status().isForbidden());
+        }
+    }
+
+    @Test
+    void conPermisoLaRespuestaTraeCostoYMargen() throws Exception {
+        for (String rol : new String[] {"GERENTE_GENERAL", "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO"}) {
+            mockMvc.perform(get("/api/servicios/7").with(user("u").roles(rol)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.costo").value(1000))
+                    .andExpect(jsonPath("$.margen").value(25))
+                    .andExpect(jsonPath("$.categoriaServicio.categoriaPadre.idCategoriaServicio").value(1))
+                    .andExpect(jsonPath("$.unidadMedida.idUnidadMedida").value(3));
+        }
     }
 
     @Test
