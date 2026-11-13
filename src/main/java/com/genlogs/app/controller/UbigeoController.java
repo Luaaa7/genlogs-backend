@@ -86,6 +86,7 @@ public class UbigeoController {
                 .idPais(p.getIdPais())
                 .codigoIso(p.getCodigoIso())
                 .nombrePais(p.getNombrePais())
+                .codigoTelefono(p.getCodigoTelefono())
                 .build();
     }
 

@@ -10,6 +10,12 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Set;
+
+import org.springframework.beans.BeanUtils;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 @RestController
 @RequestMapping("/api/servicios")
@@ -28,12 +34,13 @@ public class ServicioController {
         } else {
             resultado = soloActivos ? servicioService.listarActivos() : servicioService.listarTodos();
         }
-        return ResponseEntity.ok(resultado);
+        boolean veCosto = veCostoYMargen();
+        return ResponseEntity.ok(resultado.stream().map(s -> paraElRol(s, veCosto)).toList());
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<Servicio> buscarPorId(@PathVariable Long id) {
-        return ResponseEntity.ok(servicioService.buscarPorId(id));
+        return ResponseEntity.ok(paraElRol(servicioService.buscarPorId(id), veCostoYMargen()));
     }
 
     @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO')")
@@ -68,5 +75,33 @@ public class ServicioController {
     @PostMapping("/{id}/rechazar")
     public ResponseEntity<Servicio> rechazar(@PathVariable Long id) {
         return ResponseEntity.ok(servicioService.rechazar(id));
+    }
+
+    // ------------------------------------------------------------------------
+    // Costo y margen son datos internos (matriz v3.2: márgenes solo para Gerente
+    // General, Jefe Administrativo y Asistente Logístico). Los demás roles ven el
+    // servicio con su precio referencial, pero sin costo ni margen.
+    // ------------------------------------------------------------------------
+
+    static final Set<String> ROLES_CON_COSTO = Set.of(
+            "ROLE_GERENTE_GENERAL", "ROLE_JEFE_ADMINISTRATIVO", "ROLE_ASISTENTE_LOGISTICO");
+
+    static boolean veCostoYMargen() {
+        Authentication autenticacion = SecurityContextHolder.getContext().getAuthentication();
+        return autenticacion != null && autenticacion.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(ROLES_CON_COSTO::contains);
+    }
+
+    /** Copia sin costo ni margen para quien no puede verlos (no toca la entidad guardada). */
+    static Servicio paraElRol(Servicio servicio, boolean veCosto) {
+        if (servicio == null || veCosto) {
+            return servicio;
+        }
+        Servicio copia = new Servicio();
+        BeanUtils.copyProperties(servicio, copia);
+        copia.setCosto(null);
+        copia.setMargen(null);
+        return copia;
     }
 }
