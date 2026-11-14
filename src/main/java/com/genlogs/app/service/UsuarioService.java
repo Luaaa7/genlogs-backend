@@ -13,6 +13,7 @@ import com.genlogs.app.dto.UsuarioResponse;
 import com.genlogs.app.dto.UsuarioUpdateRequest; // Asegúrate de tener este DTO importado si lo requiere
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
+import com.genlogs.app.enums.RolSistema;
 import com.genlogs.app.model.Rol;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.CotizacionRepository;
@@ -26,6 +27,17 @@ import lombok.RequiredArgsConstructor;
 @Service
 @RequiredArgsConstructor
 public class UsuarioService {
+
+    /**
+     * Un usuario CLIENTE nace solo del registro del portal con RUC, que lo une a su empresa.
+     * Creado desde «Usuarios» quedaría sin empresa y vería el portal vacío.
+     */
+    static final String SOLO_REGISTRO_PORTAL =
+            "Los usuarios del portal se crean solo con el registro por RUC. Elige un rol del personal.";
+
+    private static boolean esCliente(Rol rol) {
+        return rol != null && RolSistema.CLIENTE.name().equalsIgnoreCase(rol.getNombreRol());
+    }
 
     private final UsuarioRepository usuarioRepository;
     private final RolRepository rolRepository;
@@ -88,6 +100,9 @@ public class UsuarioService {
 
         Rol rol = rolRepository.findById(request.getIdRol())
                 .orElseThrow(() -> new ResourceNotFoundException("El rol indicado no existe"));
+        if (esCliente(rol)) {
+            throw new BusinessException(SOLO_REGISTRO_PORTAL);
+        }
 
         Usuario usuario = new Usuario();
         usuario.setRol(rol);
@@ -138,6 +153,9 @@ public class UsuarioService {
         }
         Rol rol = rolRepository.findById(request.getIdRol())
                 .orElseThrow(() -> new ResourceNotFoundException("El rol indicado no existe"));
+        if (esCliente(rol) && !esCliente(usuario.getRol())) {
+            throw new BusinessException(SOLO_REGISTRO_PORTAL);
+        }
 
         usuario.setRol(rol);
         usuario.setNombres(request.getNombres());
