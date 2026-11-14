@@ -1,0 +1,261 @@
+package com.genlogs.app.sourcing;
+
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Service;
+
+import com.genlogs.app.enums.RolSistema;
+import com.genlogs.app.enums.TipoAviso;
+import com.genlogs.app.fuentes.ControlCuota;
+import com.genlogs.app.fuentes.FuenteNoDisponibleException;
+import com.genlogs.app.fuentes.config.CodigoFuente;
+import com.genlogs.app.fuentes.config.EstadoFuente;
+import com.genlogs.app.fuentes.config.FuenteBusquedaConfig;
+import com.genlogs.app.fuentes.config.FuenteBusquedaConfigRepository;
+import com.genlogs.app.fuentes.config.FuenteSelectorRepository;
+import com.genlogs.app.fuentes.config.LectorFuente;
+import com.genlogs.app.fuentes.config.LectorFuenteNoConectado;
+import com.genlogs.app.fuentes.config.ResultadoLectura;
+import com.genlogs.app.fuentes.config.SelectorFuenteDto;
+import com.genlogs.app.fuentes.config.SesionFuenteService;
+import com.genlogs.app.repository.NotificacionRepository;
+import com.genlogs.app.service.NotificacionService;
+
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * BPMN 9-B.1 · Consultar una fuente. No escribe en historial_sourcing.
+ * La sesión sale solo de {@link SesionFuenteService}. P2 no conectado no es CON_ERROR.
+ */
+@Slf4j
+@Service
+public class ConsultaFuenteService {
+
+    static final ZoneId ZONA = ZoneId.of("America/Lima");
+    private static final String PROCESO = "CONSULTA_FUENTE";
+    private static final int LARGO_ERROR = 500;
+    /** Enlace único por fuente; tipo GENERAL para no chocar con los tipos del PR #89. */
+    private static final String ENLACE_ERROR = "/configuracion/fuentes/%s#lectura-error";
+    private static final String ENLACE_VERIFICACION = "/configuracion/fuentes/%s#lectura-verificacion";
+
+    private final FuenteBusquedaConfigRepository fuenteRepository;
+    private final FuenteSelectorRepository selectorRepository;
+    private final SesionFuenteService sesiones;
+    private final LectorFuente lector;
+    private final PausaFuente pausa;
+    private final NotificacionService notificaciones;
+    private final NotificacionRepository notificacionRepository;
+    private final ConcurrentHashMap<CodigoFuente, ControlCuota> cuotas = new ConcurrentHashMap<>();
+    private Clock clock = Clock.systemDefaultZone();
+
+    public ConsultaFuenteService(FuenteBusquedaConfigRepository fuenteRepository,
+                                 FuenteSelectorRepository selectorRepository,
+                                 SesionFuenteService sesiones,
+                                 LectorFuente lector,
+                                 PausaFuente pausa,
+                                 NotificacionService notificaciones,
+                                 NotificacionRepository notificacionRepository) {
+        this.fuenteRepository = fuenteRepository;
+        this.selectorRepository = selectorRepository;
+        this.sesiones = sesiones;
+        this.lector = lector;
+        this.pausa = pausa;
+        this.notificaciones = notificaciones;
+        this.notificacionRepository = notificacionRepository;
+    }
+
+    void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
+    public ConsultaFuente consultar(FuenteBusquedaConfig fuente, ConsultaBusqueda consulta) {
+        CodigoFuente codigo = fuente.getCodigo();
+        String nombre = codigo.name();
+        ControlCuota cuota = cuotaDe(fuente);
+        if (cuota.usadasHoy() >= fuente.getLimiteDiario()) {
+            return ConsultaFuente.de(nombre, EstadoConsultaFuente.OMITIDA_CUOTA,
+                    fuente.getNombre() + " se omitió: sin cuota diaria.", List.of());
+        }
+
+        pausa.esperar(fuente.getPausaSegundos() == null ? 0 : fuente.getPausaSegundos());
+
+        Optional<String> sesion = pedirSesion(codigo);
+        if (sesion.isEmpty()) {
+            return ConsultaFuente.de(nombre, EstadoConsultaFuente.OMITIDA_SESION,
+                    fuente.getNombre() + " se omitió: sin sesión vigente.", List.of());
+        }
+
+        List<SelectorFuenteDto> selectores = selectoresDe(codigo);
+        ResultadoLectura lectura = invocarBuscar(codigo, fuente.getUrlBase(), sesion.get(), consulta, selectores);
+        if (lectura.tipo() == ResultadoLectura.Tipo.NO_CONECTADO) {
+            return ConsultaFuente.de(nombre, EstadoConsultaFuente.NO_CONECTADO,
+                    lectura.mensaje() != null ? lectura.mensaje() : LectorFuenteNoConectado.MENSAJE, List.of());
+        }
+
+        try {
+            cuota.reservar();
+        } catch (FuenteNoDisponibleException e) {
+            return ConsultaFuente.de(nombre, EstadoConsultaFuente.OMITIDA_CUOTA,
+                    fuente.getNombre() + " se omitió: sin cuota diaria.", List.of());
+        }
+
+        if (lectura.tipo() == ResultadoLectura.Tipo.ERROR && lectura.reintentable()) {
+            lectura = invocarBuscar(codigo, fuente.getUrlBase(), sesion.get(), consulta, selectores);
+        }
+        return aplicar(fuente, consulta, lectura);
+    }
+
+    /**
+     * Lectura de una ficha con sesión (9-B tarea 5). No aplica C2 cuando P2 no está conectado.
+     * El llamador decide el fallback a {@link LectorUrl}.
+     */
+    public ConsultaFuente consultarUrl(FuenteBusquedaConfig fuente, String url, ConsultaBusqueda consulta) {
+        CodigoFuente codigo = fuente.getCodigo();
+        Optional<String> sesion = pedirSesion(codigo);
+        if (sesion.isEmpty()) {
+            return ConsultaFuente.de(codigo.name(), EstadoConsultaFuente.OMITIDA_SESION,
+                    fuente.getNombre() + " se omitió: sin sesión vigente.", List.of());
+        }
+        ResultadoLectura lectura;
+        try {
+            lectura = lector.leerUrl(codigo, url, sesion.get(), selectoresDe(codigo));
+        } catch (RuntimeException e) {
+            log.warn("Falló la lectura de URL en {}: {}", codigo, recortar(e.getMessage()));
+            lectura = ResultadoLectura.error("No se pudo leer la página de la tienda.", true);
+        }
+        if (lectura == null) {
+            lectura = ResultadoLectura.error("El servicio de lectura no respondió.", true);
+        }
+        if (lectura.tipo() == ResultadoLectura.Tipo.NO_CONECTADO) {
+            return ConsultaFuente.de(codigo.name(), EstadoConsultaFuente.NO_CONECTADO,
+                    lectura.mensaje() != null ? lectura.mensaje() : LectorFuenteNoConectado.MENSAJE, List.of());
+        }
+        return aplicar(fuente, consulta, lectura);
+    }
+
+    private Optional<String> pedirSesion(CodigoFuente codigo) {
+        try {
+            return sesiones.sesionVigente(codigo);
+        } catch (RuntimeException e) {
+            log.warn("No se pudo pedir la sesión de {}: {}", codigo, recortar(e.getMessage()));
+            return Optional.empty();
+        }
+    }
+
+    private List<SelectorFuenteDto> selectoresDe(CodigoFuente codigo) {
+        return selectorRepository.findByFuente_CodigoAndStatus(codigo, "A").stream()
+                .map(s -> new SelectorFuenteDto(s.getPagina(), s.getCampo(), s.getRegla()))
+                .toList();
+    }
+
+    private ResultadoLectura invocarBuscar(CodigoFuente codigo, String urlBase, String sesion,
+                                           ConsultaBusqueda consulta, List<SelectorFuenteDto> selectores) {
+        try {
+            ResultadoLectura r = lector.buscar(codigo, urlBase, sesion, consulta, selectores);
+            return r == null ? ResultadoLectura.error("El servicio de lectura no respondió.", true) : r;
+        } catch (RuntimeException e) {
+            log.warn("Falló la lectura de {}: {}", codigo, recortar(e.getMessage()));
+            return ResultadoLectura.error("No se pudo leer la tienda.", true);
+        }
+    }
+
+    private ConsultaFuente aplicar(FuenteBusquedaConfig fuente, ConsultaBusqueda consulta,
+                                   ResultadoLectura lectura) {
+        String nombre = fuente.getCodigo().name();
+        return switch (lectura.tipo()) {
+            case NO_CONECTADO -> ConsultaFuente.de(nombre, EstadoConsultaFuente.NO_CONECTADO,
+                    lectura.mensaje() != null ? lectura.mensaje() : LectorFuenteNoConectado.MENSAJE, List.of());
+            case BLOQUEADA -> ConsultaFuente.de(nombre, EstadoConsultaFuente.BLOQUEADA,
+                    lectura.mensaje() != null ? lectura.mensaje() : "La tienda bloqueó la consulta.", List.of());
+            case VERIFICACION -> {
+                sesiones.marcarVerificacion(fuente.getCodigo(),
+                        lectura.mensaje() != null ? lectura.mensaje()
+                                : "La tienda pidió un código o CAPTCHA al buscar.");
+                avisar(fuente, String.format(ENLACE_VERIFICACION, nombre),
+                        fuente.getNombre() + " pide verificación",
+                        fuente.getNombre() + " pidió un código o CAPTCHA al consultar. Hay que volver a probar la sesión.");
+                yield ConsultaFuente.de(nombre, EstadoConsultaFuente.REQUIERE_VERIFICACION,
+                        lectura.mensaje(), List.of());
+            }
+            case ERROR -> {
+                marcarError(fuente, lectura.mensaje());
+                avisar(fuente, String.format(ENLACE_ERROR, nombre),
+                        fuente.getNombre() + " con error",
+                        fuente.getNombre() + " falló al consultarse. La búsqueda sigue con las demás tiendas.");
+                yield ConsultaFuente.de(nombre, EstadoConsultaFuente.CON_ERROR,
+                        lectura.mensaje() != null ? lectura.mensaje() : "La tienda no respondió.", List.of());
+            }
+            case SIN_RESULTADOS -> ConsultaFuente.de(nombre, EstadoConsultaFuente.SIN_RESULTADOS, null, List.of());
+            case OK -> {
+                List<ResultadoBusqueda> fichas = NormalizadorFicha.normalizar(lectura.fichas(), consulta);
+                if (fichas.isEmpty()) {
+                    yield ConsultaFuente.de(nombre, EstadoConsultaFuente.SIN_RESULTADOS, null, List.of());
+                }
+                yield ConsultaFuente.de(nombre, EstadoConsultaFuente.OK, null, fichas);
+            }
+        };
+    }
+
+    private void marcarError(FuenteBusquedaConfig fuente, String mensaje) {
+        fuente.setEstado(EstadoFuente.CON_ERROR);
+        fuente.setUltimoError(recortar(mensaje != null ? mensaje : "No se pudo leer la tienda."));
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String nombre = auth != null && auth.getName() != null ? auth.getName() : "SISTEMA";
+        fuente.setUserUpdate(nombre);
+        fuente.setProcessUpdate(PROCESO);
+        fuente.setDateUpdate(LocalDateTime.now(clock));
+        fuenteRepository.save(fuente);
+    }
+
+    private void avisar(FuenteBusquedaConfig fuente, String enlace, String titulo, String mensaje) {
+        LocalDate hoy = LocalDate.now(clock.withZone(ZONA));
+        LocalDateTime desde = hoy.atStartOfDay();
+        LocalDateTime hasta = hoy.plusDays(1).atStartOfDay();
+        if (notificacionRepository.existsByTipoAndEnlaceAndFechaCreacionGreaterThanEqualAndFechaCreacionLessThan(
+                TipoAviso.GENERAL.name(), enlace, desde, hasta)) {
+            return;
+        }
+        try {
+            notificaciones.avisarRol(RolSistema.JEFE_ADMINISTRATIVO, TipoAviso.GENERAL, titulo, mensaje, enlace, false);
+        } catch (RuntimeException e) {
+            log.warn("No se pudo avisar al Jefe por {}: {}", fuente.getCodigo(), recortar(e.getMessage()));
+        }
+    }
+
+    private ControlCuota cuotaDe(FuenteBusquedaConfig fuente) {
+        int limite = fuente.getLimiteDiario() == null || fuente.getLimiteDiario() < 1
+                ? 1 : fuente.getLimiteDiario();
+        return cuotas.computeIfAbsent(fuente.getCodigo(),
+                c -> new ControlCuota(c.name(), limite, clock));
+    }
+
+    /**
+     * {@code historial_sourcing.fuente} solo admite los códigos de v3_2.sql.
+     * AliExpress se persiste como ALIBABA y el código real queda en {@code consulta}.
+     */
+    static String codigoHistorial(CodigoFuente codigo) {
+        return codigo == CodigoFuente.ALIEXPRESS ? "ALIBABA" : codigo.name();
+    }
+
+    static String consultaConFuente(CodigoFuente codigo, String texto) {
+        if (codigo == CodigoFuente.ALIEXPRESS) {
+            return "ALIEXPRESS | " + texto;
+        }
+        return texto;
+    }
+
+    private static String recortar(String s) {
+        if (s == null) {
+            return null;
+        }
+        return s.length() <= LARGO_ERROR ? s : s.substring(0, LARGO_ERROR);
+    }
+}

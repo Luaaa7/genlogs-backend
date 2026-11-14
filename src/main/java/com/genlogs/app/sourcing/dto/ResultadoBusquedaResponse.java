@@ -5,15 +5,16 @@ import java.util.List;
 /**
  * Respuesta de POST /api/sourcing/buscar.
  *
- * @param reutilizada        true = no se consultaron fuentes; son referencias de las últimas 24 h
- * @param fuentesConsultadas códigos de las fuentes que respondieron
- * @param fuentesConError    fuentes que fallaron (la búsqueda sigue con las demás)
- * @param sugerirUrl         true = no hay referencias: FE-D muestra "Pegar URL" (BPMN 1)
+ * @param fuentesSinLector códigos que se saltaron porque P2 no está conectado (no es caída)
  */
 public record ResultadoBusquedaResponse(
         boolean reutilizada,
         List<String> fuentesConsultadas,
         List<String> fuentesConError,
+        List<String> fuentesOmitidas,
+        List<String> fuentesBloqueadas,
+        List<String> fuentesSinResultados,
+        List<String> fuentesSinLector,
         boolean sugerirUrl,
         List<ReferenciaResponse> referencias) {
 }
