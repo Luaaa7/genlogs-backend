@@ -224,6 +224,28 @@ class SesionFuenteTest {
         verify(lector, never()).iniciarSesion(any(), any(), any(), any());
     }
 
+    // ---------------------------------------------------------------- marcar verificación (9-B.1, tarea F)
+
+    @Test
+    void marcarVerificacion_alLeerSacaLaTiendaDeLaBusquedaHastaQueSeVuelvaAProbar() {
+        cargarCuenta(CodigoFuente.EBAY);
+        credenciales.guardar(CodigoFuente.EBAY, TipoCredencial.SESION, SESION, null, "PRUEBA");
+        FuenteBusquedaConfig f = fuentes.findByCodigo(CodigoFuente.EBAY).orElseThrow();
+        f.setEstado(EstadoFuente.ACTIVA);
+        f.setActiva(true);
+        f.setSesionValidaHasta(LocalDateTime.now().plusDays(3));
+
+        sesiones.marcarVerificacion(CodigoFuente.EBAY, "La tienda pidió un CAPTCHA al buscar.");
+
+        FuenteBusquedaConfig despues = fuente(CodigoFuente.EBAY);
+        assertThat(despues.getEstado()).isEqualTo(EstadoFuente.REQUIERE_VERIFICACION);
+        assertThat(despues.getUltimoError()).isEqualTo("La tienda pidió un CAPTCHA al buscar.");
+        assertThat(despues.getSesionValidaHasta()).isNull();
+        assertThat(credenciales.tiene(CodigoFuente.EBAY, TipoCredencial.SESION)).isFalse();
+        assertThat(sesiones.sesionVigente(CodigoFuente.EBAY)).isEmpty();
+        verify(lector, never()).iniciarSesion(any(), any(), any(), any());
+    }
+
     // ---------------------------------------------------------------- sin servicio de lectura
 
     @Test

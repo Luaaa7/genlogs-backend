@@ -65,6 +65,16 @@ public class SesionFuenteService {
         return iniciar(fuente) ? credenciales.leer(codigo, TipoCredencial.SESION) : Optional.empty();
     }
 
+    /**
+     * 9-B.1 (tarea F): la tienda pidió código o CAPTCHA mientras se leía. La fuente queda
+     * REQUIERE_VERIFICACION, sin sesión y fuera de la búsqueda hasta que se vuelva a probar (9-A).
+     */
+    @Transactional
+    public void marcarVerificacion(CodigoFuente codigo, String motivo) {
+        aplicar(fuente(codigo), ResultadoSesion.verificacion(
+                motivo != null && !motivo.isBlank() ? motivo : "La tienda pidió un código o CAPTCHA."));
+    }
+
     /** Pide al lector iniciar sesión y deja la fuente en el estado que corresponde. true si quedó ACTIVA. */
     private boolean iniciar(FuenteBusquedaConfig fuente) {
         CodigoFuente codigo = fuente.getCodigo();
@@ -76,7 +86,12 @@ public class SesionFuenteService {
         if (r == null) {
             r = ResultadoSesion.error("El servicio de lectura no respondió.");
         }
+        return aplicar(fuente, r);
+    }
 
+    /** Deja la fuente en el estado que corresponde al resultado. true si quedó ACTIVA. */
+    private boolean aplicar(FuenteBusquedaConfig fuente, ResultadoSesion r) {
+        CodigoFuente codigo = fuente.getCodigo();
         String nombre = usuarioActual();
         Long idUsuario = idUsuario(nombre);
         boolean ok = r.resultado() == ResultadoSesion.Resultado.OK && r.sesion() != null && r.validaHasta() != null;
