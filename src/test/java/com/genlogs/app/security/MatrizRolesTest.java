@@ -101,6 +101,7 @@ class MatrizRolesTest {
                 caso("Fuentes", "PATCH", "/api/fuentes/EBAY/parametros", "{\"pausaSegundos\":5,\"limiteDiario\":50}",
                         "JEFE_ADMINISTRATIVO"),
                 caso("Fuentes", "GET", "/api/fuentes/EBAY/selectores", null, "JEFE_ADMINISTRATIVO"),
+                caso("Fuentes", "POST", "/api/fuentes/EBAY/probar", null, "JEFE_ADMINISTRATIVO"),
                 // ---- Solicitudes y plazos: crean y gestionan el Asistente Logístico y el Jefe ----
                 caso("Solicitudes", "PATCH", "/api/solicitudes/" + id + "/pausar", "{\"motivo\":\"PROVEEDOR\"}",
                         "ASISTENTE_LOGISTICO", "JEFE_ADMINISTRATIVO"),

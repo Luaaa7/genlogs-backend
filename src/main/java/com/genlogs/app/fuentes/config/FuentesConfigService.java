@@ -143,7 +143,7 @@ public class FuentesConfigService {
 
     // ---------------------------------------------------------------- apoyo
 
-    private FuenteConfigResponse aRespuesta(FuenteBusquedaConfig f) {
+    FuenteConfigResponse aRespuesta(FuenteBusquedaConfig f) {
         return new FuenteConfigResponse(
                 f.getCodigo().name(), f.getNombre(), f.getUrlBase(),
                 Boolean.TRUE.equals(f.getActiva()), f.getEstado().name(),
@@ -153,7 +153,7 @@ public class FuentesConfigService {
                 credenciales.tiene(f.getCodigo(), TipoCredencial.CLAVE));
     }
 
-    private static CodigoFuente codigo(String texto) {
+    static CodigoFuente codigo(String texto) {
         return Arrays.stream(CodigoFuente.values())
                 .filter(c -> c.name().equalsIgnoreCase(texto))
                 .findFirst()

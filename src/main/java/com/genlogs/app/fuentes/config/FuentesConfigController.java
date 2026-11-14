@@ -7,6 +7,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -27,6 +28,7 @@ public class FuentesConfigController {
     private static final String SOLO_JEFE = "hasRole('JEFE_ADMINISTRATIVO')";
 
     private final FuentesConfigService service;
+    private final SesionFuenteService sesiones;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO')")
@@ -40,6 +42,13 @@ public class FuentesConfigController {
                                              @RequestBody CredencialesFuenteRequest req) {
         service.guardarCredenciales(codigo, req);
         return ResponseEntity.noContent().build();
+    }
+
+    /** L1 · «Probar sesión» con la cuenta de búsqueda: ACTIVA, REQUIERE_VERIFICACION o CON_ERROR. */
+    @PostMapping("/{codigo}/probar")
+    @PreAuthorize(SOLO_JEFE)
+    public FuenteConfigResponse probar(@PathVariable String codigo) {
+        return sesiones.probar(codigo);
     }
 
     @PatchMapping("/{codigo}/activar")
