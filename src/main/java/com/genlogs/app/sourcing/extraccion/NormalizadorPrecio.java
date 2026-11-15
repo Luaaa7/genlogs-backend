@@ -19,19 +19,33 @@ import java.util.regex.Pattern;
  *   <li>Separadores: "1,234.50", "1.234,50", "12,50" y "1 234,50" dan el mismo número.</li>
  *   <li>La moneda sale del texto de moneda; si no hay, del símbolo del precio;
  *       si tampoco, de la moneda por defecto de la fuente.</li>
+ *   <li>Un "$" solo es ambiguo (dólar, peso mexicano, peso argentino...): se usa la moneda
+ *       por defecto de la fuente y, si no hay, USD. MX$, CA$, R$, AU$... dan su moneda.</li>
  * </ul>
  */
 public final class NormalizadorPrecio {
+
+    /** "$" solo: puede ser dólar o peso; decide la moneda por defecto de la fuente. */
+    private static final String DOLAR_O_PESO = "$";
 
     /** Símbolos y nombres de moneda → ISO. Los más largos van primero ("US$" antes que "$"). */
     private static final Map<String, String> MONEDAS = new LinkedHashMap<>();
 
     static {
+        MONEDAS.put("MX$", "MXN");
+        MONEDAS.put("CA$", "CAD");
+        MONEDAS.put("C$", "CAD");
+        MONEDAS.put("AU$", "AUD");
+        MONEDAS.put("A$", "AUD");
+        MONEDAS.put("NZ$", "NZD");
+        MONEDAS.put("HK$", "HKD");
+        MONEDAS.put("R$", "BRL");
         MONEDAS.put("US$", "USD");
         MONEDAS.put("US $", "USD");
         MONEDAS.put("USD", "USD");
         MONEDAS.put("DÓLARES", "USD");
         MONEDAS.put("DOLARES", "USD");
+        MONEDAS.put("DOLLARS", "USD");
         MONEDAS.put("S/.", "PEN");
         MONEDAS.put("S/", "PEN");
         MONEDAS.put("PEN", "PEN");
@@ -45,7 +59,24 @@ public final class NormalizadorPrecio {
         MONEDAS.put("RMB", "CNY");
         MONEDAS.put("¥", "CNY");
         MONEDAS.put("MXN", "MXN");
-        MONEDAS.put("$", "USD");
+        MONEDAS.put("CAD", "CAD");
+        MONEDAS.put("AUD", "AUD");
+        MONEDAS.put("BRL", "BRL");
+        MONEDAS.put("ARS", "ARS");
+        MONEDAS.put("CLP", "CLP");
+        MONEDAS.put("COP", "COP");
+    }
+
+    /**
+     * Las claves de solo letras ("USD", "CAD") se buscan como palabra completa, para que
+     * "cada" no sea CAD ni "dollars" sea ARS; las que llevan símbolo se buscan tal cual.
+     */
+    private static final Map<Pattern, String> PATRONES = new LinkedHashMap<>();
+
+    static {
+        MONEDAS.forEach((clave, iso) -> PATRONES.put(clave.matches("[A-ZÓ]+")
+                ? Pattern.compile("(?<![A-ZÓ])" + clave + "(?![A-ZÓ])")
+                : Pattern.compile(Pattern.quote(clave)), iso));
     }
 
     /** Primer número del texto, con sus separadores de miles y decimales. */
@@ -71,18 +102,24 @@ public final class NormalizadorPrecio {
         }
         String moneda = moneda(textoMoneda);
         if (moneda == null) moneda = moneda(textoPrecio);
+        boolean dolarOPeso = moneda == null && (tieneDolarSolo(textoMoneda) || tieneDolarSolo(textoPrecio));
         if (moneda == null && monedaPorDefecto != null && !monedaPorDefecto.isBlank()) {
             moneda = monedaPorDefecto.trim().toUpperCase(Locale.ROOT);
         }
+        if (moneda == null && dolarOPeso) moneda = "USD";
         return new PrecioExtraido(monto, moneda);
     }
 
-    /** ISO de la moneda que aparece en el texto, o null si no aparece ninguna. */
+    private static boolean tieneDolarSolo(String texto) {
+        return texto != null && texto.contains(DOLAR_O_PESO);
+    }
+
+    /** ISO de la moneda que aparece en el texto, o null si no aparece ninguna (un "$" solo también da null). */
     public static String moneda(String texto) {
         if (texto == null || texto.isBlank()) return null;
         String t = texto.toUpperCase(Locale.ROOT);
-        for (Map.Entry<String, String> m : MONEDAS.entrySet()) {
-            if (t.contains(m.getKey())) return m.getValue();
+        for (Map.Entry<Pattern, String> m : PATRONES.entrySet()) {
+            if (m.getKey().matcher(t).find()) return m.getValue();
         }
         return null;
     }

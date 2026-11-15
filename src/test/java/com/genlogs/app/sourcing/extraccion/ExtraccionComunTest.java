@@ -108,4 +108,18 @@ class ExtraccionComunTest {
         assertEquals("USD", r.codigoMoneda());
         assertEquals("https://www.ebay.com/itm/7", r.urlReferencia());
     }
+
+    @Test
+    void unPatrocinadoQueSoloCambiaLosParametrosNoSeRepite() {
+        List<Map<CampoSelector, String>> leidas = List.of(
+                ficha("Filtro", "$10", "https://www.amazon.com/dp/B000123?ref=sr_1"),
+                ficha("Filtro patrocinado", "$10", "https://www.amazon.com/dp/B000123?ref=sspa#x"),
+                ficha("Otro", "$11", "https://www.amazon.com/dp/B000999"));
+
+        List<FichaExtraida> fichas = ExtraccionComun.fichas(leidas, "https://www.amazon.com", "USD", 8);
+
+        assertEquals(2, fichas.size());
+        assertEquals("https://www.amazon.com/dp/B000123?ref=sr_1", fichas.get(0).enlace());
+        assertEquals("https://www.amazon.com/dp/B000123", ExtraccionComun.sinParametros(fichas.get(0).enlace()));
+    }
 }

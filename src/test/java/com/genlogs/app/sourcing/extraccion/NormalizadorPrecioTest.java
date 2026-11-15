@@ -80,4 +80,28 @@ class NormalizadorPrecioTest {
         assertEquals(new BigDecimal("89.99"), p.monto());
         assertNull(p.codigoMoneda());
     }
+
+    @ParameterizedTest(name = "\"{0}\" -> {1} {2}")
+    @CsvSource(delimiter = '|', value = {
+            "MX$ 1,200.00       | 1200.00 | MXN",
+            "C$ 20              | 20.00   | CAD",
+            "CA$ 20             | 20.00   | CAD",
+            "AU$ 15.99          | 15.99   | AUD",
+            "R$ 50,00           | 50.00   | BRL",
+            "12.99 US dollars   | 12.99   | USD",
+            "S/ 99 cada uno     | 99.00   | PEN"
+    })
+    void reconoceOtrosDolaresYPesosSinConfundirPalabras(String texto, String monto, String moneda) {
+        PrecioExtraido p = NormalizadorPrecio.normalizar(texto);
+        assertEquals(new BigDecimal(monto), p.monto());
+        assertEquals(moneda, p.codigoMoneda());
+    }
+
+    @Test
+    void unDolarSoloUsaLaMonedaDeLaFuente() {
+        assertEquals("MXN", NormalizadorPrecio.normalizar("$1,200", null, "MXN").codigoMoneda());
+        assertEquals("ARS", NormalizadorPrecio.normalizar("$ 35.000", null, "ARS").codigoMoneda());
+        assertEquals("USD", NormalizadorPrecio.normalizar("$45", null, null).codigoMoneda());
+        assertEquals("USD", NormalizadorPrecio.normalizar("US $45", null, "MXN").codigoMoneda());
+    }
 }

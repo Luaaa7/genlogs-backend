@@ -7,6 +7,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.genlogs.app.fuentes.config.CampoSelector;
 
 /**
@@ -17,12 +20,16 @@ import com.genlogs.app.fuentes.config.CampoSelector;
  * <ul>
  *   <li>Una ficha sin NOMBRE o sin ENLACE se descarta.</li>
  *   <li>Enlaces e imágenes relativos ("/itm/123") se completan con la URL base de la tienda.</li>
- *   <li>Un mismo enlace repetido cuenta una sola vez.</li>
+ *   <li>Un mismo enlace repetido cuenta una sola vez (sin mirar los parámetros "?...",
+ *       así los patrocinados que solo cambian el rastreo no se repiten).</li>
+ *   <li>Las fichas descartadas se cuentan en el log, para notar una regla rota.</li>
  *   <li>Precio y moneda pasan por {@link NormalizadorPrecio}.</li>
  *   <li>Se devuelven como máximo {@code maximo} fichas (BUSQUEDA_MAX_RESULTADOS).</li>
  * </ul>
  */
 public final class ExtraccionComun {
+
+    private static final Logger log = LoggerFactory.getLogger(ExtraccionComun.class);
 
     private static final int LARGO_NOMBRE = 255;
     private static final int LARGO_DESCRIPCION = 2000;
@@ -41,12 +48,22 @@ public final class ExtraccionComun {
         List<FichaExtraida> fichas = new ArrayList<>();
         if (fichasEnTexto == null) return fichas;
         Set<String> enlacesVistos = new LinkedHashSet<>();
+        int incompletas = 0;
+        int repetidas = 0;
         for (Map<CampoSelector, String> campos : fichasEnTexto) {
             if (maximo > 0 && fichas.size() >= maximo) break;
             FichaExtraida ficha = ficha(campos, urlBase, monedaPorDefecto);
-            if (ficha != null && enlacesVistos.add(ficha.enlace())) {
+            if (ficha == null) {
+                incompletas++;
+            } else if (!enlacesVistos.add(sinParametros(ficha.enlace()))) {
+                repetidas++;
+            } else {
                 fichas.add(ficha);
             }
+        }
+        if (incompletas > 0 || repetidas > 0) {
+            log.info("Extracción en {}: {} fichas, {} descartadas sin nombre o enlace, {} repetidas",
+                    urlBase, fichas.size(), incompletas, repetidas);
         }
         return fichas;
     }
@@ -66,6 +83,16 @@ public final class ExtraccionComun {
                 precio.codigoMoneda(),
                 absoluta(limpio(campos.get(CampoSelector.IMAGEN)), urlBase),
                 enlace);
+    }
+
+    /** El enlace sin "?..." ni "#...": dos patrocinados del mismo producto cuentan como uno. */
+    static String sinParametros(String enlace) {
+        int corte = enlace.length();
+        int pregunta = enlace.indexOf('?');
+        int numeral = enlace.indexOf('#');
+        if (pregunta >= 0) corte = Math.min(corte, pregunta);
+        if (numeral >= 0) corte = Math.min(corte, numeral);
+        return enlace.substring(0, corte);
     }
 
     /** Texto sin espacios de más; null si queda vacío. */
