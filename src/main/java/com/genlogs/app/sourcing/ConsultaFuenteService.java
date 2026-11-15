@@ -81,8 +81,9 @@ public class ConsultaFuenteService {
     public ConsultaFuente consultar(FuenteBusquedaConfig fuente, ConsultaBusqueda consulta) {
         CodigoFuente codigo = fuente.getCodigo();
         String nombre = codigo.name();
-        ControlCuota cuota = cuotaDe(fuente);
-        if (cuota.usadasHoy() >= fuente.getLimiteDiario()) {
+        int limite = limiteDe(fuente);
+        ControlCuota cuota = cuotaDe(codigo);
+        if (cuota.usadasHoy() >= limite) {
             return ConsultaFuente.de(nombre, EstadoConsultaFuente.OMITIDA_CUOTA,
                     fuente.getNombre() + " se omitió: sin cuota diaria.", List.of());
         }
@@ -103,7 +104,7 @@ public class ConsultaFuenteService {
         }
 
         try {
-            cuota.reservar();
+            cuota.reservar(limite);
         } catch (FuenteNoDisponibleException e) {
             return ConsultaFuente.de(nombre, EstadoConsultaFuente.OMITIDA_CUOTA,
                     fuente.getNombre() + " se omitió: sin cuota diaria.", List.of());
@@ -232,11 +233,14 @@ public class ConsultaFuenteService {
         }
     }
 
-    private ControlCuota cuotaDe(FuenteBusquedaConfig fuente) {
-        int limite = fuente.getLimiteDiario() == null || fuente.getLimiteDiario() < 1
-                ? 1 : fuente.getLimiteDiario();
-        return cuotas.computeIfAbsent(fuente.getCodigo(),
-                c -> new ControlCuota(c.name(), limite, clock));
+    private ControlCuota cuotaDe(CodigoFuente codigo) {
+        return cuotas.computeIfAbsent(codigo, c -> new ControlCuota(c.name(), clock));
+    }
+
+    /** El mismo criterio de siempre: un límite ausente o menor que 1 cuenta como 1. */
+    private static int limiteDe(FuenteBusquedaConfig fuente) {
+        Integer configurado = fuente.getLimiteDiario();
+        return configurado == null || configurado < 1 ? 1 : configurado;
     }
 
     /**
