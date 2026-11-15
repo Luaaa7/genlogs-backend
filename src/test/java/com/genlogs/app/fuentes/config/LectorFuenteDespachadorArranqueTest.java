@@ -12,8 +12,9 @@ import com.genlogs.app.sourcing.ConsultaFuenteService;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * La aplicación arranca sin lectores de tienda. {@code ConsultaFuenteService}
- * recibe el despachador, no el respaldo ni un lector específico.
+ * La aplicación arranca con los lectores de tienda que existan (eBay, y luego los de
+ * Karla y Ale). {@code ConsultaFuenteService} recibe el despachador, no el respaldo
+ * ni un lector específico, y ningún lector específico es a la vez un {@link LectorFuente}.
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -32,7 +33,8 @@ class LectorFuenteDespachadorArranqueTest {
     void elContextoArrancaYElServicioRecibeElDespachador() {
         assertThat(lector).isInstanceOf(LectorFuenteDespachador.class);
         assertThat(ReflectionTestUtils.getField(consultaFuenteService, "lector")).isSameAs(lector);
-        assertThat(contexto.getBeansOfType(LectorFuenteEspecifico.class)).isEmpty();
+        assertThat(contexto.getBeansOfType(LectorFuenteEspecifico.class).values())
+                .noneMatch(LectorFuente.class::isInstance);
         assertThat(contexto.getBeansOfType(LectorFuente.class).values())
                 .allMatch(LectorFuenteDespachador.class::isInstance);
     }
