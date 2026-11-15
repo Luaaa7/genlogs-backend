@@ -75,6 +75,10 @@ class MatrizRolesTest {
 
     private static final String NO_EXISTE = "999999";
 
+    /** Repuesto que pasa @Valid; la categoría y la unidad no existen, así que nunca se guarda. */
+    private static final String PRODUCTO_VALIDO = "{\"idCategoriaProducto\":" + NO_EXISTE
+            + ",\"idUnidadMedida\":" + NO_EXISTE + ",\"nombreProducto\":\"Filtro de prueba\",\"visibleWeb\":false}";
+
     @Autowired private MockMvc mockMvc;
     @Autowired private RolRepository rolRepository;
     @Autowired private UsuarioRepository usuarioRepository;
@@ -167,6 +171,21 @@ class MatrizRolesTest {
                         "GERENTE_GENERAL", "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO", "ASISTENTE_ADMINISTRATIVO"),
                 caso("Vitrina", "POST", "/api/vitrina/productos/" + id + "/publicar", null,
                         "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO"),
+
+                // ---- Catálogo de repuestos (R3, v3.3): editan el Jefe y el Asistente Logístico; consulta el personal ----
+                // Cuerpos válidos: @Valid responde 400 antes que @PreAuthorize si el cuerpo está incompleto.
+                caso("Repuestos", "POST", "/api/productos", PRODUCTO_VALIDO,
+                        "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO"),
+                caso("Repuestos", "PUT", "/api/productos/" + id, PRODUCTO_VALIDO,
+                        "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO"),
+                caso("Repuestos", "DELETE", "/api/productos/" + id, null,
+                        "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO"),
+                caso("Repuestos", "POST", "/api/productos/" + id + "/caracteristicas",
+                        "{\"idCaracteristica\":" + id + ",\"valorCaracteristica\":\"10 micras\"}",
+                        "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO"),
+                caso("Repuestos", "DELETE", "/api/productos/imagenes/" + id, null,
+                        "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO"),
+                caso("Repuestos", "GET", "/api/productos", null, INTERNOS.toArray(String[]::new)),
 
                 // ---- Servicios: crean el Jefe y el Asistente Logístico ----
                 caso("Servicios", "POST", "/api/servicios", "{}",
