@@ -15,7 +15,7 @@
 --      incluido ITEM: el bloque de cada resultado en la página de búsqueda).
 --   4. historial_sourcing: agrega descripcion y estado_consulta, su CHECK de
 --      fuente admite ALIEXPRESS y metodo pasa a VARCHAR(15) (NUMERO_PARTE no cabía).
---   5. Parámetros BUSQUEDA_MAX_RESULTADOS (8) y BUSQUEDA_REUSO_DIAS (7).
+--   5. Parámetros BUSQUEDA_MAX_RESULTADOS (8), BUSQUEDA_REUSO_DIAS (7) y VERIFICACION_MAX_DIA (10).
 --   6. RLS en las tablas nuevas.
 --   7. Crea fuente_prueba (corridas de la prueba de 10 pedidos, M2).
 --
@@ -182,7 +182,8 @@ ALTER TABLE public.historial_sourcing ADD CONSTRAINT ck_historial_sourcing_fuent
 -- ----------------------------------------------------------------------------
 INSERT INTO public.parametro_sistema (clave, valor, descripcion) VALUES
     ('BUSQUEDA_MAX_RESULTADOS', '8', 'Fichas que trae cada fuente por búsqueda'),
-    ('BUSQUEDA_REUSO_DIAS',     '7', 'Días en que se reutiliza una búsqueda del mismo N.º de parte')
+    ('BUSQUEDA_REUSO_DIAS',     '7', 'Días en que se reutiliza una búsqueda del mismo N.º de parte'),
+    ('VERIFICACION_MAX_DIA',    '10', 'Consultas por tienda que puede usar la verificación de las 06:10 (tope: limite_diario / 5)')
 ON CONFLICT (clave) DO NOTHING;
 
 -- ----------------------------------------------------------------------------
@@ -230,6 +231,7 @@ COMMIT;
 --   SELECT COUNT(*) FROM public.fuente_busqueda;                                  -- 5
 --   SELECT codigo, activa, estado FROM public.fuente_busqueda ORDER BY id_fuente; -- todas false / SIN_PROBAR
 --   SELECT clave, valor FROM public.parametro_sistema WHERE clave LIKE 'BUSQUEDA_%'; -- 8 y 7
+--   SELECT valor FROM public.parametro_sistema WHERE clave = 'VERIFICACION_MAX_DIA'; -- 10
 --   SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint
 --    WHERE conrelid = 'public.historial_sourcing'::regclass AND contype = 'c';      -- un solo CHECK de fuente, con ALIEXPRESS
 --   SELECT pg_get_constraintdef(oid) FROM pg_constraint
