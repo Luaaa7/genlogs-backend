@@ -19,7 +19,10 @@ import com.genlogs.app.repository.ProductoRepository;
 import com.genlogs.app.repository.UnidadMedidaRepository;
 import com.genlogs.app.repository.UsuarioRepository;
 import com.genlogs.app.service.NotificacionService;
+import com.genlogs.app.dto.TipoCambioDia;
 import com.genlogs.app.service.ProductoService;
+import com.genlogs.app.service.TipoCambioService;
+import com.genlogs.app.sourcing.CostoPuestoLima;
 import com.genlogs.app.sourcing.EstadoSourcing;
 import com.genlogs.app.sourcing.HistorialSourcing;
 import com.genlogs.app.sourcing.HistorialSourcingRepository;
@@ -62,8 +65,37 @@ public class VitrinaService {
     private final ProductoService productoService;
     private final MargenRepuesto margenRepuesto;
     private final NotificacionService notificacionService;
+    private final TipoCambioService tipoCambioService;
 
     // ------------------------------------------------------------------ interno
+
+    /**
+     * R4 (D-17): costo en soles del que sale el precio del portal con MARGEN_REP_*.
+     * Primero el que escribe el asistente, luego el costo puesto en Lima de «Pegar URL»; si la
+     * referencia es un resultado de búsqueda (solo trae precio y moneda), se pasa a soles con el
+     * tipo de cambio del día. Ese costo no incluye flete, seguro ni aduana: si hacen falta, el
+     * asistente escribe el costo puesto en Lima al convertir.
+     */
+    private BigDecimal costoEnSoles(ConvertirProductoRequest req, HistorialSourcing ref) {
+        if (req.costoPuestoLima() != null) return req.costoPuestoLima();
+        if (ref.getCostoPuestoLima() != null) return ref.getCostoPuestoLima();
+        BigDecimal precioTienda = ref.getPrecioRef();
+        if (precioTienda == null || precioTienda.signum() <= 0) {
+            throw new BusinessException("Falta el costo puesto en Lima: captúralo con «Pegar URL» o escríbelo al convertir");
+        }
+        String codigoMoneda = ref.getMoneda() == null ? null : ref.getMoneda().getCodigoMoneda();
+        if (codigoMoneda == null || codigoMoneda.isBlank()) {
+            throw new BusinessException("La referencia no indica la moneda de su precio: escribe el costo puesto en Lima al convertir");
+        }
+        if (CostoPuestoLima.esSoles(codigoMoneda)) {
+            return CostoPuestoLima.calcular(precioTienda, codigoMoneda, null, null, null, null);
+        }
+        TipoCambioDia tipoCambio = tipoCambioService.delDia(codigoMoneda.trim().toUpperCase())
+                .orElseThrow(() -> new BusinessException("No hay tipo de cambio de " + codigoMoneda
+                        + " registrado: regístralo o escribe el costo puesto en Lima al convertir"));
+        ref.setTipoCambioUsado(tipoCambio.valor());
+        return CostoPuestoLima.calcular(precioTienda, codigoMoneda, tipoCambio.valor(), null, null, null);
+    }
 
     /** Convierte una referencia ÚTIL en producto BORRADOR con su precio referencial. */
     @Transactional
@@ -77,10 +109,7 @@ public class VitrinaService {
             throw new BusinessException("Marca la referencia como ÚTIL antes de convertirla");
         }
 
-        BigDecimal costo = req.costoPuestoLima() != null ? req.costoPuestoLima() : ref.getCostoPuestoLima();
-        if (costo == null) {
-            throw new BusinessException("Falta el costo puesto en Lima: captúralo con «Pegar URL» o escríbelo al convertir");
-        }
+        BigDecimal costo = costoEnSoles(req, ref);
         MargenRepuesto.Rangos rangos = margenRepuesto.rangos();
         BigDecimal margen = req.margen() != null ? req.margen() : rangos.sugerido();
         BigDecimal precio = MargenRepuesto.precio(costo, margen);
