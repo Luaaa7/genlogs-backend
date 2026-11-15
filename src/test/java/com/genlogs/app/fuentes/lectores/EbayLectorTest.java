@@ -89,6 +89,7 @@ class EbayLectorTest {
                 .containsEntry("enlace", Map.of("selector", "a.s-item__link", "atributo", "href"))
                 .containsEntry("codigoMoneda", "USD")
                 .containsEntry("separadorDecimal", ".")
+                .containsEntry("sinResultados", ".srp-save-null-search")
                 .doesNotContainKey("descripcion");
         assertThat(p.sesion().validaHasta()).isEqualTo("2026-11-15T20:00:00Z");
         assertThat(p.sesion().storageState().path("cookies").isArray()).isTrue();

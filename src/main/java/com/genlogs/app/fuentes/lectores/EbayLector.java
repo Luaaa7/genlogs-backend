@@ -38,6 +38,8 @@ public class EbayLector implements LectorFuenteEspecifico {
     static final String MONEDA = "USD";
     static final String SEPARADOR_DECIMAL = ".";
     static final int MAX_RESULTADOS = 8;
+    /** Bloque que muestra eBay cuando la búsqueda no encuentra nada ("No se ha encontrado ninguna coincidencia exacta"). */
+    static final String SIN_RESULTADOS = ".srp-save-null-search";
     private static final int LARGO_CONSULTA = 200;
 
     private final LectorRemotoClient cliente;
@@ -74,6 +76,8 @@ public class EbayLector implements LectorFuenteEspecifico {
             return ResultadoLectura.error("eBay no tiene reglas de búsqueda completas: faltan ITEM, NOMBRE,"
                     + " PRECIO o ENLACE en Configuración > Fuentes.", false);
         }
+        // Sin esto, una búsqueda sin resultados se tomaría como reglas rotas (CON_ERROR y aviso al Jefe).
+        reglas.put("sinResultados", SIN_RESULTADOS);
         String url = urlBusqueda(urlBase, texto);
         return leer(sesion, s -> cliente.buscar(
                 new ContratoLector.Peticion(CodigoFuente.EBAY.name(), url, reglas, s, null, MAX_RESULTADOS)));
