@@ -287,6 +287,57 @@ public class CotizacionService {
         return toResponseDetalle(cotizacion, codigoGenerado);
     }
 
+    /**
+     * Actualiza la misma cotización tras una devolución. No crea otra fila
+     * ni otro código. tipoCambioUsado no se toca: lo resuelve el prompt BE-2.
+     */
+    @Transactional
+    public CotizacionResponse actualizar(Long idCotizacion, CotizacionRequest request) {
+        Cotizacion cotizacion = obtenerOLanzar(idCotizacion);
+        String codigoEstado = cotizacion.getEstadoCotizacion().getCodigoEstado();
+        if (!CodigoEstadoCotizacion.BORRADOR.name().equalsIgnoreCase(codigoEstado)) {
+            throw new BusinessException("Solo se actualiza una cotización en borrador");
+        }
+
+        Long idCliente = resolverIdCliente(request);
+        Integer idMoneda = resolverIdMoneda(request);
+        Integer idCondicionPago = resolverIdCondicionPago(request);
+        List<CotizacionDetalleRequest> lineas = resolverLineas(request);
+
+        Cliente cliente = clienteRepository.findById(idCliente)
+                .orElseThrow(() -> new ResourceNotFoundException("Cliente no encontrado"));
+        if (cotizacion.getContacto() != null
+                && !cotizacion.getContacto().getTercero().getIdTercero()
+                        .equals(cliente.getTercero().getIdTercero())) {
+            throw new BusinessException("El contacto no pertenece a este cliente");
+        }
+
+        Moneda moneda = monedaRepository.findById(idMoneda)
+                .orElseThrow(() -> new ResourceNotFoundException("Moneda no encontrada"));
+        CondicionPago condicionPago = condicionPagoRepository.findById(idCondicionPago)
+                .orElseThrow(() -> new ResourceNotFoundException("Condición de pago no encontrada"));
+        SectorEconomico sector = request.getIdSectorEconomico() != null
+                ? sectorEconomicoRepository.findById(request.getIdSectorEconomico())
+                        .orElseThrow(() -> new ResourceNotFoundException("Sector económico no encontrado"))
+                : cliente.getSectorEconomico();
+
+        Usuario usuario = usuarioActual();
+        cotizacion.setCliente(cliente);
+        cotizacion.setMoneda(moneda);
+        cotizacion.setCondicionPago(condicionPago);
+        cotizacion.setSectorEconomico(sector);
+        cotizacion.setObservaciones(request.getObservaciones());
+        cotizacion.setUserUpdate(usuario.getNombreUsuario());
+        cotizacion.setProcessUpdate("ACTUALIZAR_COTIZACION");
+        cotizacion.setDateUpdate(LocalDateTime.now());
+        cotizacionRepository.save(cotizacion);
+
+        reemplazarLineas(cotizacion, lineas, usuario.getNombreUsuario());
+        registrarSeguimiento(cotizacion, cotizacion.getEstadoCotizacion(), usuario,
+                "Cotización actualizada tras devolución");
+        return toResponseDetalle(cotizacion);
+    }
+
     @Transactional
     public CotizacionResponse cambiarEstado(
             Long idCotizacion,
@@ -302,7 +353,9 @@ public class CotizacionService {
         }
 
         ReglasAprobacionCotizacion.validarCambioLibre(
-                cotizacion.getEstadoCotizacion().getCodigoEstado(), codigoEstado);
+                cotizacion.getEstadoCotizacion().getCodigoEstado(),
+                codigoEstado,
+                request.comentarioResuelto());
 
         EstadoCotizacion nuevoEstado = buscarEstado(codigoEstado);
 
@@ -1197,6 +1250,27 @@ public class CotizacionService {
         }
 
         return lineas;
+    }
+
+    /** Las líneas anteriores quedan inactivas. Las nuevas usan la misma construcción del alta. */
+    private void reemplazarLineas(
+            Cotizacion cotizacion,
+            List<CotizacionDetalleRequest> lineas,
+            String usuario) {
+
+        LocalDateTime ahora = LocalDateTime.now();
+        for (CotizacionDetalle anterior : cotizacionDetalleRepository.findByCotizacion(cotizacion.getIdCotizacion())) {
+            anterior.setStatus("I");
+            anterior.setUserUpdate(usuario);
+            anterior.setProcessUpdate("ACTUALIZAR_COTIZACION");
+            anterior.setDateUpdate(ahora);
+            cotizacionDetalleRepository.save(anterior);
+        }
+        cotizacionDetalleRepository.flush();
+        for (CotizacionDetalleRequest lineaRequest : lineas) {
+            cotizacionDetalleRepository.save(construirLinea(cotizacion, lineaRequest, usuario));
+        }
+        cotizacionDetalleRepository.flush();
     }
 
     // ------------------------------------------------------------
