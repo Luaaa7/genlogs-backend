@@ -95,6 +95,9 @@ public class VitrinaService {
 
         OrigenRepuesto origen = req.origen() != null ? req.origen() : origenDe(ref.getOrigen());
         String numeroParte = textoONulo(req.numeroParte()) != null ? req.numeroParte().trim() : ref.getNumeroParte();
+        // R2: si el asistente no escribe una, se toma la descripción de la ficha del historial.
+        // El enlace y la imagen de la tienda nunca pasan al producto (D-13); la fuente solo aporta datos (D-36).
+        String descripcion = textoONulo(req.descripcion()) != null ? textoONulo(req.descripcion()) : textoONulo(ref.getDescripcion());
 
         Producto producto = Producto.builder()
                 .categoriaProducto(categoria)
@@ -102,7 +105,7 @@ public class VitrinaService {
                 .marca(marca)
                 .codigoProducto(productoService.generarSiguienteCodigo())
                 .nombreProducto(req.nombre().trim())
-                .descripcion(textoONulo(req.descripcion()))
+                .descripcion(descripcion)
                 .procedencia(origen == OrigenRepuesto.IMPORTADO ? "Importado" : "Nacional")
                 .visibleWeb(false)
                 .numeroParte(numeroParte)
