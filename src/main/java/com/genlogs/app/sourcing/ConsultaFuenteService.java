@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -22,6 +23,7 @@ import com.genlogs.app.fuentes.config.FuenteBusquedaConfig;
 import com.genlogs.app.fuentes.config.FuenteBusquedaConfigRepository;
 import com.genlogs.app.fuentes.config.FuenteSelectorRepository;
 import com.genlogs.app.fuentes.config.LectorFuente;
+import com.genlogs.app.fuentes.config.LectorFuenteDespachador;
 import com.genlogs.app.fuentes.config.LectorFuenteNoConectado;
 import com.genlogs.app.fuentes.config.ResultadoLectura;
 import com.genlogs.app.fuentes.config.SelectorFuenteDto;
@@ -59,7 +61,7 @@ public class ConsultaFuenteService {
     public ConsultaFuenteService(FuenteBusquedaConfigRepository fuenteRepository,
                                  FuenteSelectorRepository selectorRepository,
                                  SesionFuenteService sesiones,
-                                 LectorFuente lector,
+                                 @Qualifier(LectorFuenteDespachador.BEAN) LectorFuente lector,
                                  PausaFuente pausa,
                                  NotificacionService notificaciones,
                                  NotificacionRepository notificacionRepository) {
