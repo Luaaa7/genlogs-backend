@@ -38,11 +38,17 @@ public abstract class FuenteConToken implements FuenteBusqueda {
 
     private final ControlCuota cuota;
     private final TokenAplicacion token;
+    /** Tope fijo de la API (no es el límite de fuente_busqueda). Se pasa en cada reserva. */
+    private final int limiteDiario;
 
     protected FuenteConToken(ClienteHttp http, int limiteDiario, int maxResultados, Clock reloj) {
+        if (limiteDiario < 1) {
+            throw new IllegalArgumentException("El límite diario de " + codigo() + " debe ser al menos 1");
+        }
         this.http = http;
         this.maxResultados = Math.max(1, Math.min(maxResultados, 50));
-        this.cuota = new ControlCuota(codigo(), limiteDiario, reloj);
+        this.limiteDiario = limiteDiario;
+        this.cuota = new ControlCuota(codigo(), reloj);
         this.token = new TokenAplicacion(this::emitirToken, reloj);
     }
 
@@ -61,7 +67,7 @@ public abstract class FuenteConToken implements FuenteBusqueda {
         if (texto.isEmpty()) {
             return List.of();
         }
-        cuota.reservar();
+        cuota.reservar(limiteDiario);
         String textoUrl = URLEncoder.encode(texto, StandardCharsets.UTF_8);
         long inicio = System.nanoTime();
 
