@@ -116,6 +116,69 @@ class VitrinaServiceTest {
     }
 
     @Test
+    void r2_tomaLaDescripcionDelHistorialSiNoSeEscribeOtra() {
+        HistorialSourcing ref = util(new BigDecimal("455.00"));
+        ref.setDescripcion("  Filtro de combustible original Caterpillar  ");
+        when(historialRepo.findById(7L)).thenReturn(Optional.of(ref));
+
+        servicio.convertir(pedido(null));
+
+        ArgumentCaptor<Producto> guardado = ArgumentCaptor.forClass(Producto.class);
+        verify(productoRepo).save(guardado.capture());
+        assertThat(guardado.getValue().getDescripcion()).isEqualTo("Filtro de combustible original Caterpillar");
+    }
+
+    @Test
+    void r2_laDescripcionEscritaAlConvertirGanaALaDelHistorial() {
+        HistorialSourcing ref = util(new BigDecimal("455.00"));
+        ref.setDescripcion("Texto de la tienda");
+        when(historialRepo.findById(7L)).thenReturn(Optional.of(ref));
+        ConvertirProductoRequest req = new ConvertirProductoRequest(7L, "Filtro de combustible CAT 1R-0750",
+                "Descripción propia de GENLOGS", 3, 1, null, null, TipoRepuesto.OEM, null, null, null);
+
+        servicio.convertir(req);
+
+        ArgumentCaptor<Producto> guardado = ArgumentCaptor.forClass(Producto.class);
+        verify(productoRepo).save(guardado.capture());
+        assertThat(guardado.getValue().getDescripcion()).isEqualTo("Descripción propia de GENLOGS");
+    }
+
+    @Test
+    void r2_elEnlaceYLaImagenDeLaTiendaNoPasanAlProducto() {
+        HistorialSourcing ref = util(new BigDecimal("455.00"));
+        ref.setFuente("MERCADO_LIBRE");
+        ref.setUrlReferencia("https://articulo.mercadolibre.com.pe/MPE-123");
+        ref.setUrlImagenRef("https://http2.mlstatic.com/D_123.jpg");
+        ref.setDescripcion("Ficha de Mercado Libre");
+        when(historialRepo.findById(7L)).thenReturn(Optional.of(ref));
+
+        ProductoVitrinaResponse r = servicio.convertir(pedido(null));
+
+        assertThat(r.estado()).isEqualTo(EstadoPublicacion.BORRADOR);
+        verifyNoInteractions(imagenRepo);
+        ArgumentCaptor<Producto> guardado = ArgumentCaptor.forClass(Producto.class);
+        verify(productoRepo).save(guardado.capture());
+        for (java.lang.reflect.Field campo : Producto.class.getDeclaredFields()) {
+            if (campo.getType() != String.class) continue;
+            campo.setAccessible(true);
+            Object valor;
+            try {
+                valor = campo.get(guardado.getValue());
+            } catch (IllegalAccessException e) {
+                throw new AssertionError(e);
+            }
+            assertThat(String.valueOf(valor)).as("Producto.%s", campo.getName())
+                    .doesNotContain("mercadolibre.com.pe")
+                    .doesNotContain("mlstatic.com");
+        }
+        assertThat(r.imagenes()).isEmpty();
+        assertThat(r.tieneImagenVerificada()).isFalse();
+        assertThat(r.toString())
+                .doesNotContain("mercadolibre.com.pe")
+                .doesNotContain("mlstatic.com");
+    }
+
+    @Test
     void soloSeConviertenReferenciasUtiles() {
         HistorialSourcing ref = util(new BigDecimal("100"));
         ref.setEstado(EstadoSourcing.CAPTURADO);
