@@ -33,7 +33,9 @@ class CapturaUrlServiceTest {
         when(monedaRepo.findByCodigoMoneda("USD"))
                 .thenReturn(Optional.of(Moneda.builder().idMoneda(2).codigoMoneda("USD").build()));
         servicio = new CapturaUrlService(mock(LectorUrl.class), historialRepo,
-                mock(SolicitudItemRepository.class), monedaRepo, mock(UsuarioRepository.class));
+                mock(SolicitudItemRepository.class), monedaRepo, mock(UsuarioRepository.class),
+                mock(com.genlogs.app.fuentes.config.FuenteBusquedaConfigRepository.class),
+                mock(ConsultaFuenteService.class));
     }
 
     private static GuardarUrlRequest pedido(String moneda, String tipoCambio, boolean editado) {

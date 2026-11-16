@@ -27,9 +27,14 @@ public record ReferenciaResponse(
         String urlImagenRef,
         EstadoSourcing estado,
         boolean editadoAMano,
-        LocalDateTime creadoEn) {
+        LocalDateTime creadoEn,
+        String descripcion) {
 
     public static ReferenciaResponse de(HistorialSourcing h) {
+        return de(h, null);
+    }
+
+    public static ReferenciaResponse de(HistorialSourcing h, String descripcion) {
         return new ReferenciaResponse(
                 h.getIdSourcing(),
                 h.getSolicitudItem() != null ? h.getSolicitudItem().getIdSolicitudItem() : null,
@@ -45,6 +50,7 @@ public record ReferenciaResponse(
                 h.getUrlImagenRef(),
                 h.getEstado(),
                 Boolean.TRUE.equals(h.getEditadoAMano()),
-                h.getCreadoEn());
+                h.getCreadoEn(),
+                descripcion);
     }
 }

@@ -2,12 +2,16 @@ package com.genlogs.app.sourcing;
 
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
+import com.genlogs.app.fuentes.config.FuenteBusquedaConfig;
+import com.genlogs.app.fuentes.config.FuenteBusquedaConfigRepository;
 import com.genlogs.app.model.Moneda;
 import com.genlogs.app.model.SolicitudItem;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.MonedaRepository;
 import com.genlogs.app.repository.SolicitudItemRepository;
 import com.genlogs.app.repository.UsuarioRepository;
+import com.genlogs.app.service.ClavesParametro;
+import com.genlogs.app.service.ParametrosService;
 import com.genlogs.app.sourcing.dto.BuscarReferenciasRequest;
 import com.genlogs.app.sourcing.dto.ReferenciaResponse;
 import com.genlogs.app.sourcing.dto.ResultadoBusquedaResponse;
@@ -23,47 +27,48 @@ import java.time.LocalDateTime;
 import java.util.*;
 
 /**
- * Subproceso 8.2 · Búsqueda en fuentes aprobadas (BPMN 9, RF-76).
- *
- * 1. Revisa el historial propio: si el mismo N.º de parte se buscó en las
- *    últimas 24 h, devuelve eso y NO consulta las fuentes.
- * 2. Si no, consulta todas las FuenteBusqueda que Spring encuentre (Mell las
- *    implementa en su paquete "fuentes"). Si no hay ninguna, la búsqueda
- *    funciona igual y sugiere la captura por URL.
- * 3. Guarda cada resultado como CAPTURADO en historial_sourcing, sin tocar el
- *    catálogo de productos.
+ * BPMN 9-B · Fuentes activas del 9-A vía 9-B.1. Si una tienda no se leyó por scraping
+ * (inactiva, sin sesión, P2 no conectado), se usa el bean {@link FuenteBusqueda} (p. ej. eBay Browse)
+ * sin duplicar una consulta que el 9-B.1 ya hizo a la tienda.
  */
 @Slf4j
 @Service
 public class SourcingService {
 
-    static final long HORAS_REUTILIZACION = 24;
+    static final int DIAS_REUSO_POR_DEFECTO = 7;
 
     private final HistorialSourcingRepository historialRepository;
     private final SolicitudItemRepository solicitudItemRepository;
     private final MonedaRepository monedaRepository;
     private final UsuarioRepository usuarioRepository;
-    private final ObjectProvider<FuenteBusqueda> fuentes;
+    private final FuenteBusquedaConfigRepository fuenteRepository;
+    private final ConsultaFuenteService consultaFuente;
+    private final ParametrosService parametros;
+    private final ObjectProvider<FuenteBusqueda> fuentesApi;
     private Clock clock = Clock.systemDefaultZone();
 
     public SourcingService(HistorialSourcingRepository historialRepository,
                            SolicitudItemRepository solicitudItemRepository,
                            MonedaRepository monedaRepository,
                            UsuarioRepository usuarioRepository,
-                           ObjectProvider<FuenteBusqueda> fuentes) {
+                           FuenteBusquedaConfigRepository fuenteRepository,
+                           ConsultaFuenteService consultaFuente,
+                           ParametrosService parametros,
+                           ObjectProvider<FuenteBusqueda> fuentesApi) {
         this.historialRepository = historialRepository;
         this.solicitudItemRepository = solicitudItemRepository;
         this.monedaRepository = monedaRepository;
         this.usuarioRepository = usuarioRepository;
-        this.fuentes = fuentes;
+        this.fuenteRepository = fuenteRepository;
+        this.consultaFuente = consultaFuente;
+        this.parametros = parametros;
+        this.fuentesApi = fuentesApi;
     }
 
-    /** Solo para pruebas: fija la hora "actual". */
     void setClock(Clock clock) {
         this.clock = clock;
     }
 
-    @Transactional
     public ResultadoBusquedaResponse buscar(BuscarReferenciasRequest req) {
         String numeroParte = normalizar(req.numeroParte());
         if (numeroParte == null) {
@@ -77,9 +82,8 @@ public class SourcingService {
                             "No existe el ítem de solicitud " + req.idSolicitudItem()));
         }
 
-        // 1. Reutilizar búsquedas recientes (caso clave: no consultar la fuente dos veces en 24 h)
         if (!req.forzar()) {
-            LocalDateTime desde = LocalDateTime.now(clock).minusHours(HORAS_REUTILIZACION);
+            LocalDateTime desde = LocalDateTime.now(clock).minusDays(diasReuso());
             List<HistorialSourcing> recientes = historialRepository
                     .findByNumeroParteIgnoreCaseAndMetodoNotAndCreadoEnAfterOrderByCreadoEnDesc(
                             numeroParte, MetodoBusqueda.URL, desde);
@@ -88,11 +92,10 @@ public class SourcingService {
                         .filter(h -> h.getEstado() != EstadoSourcing.DESCARTADO)
                         .map(ReferenciaResponse::de)
                         .toList();
-                return new ResultadoBusquedaResponse(true, List.of(), List.of(), refs.isEmpty(), refs);
+                return vacioReutilizado(refs);
             }
         }
 
-        // 2. Consultar las fuentes que existan
         ConsultaBusqueda consulta = new ConsultaBusqueda(
                 MetodoBusqueda.NUMERO_PARTE, numeroParte,
                 normalizar(req.marca()), normalizar(req.gtin()), normalizar(req.palabras()), null);
@@ -102,43 +105,88 @@ public class SourcingService {
 
         List<String> consultadas = new ArrayList<>();
         List<String> conError = new ArrayList<>();
+        List<String> omitidas = new ArrayList<>();
+        List<String> bloqueadas = new ArrayList<>();
+        List<String> sinResultados = new ArrayList<>();
+        List<String> sinLector = new ArrayList<>();
         List<HistorialSourcing> nuevos = new ArrayList<>();
+        List<String> descripciones = new ArrayList<>();
+        Set<String> leidasEn9b1 = new HashSet<>();
 
-        for (FuenteBusqueda fuente : fuentes.orderedStream().toList()) {
-            String codigo = fuente.codigo();
+        for (FuenteBusquedaConfig fuente : fuenteRepository.findByActivaTrueAndStatusOrderByIdFuente("A")) {
+            ConsultaFuente r;
             try {
-                List<ResultadoBusqueda> resultados = fuente.buscar(consulta);
+                r = consultaFuente.consultar(fuente, consulta);
+            } catch (RuntimeException e) {
+                log.warn("La fuente {} falló al buscar {}: {}", fuente.getCodigo(), numeroParte,
+                        recortarLog(e.getMessage()));
+                conError.add(fuente.getCodigo().name());
+                continue;
+            }
+            switch (r.estado()) {
+                case OMITIDA_CUOTA, OMITIDA_SESION -> omitidas.add(r.codigo());
+                case NO_CONECTADO -> sinLector.add(r.codigo());
+                case BLOQUEADA -> {
+                    leidasEn9b1.add(r.codigo());
+                    consultadas.add(r.codigo());
+                    bloqueadas.add(r.codigo());
+                }
+                case CON_ERROR, REQUIERE_VERIFICACION -> {
+                    leidasEn9b1.add(r.codigo());
+                    consultadas.add(r.codigo());
+                    conError.add(r.codigo());
+                }
+                case SIN_RESULTADOS -> {
+                    leidasEn9b1.add(r.codigo());
+                    consultadas.add(r.codigo());
+                    sinResultados.add(r.codigo());
+                }
+                case OK -> {
+                    leidasEn9b1.add(r.codigo());
+                    consultadas.add(r.codigo());
+                    String consultaGuardar = ConsultaFuenteService.consultaConFuente(
+                            fuente.getCodigo(), textoConsulta);
+                    for (ResultadoBusqueda ficha : r.fichas()) {
+                        nuevos.add(aHistorial(item, ConsultaFuenteService.codigoHistorial(fuente.getCodigo()),
+                                consultaGuardar, consulta, ficha, usuario, monedas));
+                        descripciones.add(ficha.descripcion());
+                    }
+                }
+            }
+        }
+
+        for (FuenteBusqueda api : fuentesApi.orderedStream().toList()) {
+            String codigo = api.codigo();
+            if (leidasEn9b1.contains(codigo) || consultadas.contains(codigo)) {
+                continue;
+            }
+            try {
+                List<ResultadoBusqueda> resultados = api.buscar(consulta);
                 consultadas.add(codigo);
-                if (resultados == null) continue;
-                for (ResultadoBusqueda r : resultados) {
-                    nuevos.add(HistorialSourcing.builder()
-                            .solicitudItem(item)
-                            .fuente(codigo)
-                            .metodo(MetodoBusqueda.NUMERO_PARTE)
-                            .consulta(textoConsulta)
-                            .titulo(r.titulo())
-                            .marcaTexto(recortar(r.marca() != null ? r.marca() : consulta.marca(), 100))
-                            .numeroParte(recortar(r.numeroParte() != null ? r.numeroParte() : numeroParte, 60))
-                            .precioRef(r.precio())
-                            .moneda(buscarMoneda(r.codigoMoneda(), monedas))
-                            .urlReferencia(r.urlReferencia())
-                            .urlImagenRef(r.urlImagen())
-                            .estado(EstadoSourcing.CAPTURADO)
-                            .creadoPor(usuario)
-                            .creadoEn(LocalDateTime.now(clock))
-                            .build());
+                if (resultados == null || resultados.isEmpty()) {
+                    sinResultados.add(codigo);
+                    continue;
+                }
+                omitidas.remove(codigo);
+                sinLector.remove(codigo);
+                for (ResultadoBusqueda ficha : resultados) {
+                    nuevos.add(aHistorial(item, codigo, textoConsulta, consulta, ficha, usuario, monedas));
+                    descripciones.add(ficha.descripcion());
                 }
             } catch (RuntimeException e) {
-                // Una fuente caída (cuota, red, llave vencida) no detiene la búsqueda.
-                log.warn("La fuente {} falló al buscar {}: {}", codigo, numeroParte, e.getMessage());
+                log.warn("La fuente API {} falló al buscar {}: {}", codigo, numeroParte, recortarLog(e.getMessage()));
                 conError.add(codigo);
             }
         }
 
-        List<ReferenciaResponse> refs = historialRepository.saveAll(nuevos).stream()
-                .map(ReferenciaResponse::de)
-                .toList();
-        return new ResultadoBusquedaResponse(false, consultadas, conError, refs.isEmpty(), refs);
+        List<HistorialSourcing> guardados = historialRepository.saveAll(nuevos);
+        List<ReferenciaResponse> refs = new ArrayList<>();
+        for (int i = 0; i < guardados.size(); i++) {
+            String desc = i < descripciones.size() ? descripciones.get(i) : null;
+            refs.add(ReferenciaResponse.de(guardados.get(i), desc));
+        }
+        return new ResultadoBusquedaResponse(false, consultadas, conError, omitidas, bloqueadas,
+                sinResultados, sinLector, refs.isEmpty(), refs);
     }
 
     @Transactional(readOnly = true)
@@ -154,7 +202,6 @@ public class SourcingService {
         return lista.stream().map(ReferenciaResponse::de).toList();
     }
 
-    /** Botón ÚTIL / DESCARTADO. Una referencia CONVERTIDA ya no cambia. */
     @Transactional
     public ReferenciaResponse cambiarEstado(Long idSourcing, EstadoSourcing nuevo) {
         if (nuevo == null || !nuevo.puedeMarcarseManualmente()) {
@@ -169,7 +216,44 @@ public class SourcingService {
         return ReferenciaResponse.de(historialRepository.save(h));
     }
 
-    // ---------- utilidades ----------
+    private ResultadoBusquedaResponse vacioReutilizado(List<ReferenciaResponse> refs) {
+        return new ResultadoBusquedaResponse(true, List.of(), List.of(), List.of(), List.of(),
+                List.of(), List.of(), refs.isEmpty(), refs);
+    }
+
+    private int diasReuso() {
+        return parametros.buscar(ClavesParametro.BUSQUEDA_REUSO_DIAS)
+                .map(v -> {
+                    try {
+                        int n = Integer.parseInt(v);
+                        return n > 0 ? n : DIAS_REUSO_POR_DEFECTO;
+                    } catch (NumberFormatException e) {
+                        return DIAS_REUSO_POR_DEFECTO;
+                    }
+                })
+                .orElse(DIAS_REUSO_POR_DEFECTO);
+    }
+
+    private HistorialSourcing aHistorial(SolicitudItem item, String fuenteCodigo, String textoConsulta,
+                                         ConsultaBusqueda consulta, ResultadoBusqueda r, Usuario usuario,
+                                         Map<String, Optional<Moneda>> monedas) {
+        return HistorialSourcing.builder()
+                .solicitudItem(item)
+                .fuente(fuenteCodigo)
+                .metodo(MetodoBusqueda.NUMERO_PARTE)
+                .consulta(textoConsulta)
+                .titulo(r.titulo())
+                .marcaTexto(recortar(r.marca() != null ? r.marca() : consulta.marca(), 100))
+                .numeroParte(recortar(r.numeroParte() != null ? r.numeroParte() : consulta.numeroParte(), 60))
+                .precioRef(r.precio())
+                .moneda(buscarMoneda(r.codigoMoneda(), monedas))
+                .urlReferencia(r.urlReferencia())
+                .urlImagenRef(r.urlImagen())
+                .estado(EstadoSourcing.CAPTURADO)
+                .creadoPor(usuario)
+                .creadoEn(LocalDateTime.now(clock))
+                .build();
+    }
 
     private Moneda buscarMoneda(String codigo, Map<String, Optional<Moneda>> cache) {
         String c = normalizar(codigo);
@@ -201,5 +285,10 @@ public class SourcingService {
 
     private static String recortar(String s, int max) {
         return s == null || s.length() <= max ? s : s.substring(0, max);
+    }
+
+    private static String recortarLog(String s) {
+        if (s == null) return "";
+        return s.length() <= 200 ? s : s.substring(0, 200);
     }
 }

@@ -5,9 +5,10 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 
 /**
- * Cuota diaria de una fuente (hora de Lima). Cuenta las consultas del día y, al llegar
- * al límite, deja de consultar hasta el día siguiente. También pausa la fuente el resto
- * del día cuando la plataforma responde 429 (límite propio) o rechaza las credenciales.
+ * Contador diario de una fuente (hora de Lima). No guarda el límite: cada
+ * {@link #reservar(int)} trae el límite que esa búsqueda acaba de leer.
+ * También pausa la fuente el resto del día cuando la plataforma responde 429
+ * o rechaza las credenciales.
  *
  * <p>El conteo vive en memoria: se reinicia si la aplicación se reinicia. Con una sola
  * instancia en Render es suficiente; si se escala, habría que llevarlo a la BD.
@@ -17,31 +18,32 @@ public class ControlCuota {
     static final ZoneId ZONA = ZoneId.of("America/Lima");
 
     private final String fuente;
-    private final int limiteDiario;
     private final Clock reloj;
 
     private LocalDate dia;
     private int usadas;
     private String pausaMotivo;
 
-    public ControlCuota(String fuente, int limiteDiario, Clock reloj) {
-        if (limiteDiario < 1) {
-            throw new IllegalArgumentException("El límite diario de " + fuente + " debe ser al menos 1");
-        }
+    public ControlCuota(String fuente, Clock reloj) {
         this.fuente = fuente;
-        this.limiteDiario = limiteDiario;
         this.reloj = reloj;
     }
 
-    /** Reserva una consulta o lanza {@link FuenteNoDisponibleException} con el motivo. */
-    public synchronized void reservar() {
+    /**
+     * Reserva una consulta contra {@code limite} o lanza {@link FuenteNoDisponibleException}.
+     * El límite no se guarda: la próxima reserva vuelve a recibirlo.
+     */
+    public synchronized void reservar(int limite) {
+        if (limite < 1) {
+            throw new IllegalArgumentException("El límite diario de " + fuente + " debe ser al menos 1");
+        }
         cambiarDiaSiCorresponde();
         if (pausaMotivo != null) {
             throw new FuenteNoDisponibleException(fuente + " en pausa hasta mañana: " + pausaMotivo);
         }
-        if (usadas >= limiteDiario) {
+        if (usadas >= limite) {
             throw new FuenteNoDisponibleException(
-                    fuente + ": cuota diaria agotada (" + limiteDiario + " consultas); no se consulta hasta mañana");
+                    fuente + ": cuota diaria agotada (" + limite + " consultas); no se consulta hasta mañana");
         }
         usadas++;
     }
