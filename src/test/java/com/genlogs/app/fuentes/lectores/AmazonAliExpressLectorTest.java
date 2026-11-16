@@ -126,6 +126,64 @@ class AmazonAliExpressLectorTest {
                 .isEqualTo(ContratoLector.Estado.REGLAS_INVALIDAS);
     }
 
+    @Test
+    void leeLaMonedaDelTextoDelPrecio() {
+        assertThat(precioDe("S/40.7")).satisfies(r -> {
+            assertThat(r.precio()).isEqualByComparingTo("40.7");
+            assertThat(r.codigoMoneda()).isEqualTo("PEN");
+        });
+        assertThat(precioDe("PEN 31.28")).satisfies(r -> {
+            assertThat(r.precio()).isEqualByComparingTo("31.28");
+            assertThat(r.codigoMoneda()).isEqualTo("PEN");
+        });
+        assertThat(precioDe("US $6.59")).satisfies(r -> {
+            assertThat(r.precio()).isEqualByComparingTo("6.59");
+            assertThat(r.codigoMoneda()).isEqualTo("USD");
+        });
+        assertThat(precioDe("PEN 31.28 US$")).satisfies(r -> {
+            assertThat(r.precio()).isEqualByComparingTo("31.28");
+            assertThat(r.codigoMoneda()).isEqualTo("PEN");
+        });
+        assertThat(precioDe("40.70")).satisfies(r -> {
+            assertThat(r.precio()).isEqualByComparingTo("40.70");
+            assertThat(r.codigoMoneda()).isEqualTo("USD");
+        });
+    }
+
+    @Test
+    void laReglaMonedaEnSolesQuedaEnPen() {
+        String html = """
+                <html><body>
+                  <div class="s-result-item">
+                    <h2>Filtro</h2>
+                    <span class="a-price">40.7</span>
+                    <span class="moneda">S/</span>
+                    <a class="s-no-outline" href="https://www.amazon.com/dp/B001">ver</a>
+                  </div>
+                </body></html>
+                """;
+        Map<String, Object> reglas = new java.util.LinkedHashMap<>(peticionAmazon().reglas());
+        reglas.put("moneda", Map.of("selector", "span.moneda"));
+        ContratoLector.Peticion peticion = new ContratoLector.Peticion(
+                "AMAZON", "https://www.amazon.com/s?k=oil", reglas, null, null, 8);
+        ContratoLector.Resultado r = LectorChromium.extraer(html, peticion.url(), peticion, true).get(0);
+        assertThat(r.precio()).isEqualByComparingTo("40.7");
+        assertThat(r.codigoMoneda()).isEqualTo("PEN");
+    }
+
+    private static ContratoLector.Resultado precioDe(String texto) {
+        String html = """
+                <html><body>
+                  <div class="s-result-item">
+                    <h2>Filtro</h2>
+                    <span class="a-price">%s</span>
+                    <a class="s-no-outline" href="https://www.amazon.com/dp/B001">ver</a>
+                  </div>
+                </body></html>
+                """.formatted(texto);
+        return LectorChromium.extraer(html, "https://www.amazon.com/s?k=oil", peticionAmazon(), true).get(0);
+    }
+
     private static ContratoLector.Peticion peticionAmazon() {
         return new ContratoLector.Peticion("AMAZON", "https://www.amazon.com/s?k=oil",
                 Map.of(

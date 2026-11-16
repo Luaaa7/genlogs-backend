@@ -155,9 +155,9 @@ public final class LectorChromium implements ServicioLectura.Motor {
         int limit = req.maxResultados() == null ? 8 : req.maxResultados();
         for (Element root : roots.stream().limit(limit).toList()) {
             String nombre = valor(root, campo(rules, "nombre"));
-            BigDecimal precio = precio(valor(root, campo(rules, "precio")), texto(rules, "separadorDecimal"));
-            String moneda = valor(root, campo(rules, "moneda"));
-            if (moneda == null) moneda = texto(rules, "codigoMoneda");
+            String textoPrecio = valor(root, campo(rules, "precio"));
+            BigDecimal precio = precio(textoPrecio, texto(rules, "separadorDecimal"));
+            String moneda = moneda(valor(root, campo(rules, "moneda")), textoPrecio, texto(rules, "codigoMoneda"));
             String enlace = valor(root, campo(rules, "enlace"));
             if (enlace == null && !buscar) enlace = url;
             if (nombre == null || precio == null || moneda == null || !moneda.matches("[A-Z]{3}") || enlace == null) continue;
@@ -175,6 +175,23 @@ public final class LectorChromium implements ServicioLectura.Motor {
         String empty = texto(rules, "sinResultados");
         if (results.isEmpty() && (!roots.isEmpty() || empty == null || document.select(empty).isEmpty())) ValidacionLectura.fallar(Estado.REGLAS_INVALIDAS);
         return results;
+    }
+    /**
+     * Tres letras de la regla MONEDA ganan. S/ de esa regla queda en PEN.
+     * Si no, PEN y S/ del precio ganan a US$; USD, US$ o $ quedan en USD.
+     * Sin símbolo se usa el respaldo codigoMoneda.
+     */
+    private static String moneda(String regla, String textoPrecio, String respaldo) {
+        if (regla != null) {
+            String limpia = regla.trim();
+            if (limpia.matches("[A-Z]{3}")) return limpia;
+            if ("S/".equals(limpia)) return "PEN";
+        }
+        if (textoPrecio != null && (textoPrecio.contains("PEN") || textoPrecio.contains("S/"))) return "PEN";
+        if (textoPrecio != null && (textoPrecio.contains("USD") || textoPrecio.contains("US$") || textoPrecio.contains("$"))) {
+            return "USD";
+        }
+        return respaldo;
     }
     private static BigDecimal precio(String value, String decimal) {
         if (value == null) return null;
