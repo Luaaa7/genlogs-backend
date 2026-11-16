@@ -70,12 +70,12 @@ class AlibabaLectorTest {
     }
 
     @Test
-    void pideElMenorDelRangoYLoAnotaEnLaDescripcion() {
+    void pideElMayorDelRangoYLoAnotaEnLaDescripcion() {
         when(cliente.buscar(any())).thenReturn(respuesta(
-                new ContratoLector.Resultado("Filtro CAT 1R-0750", "US$12.50-15.00", new BigDecimal("12.50"), "USD",
+                new ContratoLector.Resultado("Filtro CAT 1R-0750", "US$12.50-15.00", new BigDecimal("15.00"), "USD",
                         "https://s.alicdn.com/a.jpg", "ALIBABA", "https://www.alibaba.com/product-detail/1.html"),
-                new ContratoLector.Resultado("Filtro CAT", "US$40.00", new BigDecimal("40.00"), "USD",
-                        null, "ALIBABA", "https://www.alibaba.com/product-detail/2.html")));
+                new ContratoLector.Resultado("Filtro de combustible CAT 1R0750", "US$40.00", new BigDecimal("40.00"),
+                        "USD", null, "ALIBABA", "https://www.alibaba.com/product-detail/2.html")));
 
         ResultadoLectura r = lector.buscar(CodigoFuente.ALIBABA, "https://www.alibaba.com/", SESION, consulta,
                 reglasAlibaba());
@@ -87,19 +87,70 @@ class AlibabaLectorTest {
         assertThat(p.url()).isEqualTo("https://www.alibaba.com/trade/search?SearchText=CAT+1R-0750");
         assertThat(p.maxResultados()).isEqualTo(8);
         assertThat(p.credenciales()).isNull();
-        assertThat(p.reglas()).containsEntry("precioRango", "menor")
+        assertThat(p.reglas()).containsEntry("precioRango", "mayor")
                 .containsEntry("descripcion", Map.of("selector", ".price"))
                 .containsEntry("codigoMoneda", "USD")
-                .containsEntry("sinResultados", AlibabaLector.SIN_RESULTADOS)
+                .containsEntry("sinResultados", ".search-no-result")
                 .containsEntry("verificacion", AlibabaLector.VERIFICACION);
 
         assertThat(r.tipo()).isEqualTo(ResultadoLectura.Tipo.OK);
-        assertThat(r.fichas().get(0).precio()).isEqualTo("12.50");
+        assertThat(r.fichas()).hasSize(2);
+        assertThat(r.fichas().get(0).precio()).isEqualTo("15.00");
         assertThat(r.fichas().get(0).descripcion())
-                .isEqualTo("Precio en Alibaba por rango: US$12.50-15.00 (se toma el menor)");
+                .isEqualTo("Precio en Alibaba por rango: US$12.50-15.00 (se toma el mayor)");
         // Un solo precio no aporta nada a la descripción.
         assertThat(r.fichas().get(1).precio()).isEqualTo("40.00");
         assertThat(r.fichas().get(1).descripcion()).isNull();
+    }
+
+    @Test
+    void porNumeroDeParteSoloQuedanLasFichasQueLoContienen() {
+        // Lo que devolvió Alibaba el 16/11/2026: productos sin relación junto a los buenos.
+        when(cliente.buscar(any())).thenReturn(respuesta(
+                new ContratoLector.Resultado("Fuel filter 1r 0750 for CAT", null, new BigDecimal("15.00"), "USD",
+                        null, "ALIBABA", "https://www.alibaba.com/product-detail/1.html"),
+                new ContratoLector.Resultado("Dog collar leather", null, new BigDecimal("2.00"), "USD",
+                        null, "ALIBABA", "https://www.alibaba.com/product-detail/2.html"),
+                new ContratoLector.Resultado("FILTRO 1R0750", null, new BigDecimal("9.00"), "USD",
+                        null, "ALIBABA", "https://www.alibaba.com/product-detail/3.html")));
+
+        ResultadoLectura r = lector.buscar(CodigoFuente.ALIBABA, null, SESION, consulta, reglasAlibaba());
+
+        assertThat(r.tipo()).isEqualTo(ResultadoLectura.Tipo.OK);
+        assertThat(r.fichas()).extracting(f -> f.enlace()).containsExactly(
+                "https://www.alibaba.com/product-detail/1.html", "https://www.alibaba.com/product-detail/3.html");
+    }
+
+    @Test
+    void siNingunaFichaTieneElNumeroDeParteEsSinResultados() {
+        when(cliente.buscar(any())).thenReturn(respuesta(
+                new ContratoLector.Resultado("Dog collar leather", null, new BigDecimal("2.00"), "USD",
+                        null, "ALIBABA", "https://www.alibaba.com/product-detail/2.html")));
+
+        ResultadoLectura r = lector.buscar(CodigoFuente.ALIBABA, null, SESION, consulta, reglasAlibaba());
+
+        assertThat(r.tipo()).isEqualTo(ResultadoLectura.Tipo.SIN_RESULTADOS);
+    }
+
+    @Test
+    void porPalabrasOGtinNoSeFiltra() {
+        when(cliente.buscar(any())).thenReturn(respuesta(
+                new ContratoLector.Resultado("Bomba hidraulica Komatsu", null, new BigDecimal("120.00"), "USD",
+                        null, "ALIBABA", "https://www.alibaba.com/product-detail/4.html")));
+        ConsultaBusqueda palabras = new ConsultaBusqueda(MetodoBusqueda.PALABRAS, null, "Komatsu", null,
+                "bomba hidraulica", null);
+        ConsultaBusqueda gtin = new ConsultaBusqueda(MetodoBusqueda.GTIN, null, null, "0123456789012", null, null);
+
+        assertThat(lector.buscar(CodigoFuente.ALIBABA, null, SESION, palabras, reglasAlibaba()).fichas()).hasSize(1);
+        assertThat(lector.buscar(CodigoFuente.ALIBABA, null, SESION, gtin, reglasAlibaba()).fichas()).hasSize(1);
+    }
+
+    @Test
+    void comparaElNumeroDeParteSinGuionesEspaciosNiMayusculas() {
+        assertThat(AlibabaLector.soloLetrasYNumeros("1R-0750")).isEqualTo("1r0750");
+        assertThat(AlibabaLector.soloLetrasYNumeros("1R0750")).isEqualTo("1r0750");
+        assertThat(AlibabaLector.soloLetrasYNumeros("1r 0750")).isEqualTo("1r0750");
+        assertThat(AlibabaLector.soloLetrasYNumeros(null)).isEmpty();
     }
 
     @Test
@@ -114,7 +165,7 @@ class AlibabaLectorTest {
 
     @Test
     void unResultadoSinPrecioQuedaVacioNuncaEnCero() {
-        when(cliente.buscar(any())).thenReturn(respuesta(new ContratoLector.Resultado("Filtro sin precio", null,
+        when(cliente.buscar(any())).thenReturn(respuesta(new ContratoLector.Resultado("Filtro 1R-0750 sin precio", null,
                 null, "USD", null, "ALIBABA", "https://www.alibaba.com/product-detail/3.html")));
 
         ResultadoLectura r = lector.buscar(CodigoFuente.ALIBABA, null, SESION, consulta, reglasAlibaba());
@@ -163,9 +214,10 @@ class AlibabaLectorTest {
     }
 
     @Test
-    void leerUrlTambienTomaElMenorDelRango() {
+    void leerUrlTambienTomaElMayorDelRangoYNoFiltra() {
+        // La ficha leída por URL no se filtra por N.º de parte: el asistente eligió esa URL.
         when(cliente.leerFicha(any())).thenReturn(respuesta(new ContratoLector.Resultado("Filtro CAT", "US$9.80-11.20",
-                new BigDecimal("9.80"), "USD", null, "ALIBABA", "https://www.alibaba.com/product-detail/1.html")));
+                new BigDecimal("11.20"), "USD", null, "ALIBABA", "https://www.alibaba.com/product-detail/1.html")));
 
         ResultadoLectura r = lector.leerUrl(CodigoFuente.ALIBABA, " https://www.alibaba.com/product-detail/1.html ",
                 SESION, reglasAlibaba());
@@ -174,7 +226,7 @@ class AlibabaLectorTest {
         verify(cliente).leerFicha(peticion.capture());
         assertThat(peticion.getValue().url()).isEqualTo("https://www.alibaba.com/product-detail/1.html");
         assertThat(peticion.getValue().reglas())
-                .containsEntry("precioRango", "menor")
+                .containsEntry("precioRango", "mayor")
                 .containsEntry("descripcion", Map.of("selector", ".price-range"))
                 .doesNotContainKey("contenedor");
         assertThat(r.fichas().get(0).descripcion()).contains("US$9.80-11.20");

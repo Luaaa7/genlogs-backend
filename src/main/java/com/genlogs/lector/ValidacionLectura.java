@@ -55,8 +55,8 @@ final class ValidacionLectura {
             } else if ("separadorDecimal".equals(key)) {
                 if (!Set.of(".", ",").contains(value)) fallar(Estado.SOLICITUD_INVALIDA);
             } else if ("precioRango".equals(key)) {
-                // KA (v3.3): solo "menor"; un rango de precio vale su menor valor.
-                if (!"menor".equals(value)) fallar(Estado.SOLICITUD_INVALIDA);
+                // KA (v3.3): solo "mayor"; un rango de precio vale su mayor valor.
+                if (!"mayor".equals(value)) fallar(Estado.SOLICITUD_INVALIDA);
             } else if ("login".equals(key)) {
                 if (!(value instanceof Map<?, ?> login) || !login.keySet().equals(Set.of("usuario", "clave", "enviar", "exito"))) {
                     fallar(Estado.SOLICITUD_INVALIDA);

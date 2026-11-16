@@ -34,23 +34,23 @@ class ExtraccionLecturaTest {
         var error = assertThrows(LectorRemotoException.class, () -> LectorChromium.extraer(caso.ficha().replace("US $25.99", "US $10-20"), caso.peticion(false).url(), caso.peticion(false), false));
         assertEquals(Estado.REGLAS_INVALIDAS, error.getEstado());
     }
-    /** KA: solo con precioRango="menor" (lector de Alibaba) un rango vale su menor valor. */
-    @Test void conPrecioRangoMenorUnRangoValeElMenor() {
+    /** KA: solo con precioRango="mayor" (lector de Alibaba) un rango vale su mayor valor. */
+    @Test void conPrecioRangoMayorUnRangoValeElMayor() {
         var caso = PaginasPrueba.CASOS.get(4);
         var base = caso.peticion(true);
         var reglas = new HashMap<>(base.reglas());
-        reglas.put("precioRango", "menor");
+        reglas.put("precioRango", "mayor");
         var input = new Peticion(base.fuente(), base.url(), reglas, null, null, 8);
         ValidacionLectura.pedido("buscar", input);
         var html = caso.busqueda().replace("US $40.00", "US$15.00 - 12.50");
         var rows = LectorChromium.extraer(html, input.url(), input, true);
         assertEquals(2, rows.size());
-        assertEquals(new BigDecimal("12.50"), rows.get(0).precio());
+        assertEquals(new BigDecimal("15.00"), rows.get(0).precio());
     }
-    @Test void precioRangoSoloAceptaMenor() {
+    @Test void precioRangoSoloAceptaMayor() {
         var base = PaginasPrueba.CASOS.get(4).peticion(true);
         var reglas = new HashMap<>(base.reglas());
-        reglas.put("precioRango", "mayor");
+        reglas.put("precioRango", "menor");
         var input = new Peticion(base.fuente(), base.url(), reglas, null, null, 8);
         var error = assertThrows(LectorRemotoException.class, () -> ValidacionLectura.pedido("buscar", input));
         assertEquals(Estado.SOLICITUD_INVALIDA, error.getEstado());

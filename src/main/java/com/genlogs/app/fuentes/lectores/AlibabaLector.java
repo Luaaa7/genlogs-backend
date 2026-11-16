@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
@@ -20,6 +21,7 @@ import com.genlogs.app.fuentes.config.PaginaSelector;
 import com.genlogs.app.fuentes.config.ResultadoLectura;
 import com.genlogs.app.fuentes.config.SelectorFuenteDto;
 import com.genlogs.app.sourcing.ConsultaBusqueda;
+import com.genlogs.app.sourcing.MetodoBusqueda;
 import com.genlogs.app.sourcing.lector.ContratoLector;
 import com.genlogs.app.sourcing.lector.LectorRemotoClient;
 import com.genlogs.app.sourcing.lector.LectorRemotoException;
@@ -31,9 +33,14 @@ import com.genlogs.app.sourcing.lector.LectorRemotoException;
  * búsqueda, llama al servicio de lectura y devuelve un {@link ResultadoLectura}. No pide sesión,
  * no marca estados y no guarda nada (eso lo hace el 9-B.1). Solo datos (D-36).</p>
  *
- * <p>Alibaba muestra rangos de precio ("US$12.50-15.00") y mínimos de compra. Se pide al servicio
- * de lectura que tome el menor del rango (regla precioRango="menor") y el texto del precio tal como
- * aparece se guarda en la descripción, para que el rango no se pierda.</p>
+ * <p>Alibaba muestra rangos de precio ("US$12.50-15.00") y mínimos de compra. El precio menor suele
+ * ser por cientos de unidades (16/11/2026: «Min. order: 200 pieces») y GENLOGS compra pocas, así que
+ * se pide al servicio de lectura el mayor del rango (regla precioRango="mayor"), para no subestimar
+ * el costo. El texto del precio tal como aparece se guarda en la descripción, con el rango completo.</p>
+ *
+ * <p>Alibaba casi nunca muestra una búsqueda vacía: con un texto sin sentido devuelve productos sin
+ * relación (búsqueda con IA). Por eso, cuando se busca por N.º de parte, solo quedan las fichas cuyo
+ * nombre lo contiene; si no queda ninguna, la respuesta es «sin resultados».</p>
  */
 @Component
 public class AlibabaLector implements LectorFuenteEspecifico {
@@ -43,8 +50,12 @@ public class AlibabaLector implements LectorFuenteEspecifico {
     static final String MONEDA = "USD";
     static final String SEPARADOR_DECIMAL = ".";
     static final int MAX_RESULTADOS = 8;
-    /** Mensaje de búsqueda sin resultados de Alibaba. Por confirmar con las páginas guardadas de P4. */
-    static final String SIN_RESULTADOS = ".search-no-result, .no-result";
+    /**
+     * Mensaje de búsqueda sin resultados. Por confirmar: el 16/11/2026 no apareció ni con un texto sin
+     * sentido (Alibaba mostró productos sin relación). Quien decide «sin resultados» es el filtro por
+     * N.º de parte; este selector solo cubre una página vacía de verdad.
+     */
+    static final String SIN_RESULTADOS = ".search-no-result";
     /**
      * Desafío de Alibaba (slider o página "punish"). Por confirmar con un caso real; el servicio de
      * lectura además detecta por su cuenta reCAPTCHA, hCaptcha y títulos con "captcha". El bloqueo
@@ -95,8 +106,37 @@ public class AlibabaLector implements LectorFuenteEspecifico {
         reglas.put("sinResultados", SIN_RESULTADOS);
         prepararPrecio(reglas);
         String url = urlBusqueda(urlBase, texto);
-        return leer(sesion, s -> cliente.buscar(
+        ResultadoLectura r = leer(sesion, s -> cliente.buscar(
                 new ContratoLector.Peticion(CodigoFuente.ALIBABA.name(), url, reglas, s, null, MAX_RESULTADOS)));
+        return filtrarPorNumeroDeParte(r, consulta);
+    }
+
+    /**
+     * Búsqueda por N.º de parte: solo quedan las fichas cuyo nombre lo contiene, comparando sin
+     * guiones, espacios ni mayúsculas («1R-0750» = «1R0750» = «1r 0750»). Sin ninguna, «sin resultados».
+     * Por palabras o GTIN no se filtra.
+     */
+    static ResultadoLectura filtrarPorNumeroDeParte(ResultadoLectura r, ConsultaBusqueda consulta) {
+        if (r == null || r.tipo() != ResultadoLectura.Tipo.OK || consulta == null
+                || consulta.metodo() != MetodoBusqueda.NUMERO_PARTE) {
+            return r;
+        }
+        String parte = soloLetrasYNumeros(consulta.numeroParte());
+        if (parte.isEmpty()) {
+            return r;
+        }
+        List<FichaFuente> coinciden = new ArrayList<>();
+        for (FichaFuente f : r.fichas()) {
+            if (soloLetrasYNumeros(f.nombre()).contains(parte)) {
+                coinciden.add(f);
+            }
+        }
+        return ResultadoLectura.ok(coinciden);
+    }
+
+    /** «1R-0750», «1R0750» y «1r 0750» → «1r0750». */
+    static String soloLetrasYNumeros(String texto) {
+        return texto == null ? "" : texto.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]", "");
     }
 
     @Override
@@ -121,11 +161,11 @@ public class AlibabaLector implements LectorFuenteEspecifico {
     }
 
     /**
-     * Rango de precio: el servicio de lectura toma el menor y la descripción trae el precio tal como
+     * Rango de precio: el servicio de lectura toma el mayor y la descripción trae el precio tal como
      * lo muestra Alibaba (el rango), que luego se anota en la ficha. También el aviso de captcha.
      */
     static void prepararPrecio(Map<String, Object> reglas) {
-        reglas.put("precioRango", "menor");
+        reglas.put("precioRango", "mayor");
         reglas.put("descripcion", reglas.get("precio"));
         reglas.put("verificacion", VERIFICACION);
     }
@@ -168,7 +208,7 @@ public class AlibabaLector implements LectorFuenteEspecifico {
         if (limpio.isEmpty() || !RANGO.matcher(limpio).find()) {
             return null;
         }
-        String descripcion = PREFIJO_RANGO + limpio + " (se toma el menor)";
+        String descripcion = PREFIJO_RANGO + limpio + " (se toma el mayor)";
         return descripcion.length() <= LARGO_DESCRIPCION ? descripcion : descripcion.substring(0, LARGO_DESCRIPCION);
     }
 

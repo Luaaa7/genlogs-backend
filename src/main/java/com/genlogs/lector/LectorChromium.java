@@ -156,7 +156,7 @@ public final class LectorChromium implements ServicioLectura.Motor {
         for (Element root : roots.stream().limit(limit).toList()) {
             String nombre = valor(root, campo(rules, "nombre"));
             BigDecimal precio = precio(valor(root, campo(rules, "precio")), texto(rules, "separadorDecimal"),
-                    "menor".equals(texto(rules, "precioRango")));
+                    "mayor".equals(texto(rules, "precioRango")));
             String moneda = valor(root, campo(rules, "moneda"));
             if (moneda == null) moneda = texto(rules, "codigoMoneda");
             String enlace = valor(root, campo(rules, "enlace"));
@@ -178,17 +178,18 @@ public final class LectorChromium implements ServicioLectura.Motor {
         return results;
     }
     /**
-     * KA (v3.3): con la regla precioRango="menor" (solo la manda el lector de Alibaba), un rango
-     * "US$12.50-15.00" vale el menor de los dos. Sin esa regla un rango sigue sin ser un precio.
+     * KA (v3.3): con la regla precioRango="mayor" (solo la manda el lector de Alibaba), un rango
+     * "US$12.50-15.00" vale el mayor de los dos: el menor suele ser por cientos de unidades y se
+     * compran pocas. Sin esa regla un rango sigue sin ser un precio.
      */
-    private static BigDecimal precio(String value, String decimal, boolean rangoMenor) {
+    private static BigDecimal precio(String value, String decimal, boolean rangoMayor) {
         if (value == null) return null;
-        if (rangoMenor) {
+        if (rangoMayor) {
             String[] partes = value.split("\\s*[-–~]\\s*");
             if (partes.length == 2) {
                 BigDecimal a = precio(partes[0], decimal);
                 BigDecimal b = precio(partes[1], decimal);
-                if (a != null && b != null) return a.min(b);
+                if (a != null && b != null) return a.max(b);
             }
         }
         return precio(value, decimal);
