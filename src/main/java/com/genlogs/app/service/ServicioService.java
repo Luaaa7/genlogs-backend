@@ -172,13 +172,15 @@ public class ServicioService {
         }
         if (servicio.getMargen() != null
                 && (servicio.getMargen().compareTo(BigDecimal.ZERO) < 0
-                || servicio.getMargen().compareTo(new BigDecimal("100")) > 0)) {
-            throw new BusinessException("El margen del servicio tiene que estar entre 0 y 100");
+                || servicio.getMargen().compareTo(new BigDecimal("100")) >= 0)) {
+            // Fórmula de precio (16/11): con 100 % el precio sería infinito.
+            throw new BusinessException("El margen del servicio tiene que ser de 0 a menos de 100");
         }
     }
 
     /**
-     * Margen que resulta de un precio manual: (precio − costo) / costo × 100, a 2 decimales.
+     * Margen que resulta de un precio manual: (precio − costo) / precio × 100, a 2 decimales
+     * (margen sobre el precio de venta, la misma cuenta que la cotización).
      * Exige costo y precio, y respeta el límite duro de la BD (margen entre 0 y 100).
      */
     static BigDecimal margenDe(BigDecimal costo, BigDecimal precio) {
@@ -190,7 +192,7 @@ public class ServicioService {
         }
         BigDecimal margen = precio.subtract(costo)
                 .multiply(new BigDecimal("100"))
-                .divide(costo, 2, RoundingMode.HALF_UP);
+                .divide(precio, 2, RoundingMode.HALF_UP);
         if (margen.signum() < 0) {
             throw new BusinessException("El precio manual no puede ser menor que el costo del servicio");
         }
@@ -201,10 +203,13 @@ public class ServicioService {
         return margen;
     }
 
-    /** costo × (1 + margen/100), a 2 decimales. */
+    /**
+     * Fórmula de precio (decisión del grupo, 16/11): costo / (1 − margen/100), a 2 decimales.
+     * Es la misma cuenta que la cotización: S/ 100 con 30 % da S/ 142.86.
+     */
     static BigDecimal precioDe(BigDecimal costo, BigDecimal margen) {
-        BigDecimal factor = BigDecimal.ONE.add(margen.divide(new BigDecimal("100"), 6, RoundingMode.HALF_UP));
-        return costo.multiply(factor).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal factor = BigDecimal.ONE.subtract(margen.divide(new BigDecimal("100"), 6, RoundingMode.HALF_UP));
+        return costo.divide(factor, 2, RoundingMode.HALF_UP);
     }
 
     /** Sin margen no queda pendiente. 15 y 45 siguen adentro; fuera de ese rango, pendiente. */

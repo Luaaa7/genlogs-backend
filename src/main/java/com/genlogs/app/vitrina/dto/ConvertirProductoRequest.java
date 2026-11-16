@@ -11,7 +11,8 @@ import java.math.BigDecimal;
  * Categoría y unidad de medida son obligatorias (D-22).
  *
  * @param costoPuestoLima opcional: si no viene, se usa el de la referencia
- * @param margen          opcional: si no viene, se usa MARGEN_REP_SUGERIDO (D-17)
+ * @param margen          opcional: si no viene, se usa MARGEN_REP_SUGERIDO (D-17).
+ *                        Es margen sobre el precio: precio = costo / (1 - margen/100), por eso va de 0 a menos de 100.
  */
 public record ConvertirProductoRequest(
         @NotNull(message = "Indica la referencia que se convierte") Long idSourcing,
@@ -25,5 +26,5 @@ public record ConvertirProductoRequest(
         OrigenRepuesto origen,
         @Positive(message = "El costo debe ser mayor a cero") BigDecimal costoPuestoLima,
         @DecimalMin(value = "0", message = "El margen no puede ser negativo")
-        @DecimalMax(value = "100", message = "El margen no puede pasar de 100 %") BigDecimal margen) {
+        @DecimalMax(value = "100", inclusive = false, message = "El margen tiene que ser menor que 100 %") BigDecimal margen) {
 }
