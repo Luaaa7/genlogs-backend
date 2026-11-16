@@ -50,7 +50,7 @@ public class MargenRepuesto {
     }
 
     /**
-     * Fórmula de precio (decisión del grupo, 16/11): precio = costo / (1 − margen / 100), a 2
+     * D-40: precio = costo / (1 − margen / 100), a 2
      * decimales. Es la misma cuenta que servicios y la cotización: S/ 100 con 30 % da S/ 142.86.
      */
     public static BigDecimal precio(BigDecimal costo, BigDecimal margen) {

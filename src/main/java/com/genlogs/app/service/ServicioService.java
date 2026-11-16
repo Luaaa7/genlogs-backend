@@ -173,7 +173,7 @@ public class ServicioService {
         if (servicio.getMargen() != null
                 && (servicio.getMargen().compareTo(BigDecimal.ZERO) < 0
                 || servicio.getMargen().compareTo(new BigDecimal("100")) >= 0)) {
-            // Fórmula de precio (16/11): con 100 % el precio sería infinito.
+            // D-40
             throw new BusinessException("El margen del servicio tiene que ser de 0 a menos de 100");
         }
     }
@@ -204,7 +204,7 @@ public class ServicioService {
     }
 
     /**
-     * Fórmula de precio (decisión del grupo, 16/11): costo / (1 − margen/100), a 2 decimales.
+     *D-40
      * Es la misma cuenta que la cotización: S/ 100 con 30 % da S/ 142.86.
      */
     static BigDecimal precioDe(BigDecimal costo, BigDecimal margen) {
