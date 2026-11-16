@@ -113,7 +113,7 @@ class VitrinaServiceTest {
         ProductoVitrinaResponse r = servicio.convertir(pedido(null));
 
         assertThat(r.estado()).isEqualTo(EstadoPublicacion.BORRADOR);
-        assertThat(r.precioReferencial()).isEqualByComparingTo("568.75"); // 455 × 1,25
+        assertThat(r.precioReferencial()).isEqualByComparingTo("606.67"); // 455 / 0,75
         assertThat(r.numeroParte()).isEqualTo("1R-0750");
         assertThat(r.categoria()).isEqualTo("Filtros");
         assertThat(r.requiereJefe()).isFalse();
@@ -225,7 +225,7 @@ class VitrinaServiceTest {
         ProductoVitrinaResponse r = servicio.convertir(pedido(null));
 
         assertThat(r.costoPuestoLima()).isEqualByComparingTo("450.00");    // 120 × 3,75
-        assertThat(r.precioReferencial()).isEqualByComparingTo("562.50");  // 450 × 1,25 (MARGEN_REP sugerido)
+        assertThat(r.precioReferencial()).isEqualByComparingTo("600.00");  // 450 / 0,75 (MARGEN_REP sugerido)
         assertThat(ref.getTipoCambioUsado()).isEqualByComparingTo("3.75");
     }
 
@@ -235,7 +235,7 @@ class VitrinaServiceTest {
 
         ProductoVitrinaResponse r = servicio.convertir(pedido(null));
 
-        assertThat(r.precioReferencial()).isEqualByComparingTo("375.00");  // 300 × 1,25
+        assertThat(r.precioReferencial()).isEqualByComparingTo("400.00");  // 300 / 0,75
         verifyNoInteractions(tipoCambio);
     }
 
@@ -257,7 +257,7 @@ class VitrinaServiceTest {
 
         ProductoVitrinaResponse r = servicio.convertir(req);
 
-        assertThat(r.precioReferencial()).isEqualByComparingTo("650.00");  // 520 × 1,25
+        assertThat(r.precioReferencial()).isEqualByComparingTo("693.33");  // 520 / 0,75
         assertThat(r.tipoRepuesto()).isEqualTo(TipoRepuesto.ALTERNATIVO);
         verifyNoInteractions(tipoCambio);
     }
@@ -311,7 +311,7 @@ class VitrinaServiceTest {
 
     @Test
     void margenFueraDeRango_soloLoPublicaElJefe() {
-        borrador("160"); // costo 100 → margen 60 %
+        borrador("200"); // costo 100 → margen 50 % del precio
         when(imagenRepo.findByProducto_IdProductoAndStatus(101L, "A")).thenReturn(List.of(imagen(true)));
         when(historialRepo.findFirstByIdProductoOrderByCreadoEnDesc(101L))
                 .thenReturn(Optional.of(util(new BigDecimal("100"))));
