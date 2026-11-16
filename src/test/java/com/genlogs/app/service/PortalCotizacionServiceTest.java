@@ -33,6 +33,7 @@ import com.genlogs.app.model.Cliente;
 import com.genlogs.app.model.Cotizacion;
 import com.genlogs.app.model.CotizacionDetalle;
 import com.genlogs.app.model.EstadoCotizacion;
+import com.genlogs.app.model.SeguimientoCotizacion;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.CotizacionDetalleRepository;
 import com.genlogs.app.repository.CotizacionRepository;
@@ -216,6 +217,42 @@ class PortalCotizacionServiceTest {
         assertTrue(json.contains("rodamiento"));
         assertFalse(json.contains("origen"), json);
         assertFalse(json.contains("IMPORTADO"), json);
+    }
+
+    @Test
+    void elDetalleTraeElMotivoSoloSiEstaAnulada() throws Exception {
+        Cotizacion anulada = cotizacion(9L, mia, "ANULADA");
+        anulada.getEstadoCotizacion().setNombreEstado("Anulada");
+        anulada.setFechaCotizacion(null);
+        anulada.setFechaValidez(null);
+        when(cotizacionRepository.findById(9L)).thenReturn(Optional.of(anulada));
+        when(cotizacionRepository.findTotalesByCotizacion(9L)).thenReturn(Optional.empty());
+        when(cotizacionDetalleRepository.findByCotizacion(9L)).thenReturn(List.of());
+        when(ordenCompraRepository.numerosOcCliente(9L)).thenReturn(List.of());
+        SeguimientoCotizacion seguimiento = new SeguimientoCotizacion();
+        seguimiento.setEstadoCotizacion(estado("ANULADA"));
+        seguimiento.setComentario("El cliente pidió anular por teléfono");
+        when(seguimientoCotizacionRepository.findByCotizacion(9L)).thenReturn(List.of(seguimiento));
+
+        String json = new ObjectMapper().writeValueAsString(servicio.detalle(9L));
+
+        assertTrue(json.contains("El cliente pidió anular por teléfono"));
+        assertTrue(json.contains("motivoAnulacion"));
+        assertFalse(json.contains("margen"));
+        assertFalse(json.contains("costo"));
+        assertFalse(json.contains("precioProveedor"));
+
+        Cotizacion enviada = cotizacion(4L, mia, "ENVIADA");
+        enviada.setFechaCotizacion(null);
+        enviada.setFechaValidez(null);
+        when(cotizacionRepository.findById(4L)).thenReturn(Optional.of(enviada));
+        when(cotizacionRepository.findTotalesByCotizacion(4L)).thenReturn(Optional.empty());
+        when(cotizacionDetalleRepository.findByCotizacion(4L)).thenReturn(List.of());
+        when(ordenCompraRepository.numerosOcCliente(4L)).thenReturn(List.of());
+
+        String abierta = new ObjectMapper().writeValueAsString(servicio.detalle(4L));
+
+        assertFalse(abierta.contains("motivoAnulacion"));
     }
 
     private static Cliente cliente(Long id) {
