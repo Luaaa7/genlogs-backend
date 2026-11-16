@@ -2,6 +2,7 @@ package com.genlogs.app.service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -138,6 +139,12 @@ public class CotizacionService {
     private final EntityManager entityManager;
     private final AvisoOrdenNoCreada avisoOrdenNoCreada;
     private final TipoCambioRepository tipoCambioRepository;
+    private Clock clock = Clock.system(PlazoDespacho.LIMA);
+
+    /** Solo para pruebas. */
+    void setClock(Clock clock) {
+        this.clock = clock;
+    }
 
     private static final String MENSAJE_TIPO_CAMBIO =
             "El tipo de cambio cambió. Recalcula los importes y revísalos antes de solicitar aprobación.";
@@ -255,6 +262,7 @@ public class CotizacionService {
                                 "No existe el estado BORRADOR configurado"));
 
         Usuario vendedor = usuarioActual();
+        LocalDate hoy = LocalDate.now(clock.withZone(PlazoDespacho.LIMA));
 
         Cotizacion cotizacion = Cotizacion.builder()
                 .cliente(cliente)
@@ -264,11 +272,11 @@ public class CotizacionService {
                 .moneda(moneda)
                 .condicionPago(condicionPago)
                 .sectorEconomico(sector)
-                .fechaCotizacion(LocalDate.now())
-                .fechaValidez(LocalDate.now().plusDays(15))
+                .fechaCotizacion(hoy)
+                .fechaValidez(hoy.plusDays(15))
                 .observaciones(request.getObservaciones())
                 // La tasa que rige hoy queda guardada en la cotización.
-                .porcentajeIgv(tasaIgvService.porcentajeVigente())
+                .porcentajeIgv(tasaIgvService.porcentajeVigente(hoy))
                 // Propuesta C1: se valida el cambio propuesto. La cotización aún no existe,
                 // así que no hay un tipoCambioUsado previo que reutilizar.
                 .tipoCambioUsado(tipoCambioAlCrear(moneda, request))
@@ -709,6 +717,7 @@ public class CotizacionService {
                                 "No existe el estado BORRADOR configurado"));
 
         Usuario usuario = usuarioActual();
+        LocalDate hoy = LocalDate.now(clock.withZone(PlazoDespacho.LIMA));
 
         Cotizacion copia = Cotizacion.builder()
                 .cliente(original.getCliente())
@@ -718,11 +727,11 @@ public class CotizacionService {
                 .moneda(original.getMoneda())
                 .condicionPago(original.getCondicionPago())
                 .sectorEconomico(original.getSectorEconomico())
-                .fechaCotizacion(LocalDate.now())
-                .fechaValidez(LocalDate.now().plusDays(15))
+                .fechaCotizacion(hoy)
+                .fechaValidez(hoy.plusDays(15))
                 .observaciones(original.getObservaciones())
                 // La copia es un documento nuevo: usa la tasa que rige hoy.
-                .porcentajeIgv(tasaIgvService.porcentajeVigente())
+                .porcentajeIgv(tasaIgvService.porcentajeVigente(hoy))
                 .tipoCambioUsado(tipoCambioCotizacion.vigente())
                 .build();
 
