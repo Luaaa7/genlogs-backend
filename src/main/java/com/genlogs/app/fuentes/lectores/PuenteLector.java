@@ -7,11 +7,13 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.genlogs.app.fuentes.config.FichaFuente;
 import com.genlogs.app.fuentes.config.ResultadoLectura;
+import com.genlogs.app.sourcing.ConsultaBusqueda;
 import com.genlogs.app.sourcing.lector.ContratoLector;
 import com.genlogs.app.sourcing.lector.LectorRemotoException;
 
@@ -23,6 +25,7 @@ public final class PuenteLector {
 
     /** Si la sesión guardada no trae su vencimiento, se manda con este margen (SesionFuenteService ya la validó). */
     static final Duration VIGENCIA_SIN_FECHA = Duration.ofMinutes(30);
+    private static final int LARGO_CONSULTA = 200;
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -97,6 +100,53 @@ public final class PuenteLector {
             case TIEMPO_AGOTADO, SIN_RESPUESTA, OCUPADO, INTERRUMPIDO -> ResultadoLectura.error(mensaje, true);
             default -> ResultadoLectura.error(mensaje, false);
         };
+    }
+
+    /**
+     * Llama al servicio de lectura con la sesión y traduce la respuesta o el error.
+     * El nombre de la tienda llega como argumento para que el mensaje diga Amazon, AliExpress o eBay.
+     */
+    public static ResultadoLectura leer(String tienda, String sesion, Clock reloj,
+                                        Function<ContratoLector.Sesion, ContratoLector.Respuesta> llamada) {
+        ContratoLector.Sesion s;
+        try {
+            s = sesion(sesion, reloj);
+        } catch (IllegalArgumentException e) {
+            return ResultadoLectura.error("La sesión guardada de " + tienda
+                    + " no se puede usar; vuelve a probar la sesión.", false);
+        }
+        try {
+            return aResultado(llamada.apply(s));
+        } catch (LectorRemotoException e) {
+            return deError(tienda, e);
+        }
+    }
+
+    /** Qué se escribe en el buscador; null si no hay nada que buscar (o es búsqueda por imagen). */
+    public static String textoDeBusqueda(ConsultaBusqueda consulta) {
+        if (consulta == null || consulta.metodo() == null) {
+            return null;
+        }
+        String texto = switch (consulta.metodo()) {
+            case NUMERO_PARTE -> unir(consulta.marca(), consulta.numeroParte());
+            case GTIN -> consulta.gtin();
+            case PALABRAS -> unir(consulta.marca(), consulta.palabras());
+            default -> null;
+        };
+        if (texto == null) {
+            return null;
+        }
+        texto = texto.replaceAll("\\s+", " ").trim();
+        if (texto.isEmpty()) {
+            return null;
+        }
+        return texto.length() <= LARGO_CONSULTA ? texto : texto.substring(0, LARGO_CONSULTA).trim();
+    }
+
+    private static String unir(String a, String b) {
+        String x = a == null ? "" : a.trim();
+        String y = b == null ? "" : b.trim();
+        return (x + " " + y).trim();
     }
 
     private static String instante(String texto, String porDefecto) {

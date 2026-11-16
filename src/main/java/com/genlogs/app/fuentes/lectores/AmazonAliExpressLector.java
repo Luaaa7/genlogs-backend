@@ -6,7 +6,6 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -19,7 +18,6 @@ import com.genlogs.app.fuentes.config.SelectorFuenteDto;
 import com.genlogs.app.sourcing.ConsultaBusqueda;
 import com.genlogs.app.sourcing.lector.ContratoLector;
 import com.genlogs.app.sourcing.lector.LectorRemotoClient;
-import com.genlogs.app.sourcing.lector.LectorRemotoException;
 
 /**
  * ME (v3.3) · Lector de Amazon y AliExpress para el despachador multifuente (BPMN 9-B.1).
@@ -33,14 +31,20 @@ public class AmazonAliExpressLector implements LectorFuenteEspecifico {
 
     static final String URL_AMAZON = "https://www.amazon.com";
     static final String URL_ALIEXPRESS = "https://www.aliexpress.com";
+    /**
+     * Respaldo cuando la página no trae moneda. Con la sesión en Perú, Amazon muestra PEN
+     * y AliExpress muestra S/; fuera de Perú, AliExpress muestra US $. El decimal es el punto.
+     */
     static final String MONEDA = "USD";
     static final String SEPARADOR_DECIMAL = ".";
     static final int MAX_RESULTADOS = 8;
-    /** Bloque de Amazon cuando la búsqueda no encuentra nada ("No results for"). */
-    static final String SIN_RESULTADOS_AMAZON = ".s-no-outline";
-    /** Bloque de AliExpress cuando la búsqueda mayorista no encuentra nada. */
+    /** Bloque del aviso de búsqueda vacía. .s-no-outline también envuelve enlaces de una búsqueda con productos. */
+    static final String SIN_RESULTADOS_AMAZON = "[data-csa-c-content-id=\"messaging-messages-no-results\"]";
+    /**
+     * Revisado en la búsqueda de «oil filter» y en una de texto inventado: no aparece.
+     * Esa segunda página no está vacía. Una extracción rota sigue en error.
+     */
     static final String SIN_RESULTADOS_ALIEXPRESS = ".search-no-result";
-    private static final int LARGO_CONSULTA = 200;
 
     private final LectorRemotoClient cliente;
     private final Clock reloj;
@@ -66,7 +70,7 @@ public class AmazonAliExpressLector implements LectorFuenteEspecifico {
         if (!atiende(codigo)) {
             return ResultadoLectura.error("Este lector solo atiende Amazon y AliExpress.", false);
         }
-        String texto = textoDeBusqueda(consulta);
+        String texto = PuenteLector.textoDeBusqueda(consulta);
         if (texto == null) {
             return ResultadoLectura.sinResultados();
         }
@@ -80,7 +84,7 @@ public class AmazonAliExpressLector implements LectorFuenteEspecifico {
         // Sin esto, una búsqueda sin resultados se tomaría como reglas rotas (CON_ERROR y aviso al Jefe).
         reglas.put("sinResultados", sinResultados(codigo));
         String url = urlBusqueda(codigo, urlBase, texto);
-        return leer(tienda, sesion, s -> cliente.buscar(
+        return PuenteLector.leer(tienda, sesion, reloj, s -> cliente.buscar(
                 new ContratoLector.Peticion(codigo.name(), url, reglas, s, null, MAX_RESULTADOS)));
     }
 
@@ -101,44 +105,8 @@ public class AmazonAliExpressLector implements LectorFuenteEspecifico {
                     + " en Configuración > Fuentes.", false);
         }
         String limpia = url.trim();
-        return leer(tienda, sesion, s -> cliente.leerFicha(
+        return PuenteLector.leer(tienda, sesion, reloj, s -> cliente.leerFicha(
                 new ContratoLector.Peticion(codigo.name(), limpia, reglas, s, null, 1)));
-    }
-
-    private ResultadoLectura leer(String tienda, String sesion,
-                                  Function<ContratoLector.Sesion, ContratoLector.Respuesta> llamada) {
-        ContratoLector.Sesion s;
-        try {
-            s = PuenteLector.sesion(sesion, reloj);
-        } catch (IllegalArgumentException e) {
-            return ResultadoLectura.error("La sesión guardada de " + tienda
-                    + " no se puede usar; vuelve a probar la sesión.", false);
-        }
-        try {
-            return PuenteLector.aResultado(llamada.apply(s));
-        } catch (LectorRemotoException e) {
-            return PuenteLector.deError(tienda, e);
-        }
-    }
-
-    static String textoDeBusqueda(ConsultaBusqueda consulta) {
-        if (consulta == null || consulta.metodo() == null) {
-            return null;
-        }
-        String texto = switch (consulta.metodo()) {
-            case NUMERO_PARTE -> unir(consulta.marca(), consulta.numeroParte());
-            case GTIN -> consulta.gtin();
-            case PALABRAS -> unir(consulta.marca(), consulta.palabras());
-            default -> null;
-        };
-        if (texto == null) {
-            return null;
-        }
-        texto = texto.replaceAll("\\s+", " ").trim();
-        if (texto.isEmpty()) {
-            return null;
-        }
-        return texto.length() <= LARGO_CONSULTA ? texto : texto.substring(0, LARGO_CONSULTA).trim();
     }
 
     /** Amazon: /s?k=. AliExpress: /wholesale?SearchText=. La base sale de fuente_busqueda.url_base. */
@@ -162,11 +130,5 @@ public class AmazonAliExpressLector implements LectorFuenteEspecifico {
 
     private static String sinResultados(CodigoFuente codigo) {
         return codigo == CodigoFuente.AMAZON ? SIN_RESULTADOS_AMAZON : SIN_RESULTADOS_ALIEXPRESS;
-    }
-
-    private static String unir(String a, String b) {
-        String x = a == null ? "" : a.trim();
-        String y = b == null ? "" : b.trim();
-        return (x + " " + y).trim();
     }
 }

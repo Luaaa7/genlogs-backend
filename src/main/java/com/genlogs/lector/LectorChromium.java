@@ -147,7 +147,7 @@ public final class LectorChromium implements ServicioLectura.Motor {
     }
     private static boolean visible(Page page, String selector) { return selector != null && page.locator("css=" + selector).first().isVisible(); }
 
-    static List<Resultado> extraer(String html, String url, Peticion req, boolean buscar) {
+    public static List<Resultado> extraer(String html, String url, Peticion req, boolean buscar) {
         Element document = Jsoup.parse(html, url);
         Map<String, Object> rules = req.reglas();
         List<? extends Element> roots = buscar ? document.select(texto(rules, "contenedor")) : List.of(document);

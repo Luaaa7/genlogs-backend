@@ -1,6 +1,7 @@
 package com.genlogs.app.fuentes.lectores;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -32,6 +33,7 @@ import com.genlogs.app.sourcing.MetodoBusqueda;
 import com.genlogs.app.sourcing.lector.ContratoLector;
 import com.genlogs.app.sourcing.lector.LectorRemotoClient;
 import com.genlogs.app.sourcing.lector.LectorRemotoException;
+import com.genlogs.lector.LectorChromium;
 
 /** El lector de Amazon y AliExpress solo traduce entre el despachador (9-B.1) y el servicio de lectura. */
 class AmazonAliExpressLectorTest {
@@ -89,13 +91,52 @@ class AmazonAliExpressLectorTest {
                 .containsEntry("enlace", Map.of("selector", "a.ficha", "atributo", "href"))
                 .containsEntry("codigoMoneda", "USD")
                 .containsEntry("separadorDecimal", ".")
-                .containsEntry("sinResultados", ".s-no-outline")
+                .containsEntry("sinResultados", "[data-csa-c-content-id=\"messaging-messages-no-results\"]")
                 .doesNotContainKey("descripcion");
         assertThat(p.sesion().validaHasta()).isEqualTo("2026-11-15T20:00:00Z");
 
         assertThat(r.tipo()).isEqualTo(ResultadoLectura.Tipo.OK);
         assertThat(r.fichas()).containsExactly(new FichaFuente("Filtro CAT", "Nuevo", "1234.50", "USD",
                 "https://m.media-amazon.com/a.jpg", "https://www.amazon.com/dp/B001"));
+    }
+
+    @Test
+    void laBusquedaVaciaDeAmazonEsElBloqueDeMensajes() {
+        String html = """
+                <html><body>
+                  <div data-csa-c-content-id="messaging-messages-no-results">
+                    <div class="s-no-outline">No results for</div>
+                  </div>
+                </body></html>
+                """;
+        assertThat(LectorChromium.extraer(html, "https://www.amazon.com/s?k=zzz", peticionAmazon(), true)).isEmpty();
+    }
+
+    @Test
+    void losEnlacesConSNoOutlineNoSonUnaBusquedaVacia() {
+        String html = """
+                <html><body>
+                  <a class="s-no-outline" href="https://www.amazon.com/dp/B001">Filtro</a>
+                  <a class="s-no-outline" href="https://www.amazon.com/dp/B002">Aceite</a>
+                </body></html>
+                """;
+        assertThatThrownBy(() -> LectorChromium.extraer(html, "https://www.amazon.com/s?k=oil", peticionAmazon(), true))
+                .isInstanceOf(LectorRemotoException.class)
+                .extracting(e -> ((LectorRemotoException) e).getEstado())
+                .isEqualTo(ContratoLector.Estado.REGLAS_INVALIDAS);
+    }
+
+    private static ContratoLector.Peticion peticionAmazon() {
+        return new ContratoLector.Peticion("AMAZON", "https://www.amazon.com/s?k=oil",
+                Map.of(
+                        "contenedor", "div.s-result-item",
+                        "nombre", Map.of("selector", "h2"),
+                        "precio", Map.of("selector", ".a-price"),
+                        "enlace", Map.of("selector", "a.s-no-outline", "atributo", "href"),
+                        "codigoMoneda", "USD",
+                        "separadorDecimal", ".",
+                        "sinResultados", AmazonAliExpressLector.SIN_RESULTADOS_AMAZON),
+                null, null, 8);
     }
 
     @Test
@@ -221,8 +262,8 @@ class AmazonAliExpressLectorTest {
 
     @Test
     void armaElTextoYLaUrlDeCadaTienda() {
-        assertThat(AmazonAliExpressLector.textoDeBusqueda(consulta)).isEqualTo("CAT 1R-0750");
-        assertThat(AmazonAliExpressLector.textoDeBusqueda(null)).isNull();
+        assertThat(PuenteLector.textoDeBusqueda(consulta)).isEqualTo("CAT 1R-0750");
+        assertThat(PuenteLector.textoDeBusqueda(null)).isNull();
         assertThat(AmazonAliExpressLector.urlBusqueda(CodigoFuente.AMAZON, null, "a b&c"))
                 .isEqualTo("https://www.amazon.com/s?k=a+b%26c");
         assertThat(AmazonAliExpressLector.urlBusqueda(CodigoFuente.ALIEXPRESS, null, "a b&c"))
