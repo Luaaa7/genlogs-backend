@@ -12,10 +12,32 @@ import com.genlogs.app.exception.BusinessException;
 class ReglasAprobacionCotizacionTest {
 
     @Test
-    void borradorNoPasaDirectoAEnviada() {
-        BusinessException error = assertThrows(BusinessException.class, () ->
-                ReglasAprobacionCotizacion.validarCambioLibre("BORRADOR", "ENVIADA"));
-        assertEquals(ReglasAprobacionCotizacion.BORRADOR_NO_PASA_A_ENVIADA, error.getMessage());
+    void borradorNoPasaDirectoAEnviadaNiALosEstadosDeAprobacion() {
+        for (String destino : new String[] {"ENVIADA", "PENDIENTE_APROBACION", "APROBADA_INTERNA"}) {
+            BusinessException error = assertThrows(BusinessException.class, () ->
+                    ReglasAprobacionCotizacion.validarCambioLibre("BORRADOR", destino, null));
+            assertEquals(ReglasAprobacionCotizacion.APROBACION_INTERNA_OBLIGATORIA, error.getMessage());
+        }
+    }
+
+    @Test
+    void borradorNoSaltaAAprobadaRechazadaNiVencida() {
+        for (String destino : new String[] {"APROBADA", "RECHAZADA", "VENCIDA"}) {
+            BusinessException error = assertThrows(BusinessException.class, () ->
+                    ReglasAprobacionCotizacion.validarCambioLibre("BORRADOR", destino, "motivo"));
+            assertEquals(ReglasAprobacionCotizacion.DESTINO_NO_PERMITIDO, error.getMessage());
+        }
+    }
+
+    @Test
+    void enviadaPasaANegociacionYAnuladaExigeMotivo() {
+        assertDoesNotThrow(() ->
+                ReglasAprobacionCotizacion.validarCambioLibre("ENVIADA", "EN_NEGOCIACION", null));
+        BusinessException sinMotivo = assertThrows(BusinessException.class, () ->
+                ReglasAprobacionCotizacion.validarCambioLibre("BORRADOR", "ANULADA", "  "));
+        assertEquals(ReglasAprobacionCotizacion.MOTIVO_ANULACION_OBLIGATORIO, sinMotivo.getMessage());
+        assertDoesNotThrow(() ->
+                ReglasAprobacionCotizacion.validarCambioLibre("ENVIADA", "ANULADA", "El cliente desistió"));
     }
 
     @Test
@@ -55,11 +77,15 @@ class ReglasAprobacionCotizacionTest {
     }
 
     @Test
-    void losEstadosDelClienteSiguenEnCambioLibre() {
-        assertDoesNotThrow(() -> ReglasAprobacionCotizacion.validarCambioLibre("ENVIADA", "EN_NEGOCIACION"));
-        assertDoesNotThrow(() -> ReglasAprobacionCotizacion.validarCambioLibre("EN_NEGOCIACION", "APROBADA"));
-        assertDoesNotThrow(() -> ReglasAprobacionCotizacion.validarCambioLibre("ENVIADA", "RECHAZADA"));
-        assertDoesNotThrow(() -> ReglasAprobacionCotizacion.validarCambioLibre("ENVIADA", "VENCIDA"));
-        assertDoesNotThrow(() -> ReglasAprobacionCotizacion.validarCambioLibre("BORRADOR", "ANULADA"));
+    void elPatchYaNoAbreLosEstadosDelCliente() {
+        for (String[] salto : new String[][] {
+                {"EN_NEGOCIACION", "APROBADA"},
+                {"ENVIADA", "RECHAZADA"},
+                {"ENVIADA", "VENCIDA"}
+        }) {
+            BusinessException error = assertThrows(BusinessException.class, () ->
+                    ReglasAprobacionCotizacion.validarCambioLibre(salto[0], salto[1], "motivo"));
+            assertEquals(ReglasAprobacionCotizacion.DESTINO_NO_PERMITIDO, error.getMessage());
+        }
     }
 }

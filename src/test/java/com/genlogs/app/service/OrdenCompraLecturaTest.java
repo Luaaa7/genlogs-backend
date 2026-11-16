@@ -214,6 +214,15 @@ class OrdenCompraLecturaTest {
         assertEquals("USD", orden.getMonedaOcCliente());
         assertEquals("La OC está en USD y la cotización en PEN; no se compara el monto.", otra.getAvisoMonto());
 
+        orden.setOcConfirmadaPor(null);
+        orden.setMonedaOcCliente("PEN");
+        request.setMoneda("PEN");
+        request.setMonto(new BigDecimal("250.00"));
+        OrdenCompraResponse distinto = servicio.confirmar(1L, request);
+        assertTrue(distinto.getOcConfirmada());
+        assertTrue(distinto.getAvisoMonto().contains("250.00"));
+        assertTrue(distinto.getAvisoMonto().contains("100.00"));
+
         orden.getEstadoOrdenCompra().setEsFinal(true);
         orden.getEstadoOrdenCompra().setNombreEstado("Atendida");
         assertThrows(BusinessException.class, () -> servicio.confirmar(1L, request));

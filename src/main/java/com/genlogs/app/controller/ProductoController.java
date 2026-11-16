@@ -13,25 +13,34 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Catálogo de repuestos. R3 (v3.3): crear, editar y dar de baja solo lo hacen el Jefe
+ * Administrativo y el Asistente Logístico. Consultar lo hace todo el personal interno
+ * (lo exige SecurityConfig y lo usa el buscador global); CLIENTE nunca entra.
+ */
 @RestController
 @RequestMapping("/api/productos")
 @RequiredArgsConstructor
 public class ProductoController {
 
+    static final String EDITAN = "hasAnyRole('JEFE_ADMINISTRATIVO','ASISTENTE_LOGISTICO')";
+
     private final ProductoService productoService;
 
+    @PreAuthorize(EDITAN)
     @PostMapping
-    // @PreAuthorize("hasAnyRole('ADMINISTRADOR','VENDEDOR')") // lo agrega Luana con MethodSecurityConfig
     public ResponseEntity<ProductoResponse> registrar(@Valid @RequestBody ProductoRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(productoService.registrar(request));
     }
 
+    @PreAuthorize(EDITAN)
     @PutMapping("/{idProducto}")
     public ResponseEntity<ProductoResponse> actualizar(@PathVariable Long idProducto,
                                                          @Valid @RequestBody ProductoRequest request) {
@@ -78,6 +87,7 @@ public class ProductoController {
         return ResponseEntity.ok(productoService.buscarPorNombre(nombre));
     }
 
+    @PreAuthorize(EDITAN)
     @DeleteMapping("/{idProducto}")
     public ResponseEntity<Void> desactivar(@PathVariable Long idProducto) {
         productoService.desactivar(idProducto);
@@ -88,6 +98,7 @@ public class ProductoController {
     // Ficha técnica
     // ------------------------------------------------------------------
 
+    @PreAuthorize(EDITAN)
     @PostMapping("/{idProducto}/caracteristicas")
     public ResponseEntity<Void> agregarCaracteristica(@PathVariable Long idProducto,
                                                         @Valid @RequestBody ProductoCaracteristicaRequest request) {
@@ -95,6 +106,7 @@ public class ProductoController {
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
+    @PreAuthorize(EDITAN)
     @DeleteMapping("/{idProducto}/caracteristicas/{idCaracteristica}")
     public ResponseEntity<Void> quitarCaracteristica(@PathVariable Long idProducto,
                                                        @PathVariable Integer idCaracteristica) {
@@ -106,6 +118,7 @@ public class ProductoController {
     // Imágenes (multipart, subidas a Cloudinary)
     // ------------------------------------------------------------------
 
+    @PreAuthorize(EDITAN)
     @PostMapping(value = "/{idProducto}/imagenes", consumes = "multipart/form-data")
     public ResponseEntity<Void> subirImagen(@PathVariable Long idProducto,
                                              @RequestParam("archivo") MultipartFile archivo,
@@ -115,6 +128,7 @@ public class ProductoController {
     }
 
     /** Asocia una imagen ya subida a Cloudinary (flujo del frontend: upload + asociar URL). */
+    @PreAuthorize(EDITAN)
     @PostMapping(value = "/{idProducto}/imagenes", consumes = "application/json")
     public ResponseEntity<Void> asociarImagen(@PathVariable Long idProducto,
                                                @Valid @RequestBody ImagenAdjuntaRequest request) {
@@ -122,6 +136,7 @@ public class ProductoController {
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
+    @PreAuthorize(EDITAN)
     @DeleteMapping("/imagenes/{idProductoImagen}")
     public ResponseEntity<Void> eliminarImagen(@PathVariable Long idProductoImagen) {
         productoService.eliminarImagen(idProductoImagen);
@@ -132,6 +147,7 @@ public class ProductoController {
     // Documentos (multipart, subidos a Cloudinary)
     // ------------------------------------------------------------------
 
+    @PreAuthorize(EDITAN)
     @PostMapping(value = "/{idProducto}/documentos", consumes = "multipart/form-data")
     public ResponseEntity<Void> subirDocumento(@PathVariable Long idProducto,
                                                 @RequestParam("archivo") MultipartFile archivo,
@@ -142,6 +158,7 @@ public class ProductoController {
     }
 
     /** Asocia un documento ya subido a Cloudinary (flujo del frontend: upload + asociar URL). */
+    @PreAuthorize(EDITAN)
     @PostMapping(value = "/{idProducto}/documentos", consumes = "application/json")
     public ResponseEntity<Void> asociarDocumento(@PathVariable Long idProducto,
                                                   @Valid @RequestBody DocumentoAdjuntoRequest request) {
@@ -149,6 +166,7 @@ public class ProductoController {
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
+    @PreAuthorize(EDITAN)
     @DeleteMapping("/documentos/{idDocumento}")
     public ResponseEntity<Void> eliminarDocumento(@PathVariable Long idDocumento) {
         productoService.eliminarDocumento(idDocumento);
@@ -156,6 +174,7 @@ public class ProductoController {
     }
 
     /** Ruta anidada que usa el frontend: valida que el documento pertenezca al producto. */
+    @PreAuthorize(EDITAN)
     @DeleteMapping("/{idProducto}/documentos/{idDocumento}")
     public ResponseEntity<Void> eliminarDocumentoDeProducto(@PathVariable Long idProducto,
                                                             @PathVariable Long idDocumento) {
@@ -167,6 +186,7 @@ public class ProductoController {
     // Sectores económicos
     // ------------------------------------------------------------------
 
+    @PreAuthorize(EDITAN)
     @PostMapping("/{idProducto}/sectores/{idSectorEconomico}")
     public ResponseEntity<Void> asociarSector(@PathVariable Long idProducto,
                                                @PathVariable Integer idSectorEconomico) {
@@ -174,6 +194,7 @@ public class ProductoController {
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
+    @PreAuthorize(EDITAN)
     @DeleteMapping("/{idProducto}/sectores/{idSectorEconomico}")
     public ResponseEntity<Void> desasociarSector(@PathVariable Long idProducto,
                                                   @PathVariable Integer idSectorEconomico) {
@@ -185,6 +206,7 @@ public class ProductoController {
     // Proveedores del producto
     // ------------------------------------------------------------------
 
+    @PreAuthorize(EDITAN)
     @PostMapping("/{idProducto}/proveedores")
     public ResponseEntity<Void> asociarProveedor(@PathVariable Long idProducto,
                                                   @Valid @RequestBody ProductoProveedorRequest request) {

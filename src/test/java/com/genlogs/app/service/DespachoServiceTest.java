@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -27,6 +29,7 @@ import jakarta.persistence.EntityManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import com.genlogs.app.dto.ConfirmarSstRequest;
 import com.genlogs.app.enums.EtapaDespacho;
 import com.genlogs.app.enums.OrigenRepuesto;
 import com.genlogs.app.enums.TipoSstDespacho;
@@ -59,6 +62,7 @@ class DespachoServiceTest {
     @Mock private UsuarioRepository usuarios;
     @Mock private FeriadoService feriados;
 
+    private final java.util.ArrayList<DespachoSst> filasSst = new java.util.ArrayList<>();
     private OrdenCompra orden;
     private final LocalDateTime inicio = LocalDateTime.of(2026, 3, 13, 10, 0);
 
@@ -168,9 +172,101 @@ class DespachoServiceTest {
                 .getMessage().contains("no está aprobada"));
 
         orden.getCotizacion().getEstadoCotizacion().setCodigoEstado("APROBADA");
+        orden.setOcConfirmadaPor(null);
+        BusinessException sinConfirmar = assertThrows(BusinessException.class, () -> servicio().crear(8L, inicio));
+        assertEquals(DespachoService.OC_SIN_CONFIRMAR, sinConfirmar.getMessage());
+        verify(despachos, never()).existsByOrdenCompra_IdOrdenCompraAndStatus(8L, "A");
+
+        orden.setOcConfirmadaPor(confirmador());
         when(despachos.existsByOrdenCompra_IdOrdenCompraAndStatus(8L, "A")).thenReturn(true);
         assertTrue(assertThrows(BusinessException.class, () -> servicio().crear(8L, inicio))
                 .getMessage().contains("despacho activo"));
+        verify(despachos, never()).save(any());
+    }
+
+    @Test
+    void sinConfirmarNoGuardaElDespacho() {
+        orden.setOcConfirmadaPor(null);
+
+        BusinessException error = assertThrows(BusinessException.class, () -> servicio().crear(8L, inicio));
+
+        assertEquals(DespachoService.OC_SIN_CONFIRMAR, error.getMessage());
+        verify(despachos, never()).save(any());
+    }
+
+    @Test
+    void ocConfirmadaCreaElDespachoRegistradoConOrigenYPlazo() {
+        when(detalles.findByCotizacion(3L)).thenReturn(List.of(linea(OrigenRepuesto.NACIONAL)));
+
+        var respuesta = servicio().crear(8L, inicio);
+
+        assertEquals(EtapaDespacho.REGISTRADO, respuesta.getEtapa());
+        assertEquals(OrigenRepuesto.NACIONAL, respuesta.getOrigen());
+        assertEquals(inicio.plusHours(24), respuesta.getPlazoDesde());
+        assertEquals(inicio.plusHours(48), respuesta.getPlazoHasta());
+        verify(despachos).save(any());
+    }
+
+    @Test
+    void elPrimerIntentoSinConfirmarSeRechazaYElSegundoCreaElDespacho() {
+        when(detalles.findByCotizacion(3L)).thenReturn(List.of(linea(OrigenRepuesto.NACIONAL)));
+        orden.setOcConfirmadaPor(null);
+
+        BusinessException error = assertThrows(BusinessException.class, () -> servicio().crear(8L, inicio));
+        assertEquals(DespachoService.OC_SIN_CONFIRMAR, error.getMessage());
+        verify(despachos, never()).save(any());
+
+        orden.setOcConfirmadaPor(confirmador());
+        var respuesta = servicio().crear(8L, inicio);
+
+        assertEquals(EtapaDespacho.REGISTRADO, respuesta.getEtapa());
+        assertEquals(OrigenRepuesto.NACIONAL, respuesta.getOrigen());
+        verify(despachos).save(any());
+    }
+
+    @Test
+    void sinDocumentosNoPasaATransitoYTrasRegularizarSi() {
+        Despacho guardado = listoParaSalir();
+        guardarDocumentosSst();
+
+        BusinessException bloqueo = assertThrows(BusinessException.class,
+                () -> servicio().avanzar(15L, EtapaDespacho.EN_TRANSITO));
+
+        assertTrue(bloqueo.getMessage().startsWith(DespachoBloqueoSst.PREFIJO));
+        assertEquals(EtapaDespacho.EN_PREPARACION, guardado.getEtapa());
+
+        LocalDate vence = LocalDate.now(PlazoDespacho.LIMA).plusDays(10);
+        servicioSst().confirmar(15L, pedidoSst(TipoSstDespacho.PASE, vence, "P-1"));
+        servicioSst().confirmar(15L, pedidoSst(TipoSstDespacho.SCTR, vence, "S-1"));
+
+        var respuesta = servicio().avanzar(15L, EtapaDespacho.EN_TRANSITO);
+
+        assertEquals(EtapaDespacho.EN_TRANSITO, respuesta.getEtapa());
+        assertEquals(EtapaDespacho.EN_TRANSITO, guardado.getEtapa());
+    }
+
+    @Test
+    void sctrVencidoNoEntregaYTrasRegularizarSi() {
+        Despacho guardado = listoParaSalir();
+        guardado.setEtapa(EtapaDespacho.EN_TRANSITO);
+        guardarDocumentosSst();
+        LocalDate ayer = LocalDate.now(PlazoDespacho.LIMA).minusDays(1);
+        filasSst.add(sst(TipoSstDespacho.PASE, LocalDate.now(PlazoDespacho.LIMA).plusDays(10), "P-1"));
+        filasSst.add(sst(TipoSstDespacho.SCTR, ayer, "S-viejo"));
+
+        BusinessException bloqueo = assertThrows(BusinessException.class,
+                () -> servicio().avanzar(15L, EtapaDespacho.ENTREGADO));
+
+        assertTrue(bloqueo.getMessage().contains("SCTR vencido"));
+        assertEquals(EtapaDespacho.EN_TRANSITO, guardado.getEtapa());
+
+        LocalDate vence = LocalDate.now(PlazoDespacho.LIMA).plusDays(10);
+        servicioSst().confirmar(15L, pedidoSst(TipoSstDespacho.SCTR, vence, "S-nuevo"));
+
+        var respuesta = servicio().avanzar(15L, EtapaDespacho.ENTREGADO);
+
+        assertEquals(EtapaDespacho.ENTREGADO, respuesta.getEtapa());
+        assertEquals(EtapaDespacho.ENTREGADO, guardado.getEtapa());
     }
 
     @Test
@@ -365,7 +461,48 @@ class DespachoServiceTest {
         ordenCompra.setNumeroOrdenCompra("0008-10");
         ordenCompra.setCotizacion(cotizacion);
         ordenCompra.setStatus("A");
+        ordenCompra.setOcConfirmadaPor(confirmador());
         return ordenCompra;
+    }
+
+    private static Usuario confirmador() {
+        Usuario usuario = new Usuario();
+        usuario.setIdUsuario(4L);
+        usuario.setNombreUsuario("ana");
+        return usuario;
+    }
+
+    private void guardarDocumentosSst() {
+        org.mockito.Mockito.lenient()
+                .when(validaciones.findByDespacho_IdDespachoAndTipoAndStatus(eq(15L), any(), eq("A")))
+                .thenAnswer(inv -> {
+                    TipoSstDespacho tipo = inv.getArgument(1);
+                    return filasSst.stream()
+                            .filter(f -> f.getTipo() == tipo && "A".equals(f.getStatus()))
+                            .findFirst();
+                });
+        org.mockito.Mockito.lenient()
+                .when(validaciones.findByDespacho_IdDespachoAndStatus(15L, "A"))
+                .thenAnswer(inv -> filasSst.stream().filter(f -> "A".equals(f.getStatus())).toList());
+        org.mockito.Mockito.lenient().when(validaciones.save(any())).thenAnswer(inv -> {
+            DespachoSst fila = inv.getArgument(0);
+            if (!filasSst.contains(fila)) {
+                filasSst.add(fila);
+            }
+            return fila;
+        });
+    }
+
+    private DespachoSstService servicioSst() {
+        return new DespachoSstService(validaciones, despachos, usuarios, entityManager);
+    }
+
+    private static ConfirmarSstRequest pedidoSst(TipoSstDespacho tipo, LocalDate vencimiento, String referencia) {
+        ConfirmarSstRequest request = new ConfirmarSstRequest();
+        request.setTipo(tipo);
+        request.setFechaVencimiento(vencimiento);
+        request.setReferencia(referencia);
+        return request;
     }
 
     private static CotizacionDetalle linea(OrigenRepuesto origen) {
