@@ -3,8 +3,10 @@ package com.genlogs.app.service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -487,7 +489,7 @@ public class CotizacionService {
                 .urlCloudinary(adjunto.getUrlArchivo())
                 .tipoArchivo(extensionDe(adjunto.getNombreArchivo()))
                 .tamanio(archivo.getSize())
-                .fechaSubida(adjunto.getDateCreate())
+                .fechaSubida(fechaSubida(adjunto.getDateCreate()))
                 .subidoPor(adjunto.getUserCreate())
                 .build();
     }
@@ -1685,9 +1687,13 @@ public class CotizacionService {
                 .tipoArchivo(extensionDe(a.getNombreArchivo()))
                 // La tabla no almacena el tamaño del archivo.
                 .tamanio(0L)
-                .fechaSubida(a.getDateCreate())
+                .fechaSubida(fechaSubida(a.getDateCreate()))
                 .subidoPor(a.getUserCreate())
                 .build();
+    }
+
+    private static Instant fechaSubida(LocalDateTime dateCreate) {
+        return dateCreate == null ? null : dateCreate.atZone(ZoneId.systemDefault()).toInstant();
     }
 
     private String extensionDe(String nombreArchivo) {
