@@ -1,13 +1,17 @@
 package com.genlogs.app.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
@@ -19,19 +23,25 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.genlogs.app.dto.CotizacionDetalleRequest;
 import com.genlogs.app.dto.CotizacionRequest;
 import com.genlogs.app.dto.CotizacionResponse;
+import com.genlogs.app.dto.EnviarCotizacionRequest;
+import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.model.Cliente;
 import com.genlogs.app.model.CondicionPago;
 import com.genlogs.app.model.EstadoCotizacion;
 import com.genlogs.app.model.Moneda;
 import com.genlogs.app.model.Cotizacion;
 import com.genlogs.app.model.Tercero;
+import com.genlogs.app.model.TipoCambio;
 import com.genlogs.app.model.UnidadMedida;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.AdjuntoCotizacionRepository;
@@ -46,6 +56,7 @@ import com.genlogs.app.repository.ProductoRepository;
 import com.genlogs.app.repository.SectorEconomicoRepository;
 import com.genlogs.app.repository.SeguimientoCotizacionRepository;
 import com.genlogs.app.repository.ServicioRepository;
+import com.genlogs.app.repository.TipoCambioRepository;
 import com.genlogs.app.repository.UnidadMedidaRepository;
 import com.genlogs.app.repository.UsuarioRepository;
 import com.genlogs.app.service.pdf.PdfGenerationService;
@@ -54,6 +65,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class CotizacionAltaTipoCambioTest {
 
     private static final BigDecimal VIGENTE = new BigDecimal("3.7520");
@@ -82,6 +94,7 @@ class CotizacionAltaTipoCambioTest {
     @Mock private TransactionTemplate transacciones;
     @Mock private EntityManager entityManager;
     @Mock private AvisoOrdenNoCreada avisoOrdenNoCreada;
+    @Mock private TipoCambioRepository tiposCambio;
 
     private CotizacionService servicio;
     private final AtomicReference<Cotizacion> guardada = new AtomicReference<>();
@@ -91,7 +104,8 @@ class CotizacionAltaTipoCambioTest {
         servicio = new CotizacionService(
                 cotizaciones, detalles, estados, seguimientos, pdf, adjuntos, clientes, contactos, usuarios,
                 monedas, condiciones, sectores, productos, servicios, unidades, cloudinary, mail, tasaIgv,
-                tipoCambioCotizacion, avisoAltoValor, ordenes, transacciones, entityManager, avisoOrdenNoCreada);
+                tipoCambioCotizacion, avisoAltoValor, ordenes, transacciones, entityManager, avisoOrdenNoCreada,
+                tiposCambio);
 
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken("ana", "x", List.of()));
@@ -138,7 +152,7 @@ class CotizacionAltaTipoCambioTest {
             return cotizacion;
         });
         when(cotizaciones.findCodigoCotizacionGenerado(15L)).thenReturn(Optional.of("COT-15"));
-        when(cotizaciones.findById(15L)).thenAnswer(invocacion -> Optional.of(guardada.get()));
+        when(cotizaciones.findById(15L)).thenAnswer(invocacion -> Optional.ofNullable(guardada.get()));
         when(cotizaciones.findTotalesByCotizacion(15L)).thenReturn(Optional.empty());
         when(detalles.save(any())).thenAnswer(invocacion -> invocacion.getArgument(0));
         when(detalles.findByCotizacion(15L)).thenReturn(List.of());
@@ -163,6 +177,236 @@ class CotizacionAltaTipoCambioTest {
         CotizacionResponse detalle = servicio.buscarPorId(15L);
 
         assertEquals(0, captor.getValue().getTipoCambioUsado().compareTo(detalle.getTipoCambioUsado()));
+    }
+
+    @Test
+    void altaUsdConCambioYFechaValidosGuardaEseValor() {
+        dolar();
+        LocalDate fecha = LocalDate.of(2026, 11, 12);
+        when(tiposCambio.findByMoneda_CodigoMonedaAndFecha("USD", fecha))
+                .thenReturn(Optional.of(fila("3.7100")));
+        CotizacionRequest pedido = pedido();
+        pedido.setIdMoneda(2);
+        pedido.setTipoCambio(new BigDecimal("3.7100"));
+        pedido.setFechaTipoCambio(fecha);
+
+        servicio.crear(pedido);
+
+        assertEquals(0, new BigDecimal("3.7100").compareTo(guardada.get().getTipoCambioUsado()));
+        verify(tipoCambioCotizacion, never()).vigente();
+    }
+
+    @Test
+    void altaUsdConValorDistintoSeRechazaYNoGuarda() {
+        dolar();
+        LocalDate fecha = LocalDate.of(2026, 11, 12);
+        when(tiposCambio.findByMoneda_CodigoMonedaAndFecha("USD", fecha))
+                .thenReturn(Optional.of(fila("3.7100")));
+        CotizacionRequest pedido = pedidoUsd(fecha, new BigDecimal("3.8000"));
+
+        BusinessException error = assertThrows(BusinessException.class, () -> servicio.crear(pedido));
+
+        assertEquals(
+                "El tipo de cambio cambió. Recalcula los importes y revísalos antes de solicitar aprobación.",
+                error.getMessage());
+        verify(cotizaciones, never()).save(any());
+        verify(detalles, never()).save(any());
+    }
+
+    @Test
+    void altaUsdConFechaInexistenteSeRechaza() {
+        dolar();
+        LocalDate fecha = LocalDate.of(2026, 1, 1);
+        when(tiposCambio.findByMoneda_CodigoMonedaAndFecha("USD", fecha)).thenReturn(Optional.empty());
+        CotizacionRequest pedido = pedidoUsd(fecha, new BigDecimal("3.7100"));
+
+        BusinessException error = assertThrows(BusinessException.class, () -> servicio.crear(pedido));
+
+        assertEquals(
+                "El tipo de cambio cambió. Recalcula los importes y revísalos antes de solicitar aprobación.",
+                error.getMessage());
+        verify(cotizaciones, never()).save(any());
+    }
+
+    @Test
+    void altaUsdConSoloUnoDeLosDosCamposSeRechaza() {
+        dolar();
+        CotizacionRequest soloValor = pedido();
+        soloValor.setIdMoneda(2);
+        soloValor.setTipoCambio(new BigDecimal("3.7100"));
+        CotizacionRequest soloFecha = pedido();
+        soloFecha.setIdMoneda(2);
+        soloFecha.setFechaTipoCambio(LocalDate.of(2026, 11, 12));
+
+        BusinessException sinFecha = assertThrows(BusinessException.class, () -> servicio.crear(soloValor));
+        BusinessException sinValor = assertThrows(BusinessException.class, () -> servicio.crear(soloFecha));
+
+        assertEquals("Indica el tipo de cambio y su fecha", sinFecha.getMessage());
+        assertEquals("Indica el tipo de cambio y su fecha", sinValor.getMessage());
+        verify(cotizaciones, never()).save(any());
+    }
+
+    @Test
+    void altaUsdSinLosCamposUsaElVigente() {
+        dolar();
+        CotizacionRequest pedido = pedido();
+        pedido.setIdMoneda(2);
+
+        servicio.crear(pedido);
+
+        assertEquals(0, VIGENTE.compareTo(guardada.get().getTipoCambioUsado()));
+        verify(tipoCambioCotizacion).vigente();
+    }
+
+    @Test
+    void altaPenIgnoraLosCamposPropuestos() {
+        CotizacionRequest pedido = pedido();
+        pedido.setTipoCambio(new BigDecimal("9.9999"));
+        pedido.setFechaTipoCambio(LocalDate.of(2026, 11, 12));
+
+        servicio.crear(pedido);
+
+        assertEquals(0, VIGENTE.compareTo(guardada.get().getTipoCambioUsado()));
+        verify(tiposCambio, never()).findByMoneda_CodigoMonedaAndFecha(any(), any());
+    }
+
+    @Test
+    void importesInvalidosSeRechazan() {
+        CotizacionRequest cantidadCero = pedido();
+        cantidadCero.getLineas().get(0).setCantidad(BigDecimal.ZERO);
+        CotizacionRequest precioNegativo = pedido();
+        precioNegativo.getLineas().get(0).setPrecioUnitario(new BigDecimal("-1"));
+        CotizacionRequest descuentoMayor = pedido();
+        descuentoMayor.getLineas().get(0).setDescuentoUnitario(new BigDecimal("11"));
+
+        assertEquals("La cantidad debe ser mayor a 0",
+                assertThrows(BusinessException.class, () -> servicio.crear(cantidadCero)).getMessage());
+        assertEquals("El precio no puede ser negativo",
+                assertThrows(BusinessException.class, () -> servicio.crear(precioNegativo)).getMessage());
+        assertEquals("El descuento no puede ser mayor que el precio",
+                assertThrows(BusinessException.class, () -> servicio.crear(descuentoMayor)).getMessage());
+        verify(cotizaciones, never()).save(any());
+        verify(detalles, never()).save(any());
+    }
+
+    @Test
+    void enviarConservaElCambioAunqueElVigenteSeaOtro() {
+        Cotizacion cotizacion = aprobada(new BigDecimal("3.7100"));
+        when(cotizaciones.findById(15L)).thenReturn(Optional.of(cotizacion));
+        when(tipoCambioCotizacion.vigente()).thenReturn(new BigDecimal("3.9000"));
+        estadoEnviada();
+
+        servicio.marcarComoEnviadaSiBorrador(15L, usuario(), "cliente@mina.pe");
+
+        assertEquals("ENVIADA", cotizacion.getEstadoCotizacion().getCodigoEstado());
+        assertEquals(0, new BigDecimal("3.7100").compareTo(cotizacion.getTipoCambioUsado()));
+        verify(tipoCambioCotizacion, never()).vigente();
+    }
+
+    @Test
+    void enviarSinCambioGuardadoLoCompletaUnaVez() {
+        Cotizacion cotizacion = aprobada(null);
+        when(cotizaciones.findById(15L)).thenReturn(Optional.of(cotizacion));
+        when(tipoCambioCotizacion.vigente()).thenReturn(new BigDecimal("3.9000"));
+        estadoEnviada();
+
+        servicio.marcarComoEnviadaSiBorrador(15L, usuario(), "cliente@mina.pe");
+
+        assertEquals(0, new BigDecimal("3.9000").compareTo(cotizacion.getTipoCambioUsado()));
+        verify(tipoCambioCotizacion, times(1)).vigente();
+    }
+
+    @Test
+    void siBrevoFallaSigueAprobadaInternaYElCambioNoCambia() {
+        BigDecimal guardado = new BigDecimal("3.7100");
+        Cotizacion cotizacion = aprobada(guardado);
+        when(cotizaciones.findById(15L)).thenReturn(Optional.of(cotizacion));
+        when(tipoCambioCotizacion.vigente()).thenReturn(new BigDecimal("3.9000"));
+        when(pdf.generarPdfCotizacion(any())).thenReturn(new byte[] {1});
+        when(transacciones.execute(any())).thenAnswer(invocacion -> {
+            TransactionCallback<?> callback = invocacion.getArgument(0);
+            return callback.doInTransaction(null);
+        });
+        when(mail.enviarCorreo(any(), any(), any(), any(), any(), any(), any())).thenReturn(false);
+
+        EnviarCotizacionRequest envio = new EnviarCotizacionRequest();
+        envio.setCorreoDestinatario("cliente@mina.pe");
+        envio.setAsunto("Cotización");
+        servicio.enviar(15L, envio);
+
+        assertEquals("APROBADA_INTERNA", cotizacion.getEstadoCotizacion().getCodigoEstado());
+        assertEquals(0, guardado.compareTo(cotizacion.getTipoCambioUsado()));
+        verify(tipoCambioCotizacion, never()).vigente();
+    }
+
+    @Test
+    void descargarPdfNoConsultaElTipoDeCambioVigente() {
+        Cotizacion cotizacion = aprobada(new BigDecimal("3.7100"));
+        cotizacion.getEstadoCotizacion().setCodigoEstado("BORRADOR");
+        when(cotizaciones.findById(15L)).thenReturn(Optional.of(cotizacion));
+        when(pdf.generarPdfCotizacion(any())).thenReturn(new byte[] {1});
+
+        servicio.descargarPdf(15L);
+
+        verify(tipoCambioCotizacion, never()).vigente();
+    }
+
+    private void dolar() {
+        Moneda dolar = new Moneda();
+        dolar.setIdMoneda(2);
+        dolar.setCodigoMoneda("USD");
+        when(monedas.findById(2)).thenReturn(Optional.of(dolar));
+    }
+
+    private static TipoCambio fila(String valor) {
+        TipoCambio fila = new TipoCambio();
+        fila.setValor(new BigDecimal(valor));
+        return fila;
+    }
+
+    private static CotizacionRequest pedidoUsd(LocalDate fecha, BigDecimal valor) {
+        CotizacionRequest pedido = pedido();
+        pedido.setIdMoneda(2);
+        pedido.setTipoCambio(valor);
+        pedido.setFechaTipoCambio(fecha);
+        return pedido;
+    }
+
+    private void estadoEnviada() {
+        EstadoCotizacion enviada = new EstadoCotizacion();
+        enviada.setIdEstadoCotizacion(5);
+        enviada.setCodigoEstado("ENVIADA");
+        enviada.setNombreEstado("Enviada");
+        when(estados.findByCodigoEstado("ENVIADA")).thenReturn(Optional.of(enviada));
+        when(seguimientos.findByCotizacion(15L)).thenReturn(List.of());
+    }
+
+    private static Usuario usuario() {
+        Usuario usuario = new Usuario();
+        usuario.setNombreUsuario("ana");
+        return usuario;
+    }
+
+    private static Cotizacion aprobada(BigDecimal tipoCambio) {
+        EstadoCotizacion estado = new EstadoCotizacion();
+        estado.setIdEstadoCotizacion(4);
+        estado.setCodigoEstado("APROBADA_INTERNA");
+        estado.setNombreEstado("Aprobada interna");
+        Tercero tercero = new Tercero();
+        tercero.setRazonSocial("Minera Sur");
+        Cliente cliente = new Cliente();
+        cliente.setTercero(tercero);
+        Moneda dolar = new Moneda();
+        dolar.setCodigoMoneda("USD");
+        Cotizacion cotizacion = new Cotizacion();
+        cotizacion.setIdCotizacion(15L);
+        cotizacion.setCodigoCotizacion("COT-15");
+        cotizacion.setCliente(cliente);
+        cotizacion.setMoneda(dolar);
+        cotizacion.setEstadoCotizacion(estado);
+        cotizacion.setFechaCotizacion(LocalDate.of(2026, 11, 12));
+        cotizacion.setTipoCambioUsado(tipoCambio);
+        return cotizacion;
     }
 
     private static CotizacionRequest pedido() {
