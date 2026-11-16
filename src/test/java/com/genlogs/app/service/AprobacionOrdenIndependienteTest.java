@@ -165,19 +165,17 @@ public class AprobacionOrdenIndependienteTest {
     }
 
     @Test
-    void siLaOrdenFallaAlCambiarEstadoLaCotizacionSigueAprobada() {
+    void elPatchYaNoPasaDeEnviadaAAprobada() {
         Long id = sembrar(false);
-        sembrarDestinatarios();
         entrar(rastro.nombreUsuario, RolSistema.JEFE_ADMINISTRATIVO.name());
         CambiarEstadoCotizacionRequest request = new CambiarEstadoCotizacionRequest();
         request.setCodigoEstado("APROBADA");
 
-        var respuesta = cotizaciones.cambiarEstado(id, request);
+        assertThrows(BusinessException.class, () -> cotizaciones.cambiarEstado(id, request));
 
-        assertEquals("APROBADA", respuesta.getBody().getEstadoCodigo());
-        assertEquals("APROBADA", codigoDe(id));
+        assertEquals("ENVIADA", codigoDe(id));
         assertEquals(0, ordenesDe(id));
-        assertAvisoDeFallo(id);
+        assertEquals(0, avisos().size());
     }
 
     @Test

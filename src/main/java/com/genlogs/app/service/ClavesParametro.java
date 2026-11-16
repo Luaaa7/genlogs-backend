@@ -31,4 +31,10 @@ public final class ClavesParametro {
     public static final String MARGEN_REP_MIN = "MARGEN_REP_MIN";
     public static final String MARGEN_REP_DEFAULT = "MARGEN_REP_DEFAULT";
     public static final String MARGEN_REP_MAX = "MARGEN_REP_MAX";
+
+    /**
+     * Días para reutilizar una búsqueda del mismo N.º de parte (BPMN 9-B tarea 2).
+     * Valor inicial 7. Si la fila aún no está en parametro_sistema, el servicio usa 7.
+     */
+    public static final String BUSQUEDA_REUSO_DIAS = "BUSQUEDA_REUSO_DIAS";
 }

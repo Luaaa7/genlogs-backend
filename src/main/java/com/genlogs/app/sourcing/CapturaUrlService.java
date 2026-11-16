@@ -2,6 +2,9 @@ package com.genlogs.app.sourcing;
 
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
+import com.genlogs.app.fuentes.config.CodigoFuente;
+import com.genlogs.app.fuentes.config.FuenteBusquedaConfig;
+import com.genlogs.app.fuentes.config.FuenteBusquedaConfigRepository;
 import com.genlogs.app.model.Moneda;
 import com.genlogs.app.model.SolicitudItem;
 import com.genlogs.app.repository.MonedaRepository;
@@ -16,12 +19,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.net.URI;
 import java.time.LocalDateTime;
 import java.util.Locale;
+import java.util.Optional;
 
 /**
- * RF-77 + RF-75 · Captura por URL: leer la página y guardar la referencia
- * confirmada por el asistente, con su costo puesto en Lima.
+ * RF-77 + RF-75 · Captura por URL.
+ * Fuente activa con sesión y P2: lectura con sesión.
+ * Sin sesión, P2 ausente o host que no es tienda activa: {@link LectorUrl} (5b), sin C2.
+ * Bloqueo o error real de tienda: no se oculta con el fallback.
  */
 @Service
 @RequiredArgsConstructor
@@ -32,10 +39,38 @@ public class CapturaUrlService {
     private final SolicitudItemRepository solicitudItemRepository;
     private final MonedaRepository monedaRepository;
     private final UsuarioRepository usuarioRepository;
+    private final FuenteBusquedaConfigRepository fuenteRepository;
+    private final ConsultaFuenteService consultaFuente;
 
-    /** Solo lee; no guarda nada. */
     public LectorUrl.DatosUrl leer(String url) {
-        return lectorUrl.leer(url);
+        URI uri = UrlSegura.validarFormato(url);
+        Optional<CodigoFuente> codigo = HostFuente.de(uri.getHost());
+        if (codigo.isEmpty()) {
+            return lectorUrl.leer(url);
+        }
+        Optional<FuenteBusquedaConfig> fuente = fuenteRepository.findByCodigo(codigo.get());
+        if (fuente.isEmpty() || !Boolean.TRUE.equals(fuente.get().getActiva())) {
+            return lectorUrl.leer(url);
+        }
+
+        ConsultaBusqueda consulta = new ConsultaBusqueda(
+                MetodoBusqueda.URL, null, null, null, null, url);
+        ConsultaFuente r = consultaFuente.consultarUrl(fuente.get(), url, consulta);
+        return switch (r.estado()) {
+            case OK -> {
+                ResultadoBusqueda f = r.fichas().get(0);
+                yield new LectorUrl.DatosUrl(url, ConsultaFuenteService.codigoHistorial(codigo.get()),
+                        f.titulo(), f.precio(), f.codigoMoneda(), f.urlImagen(), false, null);
+            }
+            case BLOQUEADA -> new LectorUrl.DatosUrl(url, ConsultaFuenteService.codigoHistorial(codigo.get()),
+                    null, null, null, null, true,
+                    r.motivo() != null ? r.motivo() : "La tienda no permitió leer la página. Completa los datos a mano.");
+            case CON_ERROR, REQUIERE_VERIFICACION -> new LectorUrl.DatosUrl(url,
+                    ConsultaFuenteService.codigoHistorial(codigo.get()),
+                    null, null, null, null, true,
+                    r.motivo() != null ? r.motivo() : "No se pudo leer la página con la sesión de la tienda.");
+            case OMITIDA_SESION, NO_CONECTADO, OMITIDA_CUOTA, SIN_RESULTADOS -> lectorUrl.leer(url);
+        };
     }
 
     @Transactional

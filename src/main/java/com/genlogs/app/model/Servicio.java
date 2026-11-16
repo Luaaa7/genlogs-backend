@@ -75,7 +75,7 @@ public class Servicio extends Auditable {
     @Column(name = "precio_referencial", precision = 12, scale = 2)
     private BigDecimal precioReferencial;
 
-    /** True: se guarda el precio enviado. False: se aplica costo × (1 + margen/100). */
+    /** True: se guarda el precio enviado. False: se aplica costo / (1 − margen/100). */
     @Column(name = "precio_manual", nullable = false)
     @Builder.Default
     private Boolean precioManual = false;

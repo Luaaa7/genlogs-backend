@@ -141,7 +141,7 @@ class AvisoOrdenNoCreadaTest {
     private static CotizacionService servicio(OrdenCompraService ordenes, AvisoOrdenNoCreada avisoDeOrden) {
         return new CotizacionService(
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, ordenes, null, null, avisoDeOrden);
+                null, null, null, null, null, ordenes, null, null, avisoDeOrden, null);
     }
 
     private static Cotizacion cotizacion() {

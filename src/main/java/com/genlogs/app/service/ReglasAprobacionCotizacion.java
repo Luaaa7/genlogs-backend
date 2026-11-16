@@ -3,7 +3,7 @@ package com.genlogs.app.service;
 import com.genlogs.app.enums.CodigoEstadoCotizacion;
 import com.genlogs.app.exception.BusinessException;
 
-/** Transiciones de la aprobación interna. No abre EN_NEGOCIACION, APROBADA, RECHAZADA, VENCIDA ni ANULADA. */
+/** Transiciones libres del PATCH /estado. El resto queda en su endpoint. */
 public final class ReglasAprobacionCotizacion {
 
     public static final String SOLO_BORRADOR =
@@ -14,10 +14,19 @@ public final class ReglasAprobacionCotizacion {
             "Indica el motivo para devolver la cotización";
     public static final String SOLO_APROBADA_INTERNA =
             "Solo se envía una cotización aprobada por el Jefe";
-    public static final String POR_ENDPOINT =
-            "Ese estado se cambia con solicitar aprobación, aprobar o devolver";
-    public static final String BORRADOR_NO_PASA_A_ENVIADA =
-            "Un borrador no pasa directo a enviada: primero lo aprueba el Jefe";
+    public static final String APROBACION_INTERNA_OBLIGATORIA =
+            "Ese cambio exige la aprobación interna: usa solicitar aprobación, aprobar, devolver o enviar";
+    public static final String DESTINO_NO_PERMITIDO =
+            "Ese cambio de estado no está permitido";
+    public static final String MOTIVO_ANULACION_OBLIGATORIO =
+            "Indica el motivo para anular la cotización";
+
+    /**
+     * TODO equipo: el Word dice "pasar a ANULADA con motivo" y no lista el estado de origen.
+     * true = desde cualquier estado que no sea final. El final lo rechaza
+     * CotizacionService.cambiarEstado con esFinal. Para acotarlo, pasar esto a false.
+     */
+    static final boolean ANULAR_DESDE_CUALQUIER_NO_FINAL = true;
 
     private ReglasAprobacionCotizacion() {
     }
@@ -34,19 +43,32 @@ public final class ReglasAprobacionCotizacion {
         }
     }
 
-    /** cambiarEstado sigue para el resto de estados. Estas rutas quedan en sus endpoints. */
-    public static void validarCambioLibre(String actual, String destino) {
+    /**
+     * PATCH /estado solo admite ENVIADA → EN_NEGOCIACION, o ANULADA con motivo
+     * desde un estado no final. Lo demás queda en su endpoint o se rechaza.
+     */
+    public static void validarCambioLibre(String actual, String destino, String motivo) {
         String codigo = destino == null ? "" : destino.trim();
         if (es(codigo, CodigoEstadoCotizacion.PENDIENTE_APROBACION)
-                || es(codigo, CodigoEstadoCotizacion.APROBADA_INTERNA)) {
-            throw new BusinessException(POR_ENDPOINT);
+                || es(codigo, CodigoEstadoCotizacion.APROBADA_INTERNA)
+                || (es(actual, CodigoEstadoCotizacion.BORRADOR)
+                        && es(codigo, CodigoEstadoCotizacion.ENVIADA))) {
+            throw new BusinessException(APROBACION_INTERNA_OBLIGATORIA);
         }
-        if (es(actual, CodigoEstadoCotizacion.BORRADOR) && es(codigo, CodigoEstadoCotizacion.ENVIADA)) {
-            throw new BusinessException(BORRADOR_NO_PASA_A_ENVIADA);
+        if (es(codigo, CodigoEstadoCotizacion.ANULADA)) {
+            if (!ANULAR_DESDE_CUALQUIER_NO_FINAL) {
+                throw new BusinessException(DESTINO_NO_PERMITIDO);
+            }
+            if (motivo == null || motivo.isBlank()) {
+                throw new BusinessException(MOTIVO_ANULACION_OBLIGATORIO);
+            }
+            return;
         }
-        if (es(actual, CodigoEstadoCotizacion.PENDIENTE_APROBACION)) {
-            throw new BusinessException(SOLO_PENDIENTE);
+        if (es(actual, CodigoEstadoCotizacion.ENVIADA)
+                && es(codigo, CodigoEstadoCotizacion.EN_NEGOCIACION)) {
+            return;
         }
+        throw new BusinessException(DESTINO_NO_PERMITIDO);
     }
 
     private static boolean es(String codigo, CodigoEstadoCotizacion esperado) {

@@ -90,7 +90,7 @@ class ServicioMargenTest {
     void costoCienYMargenTreintaYCincoDejanPrecioCientoTreintaYCinco() {
         Servicio guardado = servicio.registrar(datos(new BigDecimal("100"), new BigDecimal("35"), false, null));
 
-        assertEquals(0, guardado.getPrecioReferencial().compareTo(new BigDecimal("135.00")));
+        assertEquals(0, guardado.getPrecioReferencial().compareTo(new BigDecimal("153.85")));
         assertEquals(EstadoAprobacionServicio.APROBADO, guardado.getEstadoAprobacion());
     }
 

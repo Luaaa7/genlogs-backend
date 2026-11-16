@@ -8,7 +8,10 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
@@ -30,6 +33,7 @@ import com.genlogs.app.model.Cliente;
 import com.genlogs.app.model.Cotizacion;
 import com.genlogs.app.model.CotizacionDetalle;
 import com.genlogs.app.model.EstadoCotizacion;
+import com.genlogs.app.model.SeguimientoCotizacion;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.CotizacionDetalleRepository;
 import com.genlogs.app.repository.CotizacionRepository;
@@ -99,20 +103,54 @@ class PortalCotizacionServiceTest {
     @Test
     void vencidaNoSeApruebaYLaSegundaTampoco() {
         Cotizacion cotizacion = cotizacion(7L, mia, "ENVIADA");
-        cotizacion.setFechaValidez(LocalDate.now().minusDays(1));
+        cotizacion.setFechaValidez(LocalDate.now(PlazoDespacho.LIMA).minusDays(1));
         when(cotizacionRepository.findById(7L)).thenReturn(Optional.of(cotizacion));
 
         BusinessException vencida = assertThrows(BusinessException.class, () -> servicio.aprobar(7L, null));
-        assertTrue(vencida.getMessage().contains("vencida"));
+        assertEquals("La cotización está vencida", vencida.getMessage());
 
-        cotizacion.setFechaValidez(LocalDate.now().plusDays(2));
+        cotizacion.setFechaValidez(LocalDate.now(PlazoDespacho.LIMA).plusDays(2));
         when(estadoCotizacionRepository.findByCodigoEstado("APROBADA")).thenReturn(Optional.of(estado("APROBADA")));
         when(cotizacionRepository.findTotalesByCotizacion(7L)).thenReturn(Optional.empty());
         when(cotizacionDetalleRepository.findByCotizacion(7L)).thenReturn(List.of());
 
         servicio.aprobar(7L, null);
         assertEquals("APROBADA", cotizacion.getEstadoCotizacion().getCodigoEstado());
-        assertThrows(BusinessException.class, () -> servicio.aprobar(7L, null));
+        BusinessException resuelta = assertThrows(BusinessException.class, () -> servicio.aprobar(7L, null));
+        assertEquals("Esta cotización ya no se puede aprobar ni rechazar", resuelta.getMessage());
+    }
+
+    @Test
+    void aLas2359DeLimaSeApruebaYAmedianocheLanzaVencida() {
+        Cotizacion cotizacion = cotizacion(12L, mia, "ENVIADA");
+        cotizacion.setFechaValidez(LocalDate.of(2026, 11, 15));
+        when(cotizacionRepository.findById(12L)).thenReturn(Optional.of(cotizacion));
+        when(estadoCotizacionRepository.findByCodigoEstado("APROBADA")).thenReturn(Optional.of(estado("APROBADA")));
+        when(cotizacionRepository.findTotalesByCotizacion(12L)).thenReturn(Optional.empty());
+        when(cotizacionDetalleRepository.findByCotizacion(12L)).thenReturn(List.of());
+
+        servicio.setClock(Clock.fixed(Instant.parse("2026-11-16T04:59:00Z"), ZoneOffset.UTC));
+        servicio.aprobar(12L, null);
+        assertEquals("APROBADA", cotizacion.getEstadoCotizacion().getCodigoEstado());
+
+        cotizacion.setEstadoCotizacion(estado("ENVIADA"));
+        servicio.setClock(Clock.fixed(Instant.parse("2026-11-16T05:00:00Z"), ZoneOffset.UTC));
+        BusinessException vencida = assertThrows(BusinessException.class, () -> servicio.rechazar(12L, null));
+        assertEquals("La cotización está vencida", vencida.getMessage());
+        assertEquals("ENVIADA", cotizacion.getEstadoCotizacion().getCodigoEstado());
+    }
+
+    @Test
+    void unaYaResueltaLanzaYaResueltaAunqueLaFechaDeLimaSirva() {
+        Cotizacion cotizacion = cotizacion(13L, mia, "RECHAZADA");
+        cotizacion.setFechaValidez(LocalDate.of(2026, 11, 15));
+        when(cotizacionRepository.findById(13L)).thenReturn(Optional.of(cotizacion));
+        servicio.setClock(Clock.fixed(Instant.parse("2026-11-16T04:59:00Z"), ZoneOffset.UTC));
+
+        BusinessException resuelta = assertThrows(BusinessException.class, () -> servicio.aprobar(13L, null));
+
+        assertEquals("Esta cotización ya no se puede aprobar ni rechazar", resuelta.getMessage());
+        assertEquals("RECHAZADA", cotizacion.getEstadoCotizacion().getCodigoEstado());
     }
 
     @Test
@@ -120,8 +158,10 @@ class PortalCotizacionServiceTest {
         Cotizacion cotizacion = cotizacion(11L, mia, "VENCIDA");
         when(cotizacionRepository.findById(11L)).thenReturn(Optional.of(cotizacion));
 
-        assertThrows(BusinessException.class, () -> servicio.aprobar(11L, null));
-        assertThrows(BusinessException.class, () -> servicio.rechazar(11L, null));
+        BusinessException alAprobar = assertThrows(BusinessException.class, () -> servicio.aprobar(11L, null));
+        BusinessException alRechazar = assertThrows(BusinessException.class, () -> servicio.rechazar(11L, null));
+        assertEquals("Esta cotización ya no se puede aprobar ni rechazar", alAprobar.getMessage());
+        assertEquals("Esta cotización ya no se puede aprobar ni rechazar", alRechazar.getMessage());
         assertEquals("VENCIDA", cotizacion.getEstadoCotizacion().getCodigoEstado());
     }
 
@@ -179,6 +219,42 @@ class PortalCotizacionServiceTest {
         assertFalse(json.contains("IMPORTADO"), json);
     }
 
+    @Test
+    void elDetalleTraeElMotivoSoloSiEstaAnulada() throws Exception {
+        Cotizacion anulada = cotizacion(9L, mia, "ANULADA");
+        anulada.getEstadoCotizacion().setNombreEstado("Anulada");
+        anulada.setFechaCotizacion(null);
+        anulada.setFechaValidez(null);
+        when(cotizacionRepository.findById(9L)).thenReturn(Optional.of(anulada));
+        when(cotizacionRepository.findTotalesByCotizacion(9L)).thenReturn(Optional.empty());
+        when(cotizacionDetalleRepository.findByCotizacion(9L)).thenReturn(List.of());
+        when(ordenCompraRepository.numerosOcCliente(9L)).thenReturn(List.of());
+        SeguimientoCotizacion seguimiento = new SeguimientoCotizacion();
+        seguimiento.setEstadoCotizacion(estado("ANULADA"));
+        seguimiento.setComentario("El cliente pidió anular por teléfono");
+        when(seguimientoCotizacionRepository.findByCotizacion(9L)).thenReturn(List.of(seguimiento));
+
+        String json = new ObjectMapper().writeValueAsString(servicio.detalle(9L));
+
+        assertTrue(json.contains("El cliente pidió anular por teléfono"));
+        assertTrue(json.contains("motivoAnulacion"));
+        assertFalse(json.contains("margen"));
+        assertFalse(json.contains("costo"));
+        assertFalse(json.contains("precioProveedor"));
+
+        Cotizacion enviada = cotizacion(4L, mia, "ENVIADA");
+        enviada.setFechaCotizacion(null);
+        enviada.setFechaValidez(null);
+        when(cotizacionRepository.findById(4L)).thenReturn(Optional.of(enviada));
+        when(cotizacionRepository.findTotalesByCotizacion(4L)).thenReturn(Optional.empty());
+        when(cotizacionDetalleRepository.findByCotizacion(4L)).thenReturn(List.of());
+        when(ordenCompraRepository.numerosOcCliente(4L)).thenReturn(List.of());
+
+        String abierta = new ObjectMapper().writeValueAsString(servicio.detalle(4L));
+
+        assertFalse(abierta.contains("motivoAnulacion"));
+    }
+
     private static Cliente cliente(Long id) {
         Cliente cliente = new Cliente();
         cliente.setIdCliente(id);
@@ -192,7 +268,7 @@ class PortalCotizacionServiceTest {
         cotizacion.setCodigoCotizacion("COT-" + id);
         cotizacion.setCliente(cliente);
         cotizacion.setEstadoCotizacion(estado);
-        cotizacion.setFechaValidez(LocalDate.now().plusDays(5));
+        cotizacion.setFechaValidez(LocalDate.now(PlazoDespacho.LIMA).plusDays(5));
         cotizacion.setStatus("A");
         return cotizacion;
     }
