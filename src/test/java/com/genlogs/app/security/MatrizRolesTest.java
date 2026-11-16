@@ -98,6 +98,14 @@ class MatrizRolesTest {
     static Stream<Caso> matriz() {
         String id = NO_EXISTE;
         return Stream.of(
+                // ---- Fuentes de búsqueda (v3.3, L5): configura el Jefe; el Asist. Log. solo ve el estado ----
+                caso("Fuentes", "GET", "/api/fuentes", null, "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO"),
+                caso("Fuentes", "PUT", "/api/fuentes/EBAY/credenciales", "{\"clave\":\"x\"}", "JEFE_ADMINISTRATIVO"),
+                caso("Fuentes", "PATCH", "/api/fuentes/EBAY/activar", "{\"activa\":false}", "JEFE_ADMINISTRATIVO"),
+                caso("Fuentes", "PATCH", "/api/fuentes/EBAY/parametros", "{\"pausaSegundos\":5,\"limiteDiario\":50}",
+                        "JEFE_ADMINISTRATIVO"),
+                caso("Fuentes", "GET", "/api/fuentes/EBAY/selectores", null, "JEFE_ADMINISTRATIVO"),
+                caso("Fuentes", "POST", "/api/fuentes/EBAY/probar", null, "JEFE_ADMINISTRATIVO"),
                 // ---- Solicitudes y plazos: crean y gestionan el Asistente Logístico y el Jefe ----
                 caso("Solicitudes", "PATCH", "/api/solicitudes/" + id + "/pausar", "{\"motivo\":\"PROVEEDOR\"}",
                         "ASISTENTE_LOGISTICO", "JEFE_ADMINISTRATIVO"),
