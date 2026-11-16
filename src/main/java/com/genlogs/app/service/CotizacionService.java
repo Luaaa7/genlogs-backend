@@ -63,6 +63,8 @@ import com.genlogs.app.repository.ServicioRepository;
 import com.genlogs.app.repository.UnidadMedidaRepository;
 import com.genlogs.app.repository.UsuarioRepository;
 import com.genlogs.app.model.Tercero;
+import com.genlogs.app.model.TipoCambio;
+import com.genlogs.app.repository.TipoCambioRepository;
 import com.genlogs.app.service.pdf.PdfGenerationService;
 import com.genlogs.app.util.PdfUtils;
 import com.genlogs.app.service.pdf.PdfGenerationService.CotizacionPdfData;
@@ -135,6 +137,10 @@ public class CotizacionService {
      */
     private final EntityManager entityManager;
     private final AvisoOrdenNoCreada avisoOrdenNoCreada;
+    private final TipoCambioRepository tipoCambioRepository;
+
+    private static final String MENSAJE_TIPO_CAMBIO =
+            "El tipo de cambio cambió. Recalcula los importes y revísalos antes de solicitar aprobación.";
 
     @Transactional(readOnly = true)
     public CotizacionResponse buscarPorId(Long idCotizacion) {
@@ -203,6 +209,8 @@ public class CotizacionService {
         Integer idMoneda = resolverIdMoneda(request);
         Integer idCondicionPago = resolverIdCondicionPago(request);
         List<CotizacionDetalleRequest> lineas = resolverLineas(request);
+        // El costo no viaja en el request: el backend no valida su conversión.
+        exigirImportes(lineas);
 
         Cliente cliente = clienteRepository.findById(idCliente)
                 .orElseThrow(() ->
@@ -261,7 +269,9 @@ public class CotizacionService {
                 .observaciones(request.getObservaciones())
                 // La tasa que rige hoy queda guardada en la cotización.
                 .porcentajeIgv(tasaIgvService.porcentajeVigente())
-                .tipoCambioUsado(tipoCambioCotizacion.vigente())
+                // Propuesta C1: se valida el cambio propuesto. La cotización aún no existe,
+                // así que no hay un tipoCambioUsado previo que reutilizar.
+                .tipoCambioUsado(tipoCambioAlCrear(moneda, request))
                 .build();
 
         cotizacion.setUserCreate(vendedor.getNombreUsuario());
@@ -289,7 +299,7 @@ public class CotizacionService {
 
     /**
      * Actualiza la misma cotización tras una devolución. No crea otra fila
-     * ni otro código. tipoCambioUsado no se toca: lo resuelve el prompt BE-2.
+     * ni otro código. El tipoCambioUsado guardado se conserva (propuesta C1).
      */
     @Transactional
     public CotizacionResponse actualizar(Long idCotizacion, CotizacionRequest request) {
@@ -303,6 +313,7 @@ public class CotizacionService {
         Integer idMoneda = resolverIdMoneda(request);
         Integer idCondicionPago = resolverIdCondicionPago(request);
         List<CotizacionDetalleRequest> lineas = resolverLineas(request);
+        exigirImportes(lineas);
 
         Cliente cliente = clienteRepository.findById(idCliente)
                 .orElseThrow(() -> new ResourceNotFoundException("Cliente no encontrado"));
@@ -321,6 +332,7 @@ public class CotizacionService {
                         .orElseThrow(() -> new ResourceNotFoundException("Sector económico no encontrado"))
                 : cliente.getSectorEconomico();
 
+        conservarTipoCambio(cotizacion, moneda, request);
         Usuario usuario = usuarioActual();
         cotizacion.setCliente(cliente);
         cotizacion.setMoneda(moneda);
@@ -602,7 +614,13 @@ public class CotizacionService {
                 cotizacion.getEstadoCotizacion().getCodigoEstado(),
                 CodigoEstadoCotizacion.APROBADA_INTERNA,
                 ReglasAprobacionCotizacion.SOLO_APROBADA_INTERNA);
-        cotizacion.setTipoCambioUsado(tipoCambioCotizacion.vigente());
+        // Propuesta C1: el cambio guardado se conserva al enviar. Solo las cotizaciones
+        // antiguas, sin valor, se completan una vez.
+        if (cotizacion.getTipoCambioUsado() == null) {
+            log.warn("Cotización {} sin tipo de cambio guardado; se completa una vez con el vigente",
+                    idCotizacion);
+            cotizacion.setTipoCambioUsado(tipoCambioCotizacion.vigente());
+        }
         EstadoCotizacion enviada = estadoDe(CodigoEstadoCotizacion.ENVIADA);
         aplicarEstado(cotizacion, enviada, usuario, "ENVIO_COTIZACION");
         cotizacionRepository.save(cotizacion);
@@ -1234,6 +1252,102 @@ public class CotizacionService {
         return estado.orElseThrow(() ->
                 new ResourceNotFoundException(
                         "Estado no encontrado: " + codigoEstado));
+    }
+
+    /**
+     * Propuesta C1, pendiente de confirmar. En USD valida el par propuesto contra
+     * tipo_cambio. En PEN (y el resto) ignora esos campos y sigue con el vigente.
+     * La cotización todavía no existe: no se reutiliza un tipoCambioUsado previo.
+     */
+    private BigDecimal tipoCambioAlCrear(Moneda moneda, CotizacionRequest request) {
+        if (!esUsd(moneda)) {
+            return tipoCambioCotizacion.vigente();
+        }
+        boolean traeValor = request.getTipoCambio() != null;
+        boolean traeFecha = request.getFechaTipoCambio() != null;
+        if (traeValor != traeFecha) {
+            throw new BusinessException("Indica el tipo de cambio y su fecha");
+        }
+        if (!traeValor) {
+            // TODO quitar cuando el frontend envíe el cambio propuesto
+            log.warn("Alta USD sin tipo de cambio propuesto; se usa el vigente de forma transitoria");
+            return tipoCambioCotizacion.vigente();
+        }
+        return validarTipoCambioPropuesto(request.getTipoCambio(), request.getFechaTipoCambio());
+    }
+
+    /** Una cotización guardada conserva su cambio. Solo un null antiguo acepta uno nuevo ya validado. */
+    private void conservarTipoCambio(Cotizacion cotizacion, Moneda moneda, CotizacionRequest request) {
+        BigDecimal guardado = cotizacion.getTipoCambioUsado();
+        BigDecimal propuesto = request.getTipoCambio();
+        if (guardado != null) {
+            if (propuesto != null && !mismaEscala(guardado, propuesto)) {
+                throw new BusinessException("El tipo de cambio de una cotización guardada no se modifica");
+            }
+            return;
+        }
+        boolean traeValor = propuesto != null;
+        boolean traeFecha = request.getFechaTipoCambio() != null;
+        if (!traeValor && !traeFecha) {
+            return;
+        }
+        if (traeValor != traeFecha) {
+            throw new BusinessException("Indica el tipo de cambio y su fecha");
+        }
+        if (!esUsd(moneda)) {
+            return;
+        }
+        cotizacion.setTipoCambioUsado(validarTipoCambioPropuesto(propuesto, request.getFechaTipoCambio()));
+    }
+
+    private BigDecimal validarTipoCambioPropuesto(BigDecimal propuesto, LocalDate fecha) {
+        TipoCambio fila = tipoCambioRepository
+                .findByMoneda_CodigoMonedaAndFecha(TipoCambioService.MONEDA_USD, fecha)
+                .orElseThrow(() -> new BusinessException(MENSAJE_TIPO_CAMBIO));
+        if (fila.getValor() == null || !mismaEscala(fila.getValor(), propuesto)) {
+            throw new BusinessException(MENSAJE_TIPO_CAMBIO);
+        }
+        return fila.getValor().setScale(4, RoundingMode.HALF_UP);
+    }
+
+    private static boolean esUsd(Moneda moneda) {
+        return moneda != null
+                && moneda.getCodigoMoneda() != null
+                && TipoCambioService.MONEDA_USD.equalsIgnoreCase(moneda.getCodigoMoneda().trim());
+    }
+
+    private static boolean mismaEscala(BigDecimal guardado, BigDecimal propuesto) {
+        return guardado.setScale(4, RoundingMode.HALF_UP)
+                .compareTo(propuesto.setScale(4, RoundingMode.HALF_UP)) == 0;
+    }
+
+    /**
+     * Cantidad, precio y descuento son lo único que trae el request.
+     * El costo no viaja, así que aquí no se valida su conversión.
+     */
+    private static void exigirImportes(List<CotizacionDetalleRequest> lineas) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (CotizacionDetalleRequest linea : lineas) {
+            if (linea.getCantidad() == null || linea.getCantidad().compareTo(BigDecimal.ZERO) <= 0) {
+                throw new BusinessException("La cantidad debe ser mayor a 0");
+            }
+            if (linea.getPrecioUnitario() == null || linea.getPrecioUnitario().compareTo(BigDecimal.ZERO) < 0) {
+                throw new BusinessException("El precio no puede ser negativo");
+            }
+            BigDecimal descuento = linea.getDescuentoUnitario() != null
+                    ? linea.getDescuentoUnitario()
+                    : BigDecimal.ZERO;
+            if (descuento.compareTo(BigDecimal.ZERO) < 0) {
+                throw new BusinessException("El descuento no puede ser negativo");
+            }
+            if (descuento.compareTo(linea.getPrecioUnitario()) > 0) {
+                throw new BusinessException("El descuento no puede ser mayor que el precio");
+            }
+            total = total.add(linea.getCantidad().multiply(linea.getPrecioUnitario().subtract(descuento)));
+        }
+        if (total.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException("El total de la cotización no puede ser negativo");
+        }
     }
 
     private List<CotizacionDetalleRequest> resolverLineas(
