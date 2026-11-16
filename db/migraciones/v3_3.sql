@@ -122,9 +122,10 @@ CREATE TABLE IF NOT EXISTS public.fuente_selector (
     status         CHAR(1)      NOT NULL DEFAULT 'A',
     CONSTRAINT pk_fuente_selector PRIMARY KEY (id_selector),
     CONSTRAINT uq_fuente_selector_campo UNIQUE (id_fuente, pagina, campo),
-    CONSTRAINT ck_fuente_selector_pagina CHECK (pagina IN ('BUSQUEDA', 'FICHA')),
+    CONSTRAINT ck_fuente_selector_pagina CHECK (pagina IN ('BUSQUEDA', 'FICHA', 'LOGIN')),
     CONSTRAINT ck_fuente_selector_campo
-        CHECK (campo IN ('ITEM', 'NOMBRE', 'DESCRIPCION', 'PRECIO', 'MONEDA', 'IMAGEN', 'ENLACE')),
+        CHECK (campo IN ('ITEM', 'NOMBRE', 'DESCRIPCION', 'PRECIO', 'MONEDA', 'IMAGEN', 'ENLACE',
+                         'USUARIO', 'CLAVE', 'ENVIAR', 'EXITO')),
     CONSTRAINT ck_fuente_selector_status CHECK (status IN ('A', 'I')),
     CONSTRAINT fk_fuente_selector_fuente FOREIGN KEY (id_fuente)
         REFERENCES public.fuente_busqueda (id_fuente) ON DELETE CASCADE,
@@ -132,11 +133,17 @@ CREATE TABLE IF NOT EXISTS public.fuente_selector (
         REFERENCES public.usuario (id_usuario)
 );
 
--- ITEM (pedido de Mell, A4): si la tabla ya existía de una corrida anterior del
--- script, el CREATE de arriba no cambia su CHECK; se rehace para que admita ITEM.
+-- ITEM (pedido de Mell, A4) y página LOGIN: si la tabla ya existía de una corrida
+-- anterior del script, el CREATE de arriba no cambia sus CHECK; se rehacen aquí.
+-- Los campos de LOGIN (USUARIO, CLAVE, ENVIAR, EXITO) guardan DÓNDE está cada cosa
+-- en la página de la tienda, nunca la clave: esa sigue cifrada en fuente_busqueda.
+ALTER TABLE public.fuente_selector DROP CONSTRAINT IF EXISTS ck_fuente_selector_pagina;
+ALTER TABLE public.fuente_selector ADD CONSTRAINT ck_fuente_selector_pagina
+    CHECK (pagina IN ('BUSQUEDA', 'FICHA', 'LOGIN'));
 ALTER TABLE public.fuente_selector DROP CONSTRAINT IF EXISTS ck_fuente_selector_campo;
 ALTER TABLE public.fuente_selector ADD CONSTRAINT ck_fuente_selector_campo
-    CHECK (campo IN ('ITEM', 'NOMBRE', 'DESCRIPCION', 'PRECIO', 'MONEDA', 'IMAGEN', 'ENLACE'));
+    CHECK (campo IN ('ITEM', 'NOMBRE', 'DESCRIPCION', 'PRECIO', 'MONEDA', 'IMAGEN', 'ENLACE',
+                     'USUARIO', 'CLAVE', 'ENVIAR', 'EXITO'));
 
 -- ----------------------------------------------------------------------------
 -- 4. Historial de búsqueda: descripción, estado de la consulta y ALIEXPRESS
@@ -235,7 +242,7 @@ COMMIT;
 --   SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint
 --    WHERE conrelid = 'public.historial_sourcing'::regclass AND contype = 'c';      -- un solo CHECK de fuente, con ALIEXPRESS
 --   SELECT pg_get_constraintdef(oid) FROM pg_constraint
---    WHERE conname = 'ck_fuente_selector_campo';                                   -- incluye ITEM
+--    WHERE conname = 'ck_fuente_selector_campo';                                   -- incluye ITEM y USUARIO/CLAVE/ENVIAR/EXITO
 --   SELECT relname, relrowsecurity FROM pg_class
 --    WHERE relname LIKE 'fuente_%' AND relkind = 'r';                              -- 4 tablas, todas true
 -- ============================================================================
