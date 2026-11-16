@@ -268,6 +268,56 @@ class FuentesConfigEndpointTest {
     }
 
     @Test
+    void selectores_paginaLoginGuardaSusCuatroCampos() throws Exception {
+        mockMvc.perform(put("/api/fuentes/EBAY/selectores").with(user(jefe).roles("JEFE_ADMINISTRATIVO"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[{\"pagina\":\"LOGIN\",\"campo\":\"USUARIO\",\"regla\":\"#userid\"},"
+                                + "{\"pagina\":\"LOGIN\",\"campo\":\"CLAVE\",\"regla\":\"#pass\"},"
+                                + "{\"pagina\":\"LOGIN\",\"campo\":\"ENVIAR\",\"regla\":\"#sgnBt\"},"
+                                + "{\"pagina\":\"LOGIN\",\"campo\":\"EXITO\",\"regla\":\"#gh-ug\"}]"))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/fuentes/EBAY/selectores").with(user(jefe).roles("JEFE_ADMINISTRATIVO")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(4))
+                .andExpect(jsonPath("$[?(@.campo=='CLAVE')].regla").value("#pass"));
+    }
+
+    @Test
+    void selectores_loginNoAceptaCamposDeBusquedaNiFicha() throws Exception {
+        mockMvc.perform(put("/api/fuentes/EBAY/selectores").with(user(jefe).roles("JEFE_ADMINISTRATIVO"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[{\"pagina\":\"LOGIN\",\"campo\":\"PRECIO\",\"regla\":\".precio\"}]"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("LOGIN")));
+    }
+
+    @Test
+    void selectores_busquedaYFichaNoAceptanCamposDeLogin() throws Exception {
+        mockMvc.perform(put("/api/fuentes/EBAY/selectores").with(user(jefe).roles("JEFE_ADMINISTRATIVO"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[{\"pagina\":\"BUSQUEDA\",\"campo\":\"CLAVE\",\"regla\":\"#pass\"}]"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(put("/api/fuentes/EBAY/selectores").with(user(jefe).roles("JEFE_ADMINISTRATIVO"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[{\"pagina\":\"FICHA\",\"campo\":\"USUARIO\",\"regla\":\"#userid\"}]"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void selectores_unaReglaInvalidaNoGuardaNingunaDelLote() throws Exception {
+        mockMvc.perform(put("/api/fuentes/EBAY/selectores").with(user(jefe).roles("JEFE_ADMINISTRATIVO"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[{\"pagina\":\"FICHA\",\"campo\":\"NOMBRE\",\"regla\":\"h1\"},"
+                                + "{\"pagina\":\"LOGIN\",\"campo\":\"PRECIO\",\"regla\":\".precio\"}]"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/api/fuentes/EBAY/selectores").with(user(jefe).roles("JEFE_ADMINISTRATIVO")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
     void selectores_soloElJefe() throws Exception {
         mockMvc.perform(get("/api/fuentes/EBAY/selectores").with(user(asistente).roles("ASISTENTE_LOGISTICO")))
                 .andExpect(status().isForbidden());
