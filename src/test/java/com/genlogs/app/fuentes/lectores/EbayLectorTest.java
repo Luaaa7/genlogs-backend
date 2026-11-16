@@ -212,12 +212,12 @@ class EbayLectorTest {
 
     @Test
     void armaElTextoDeBusquedaSegunElMetodo() {
-        assertThat(EbayLector.textoDeBusqueda(consulta)).isEqualTo("CAT 1R-0750");
-        assertThat(EbayLector.textoDeBusqueda(new ConsultaBusqueda(MetodoBusqueda.GTIN, null, null,
+        assertThat(PuenteLector.textoDeBusqueda(consulta)).isEqualTo("CAT 1R-0750");
+        assertThat(PuenteLector.textoDeBusqueda(new ConsultaBusqueda(MetodoBusqueda.GTIN, null, null,
                 "0123456789012", null, null))).isEqualTo("0123456789012");
-        assertThat(EbayLector.textoDeBusqueda(new ConsultaBusqueda(MetodoBusqueda.PALABRAS, null, "  Komatsu ",
+        assertThat(PuenteLector.textoDeBusqueda(new ConsultaBusqueda(MetodoBusqueda.PALABRAS, null, "  Komatsu ",
                 null, "bomba   hidraulica", null))).isEqualTo("Komatsu bomba hidraulica");
-        assertThat(EbayLector.textoDeBusqueda(null)).isNull();
+        assertThat(PuenteLector.textoDeBusqueda(null)).isNull();
         assertThat(EbayLector.urlBusqueda(null, "a b&c")).isEqualTo("https://www.ebay.com/sch/i.html?_nkw=a+b%26c");
     }
 }
