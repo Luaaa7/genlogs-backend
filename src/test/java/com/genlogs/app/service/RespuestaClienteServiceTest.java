@@ -5,10 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -16,6 +18,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.access.AccessDeniedException;
@@ -28,6 +31,7 @@ import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.model.AdjuntoCotizacion;
 import com.genlogs.app.model.Cotizacion;
 import com.genlogs.app.model.EstadoCotizacion;
+import com.genlogs.app.model.SeguimientoCotizacion;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.AdjuntoCotizacionRepository;
 import com.genlogs.app.repository.CotizacionDetalleRepository;
@@ -55,7 +59,7 @@ class RespuestaClienteServiceTest {
     void setUp() {
         PortalCotizacionService portal = new PortalCotizacionService(
                 usuarios, cotizaciones, detalles, estados, seguimientos, ordenes);
-        servicio = new RespuestaClienteService(cotizaciones, adjuntos, usuarios, portal);
+        servicio = new RespuestaClienteService(cotizaciones, adjuntos, seguimientos, usuarios, portal);
         jefe = new Usuario();
         jefe.setNombreUsuario("jefe");
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
@@ -72,8 +76,10 @@ class RespuestaClienteServiceTest {
     void elJefeApruebaDesdeEnviadaYDesdeNegociacion() {
         Cotizacion enviada = cotizacion(15L, "ENVIADA");
         when(cotizaciones.findById(15L)).thenReturn(Optional.of(enviada));
-        when(adjuntos.findById(7L)).thenReturn(Optional.of(adjunto(7L, enviada)));
+        when(adjuntos.findById(7L)).thenReturn(Optional.of(adjunto(7L, enviada, "llamada.pdf")));
         when(estados.findByCodigoEstado("APROBADA")).thenReturn(Optional.of(estado("APROBADA")));
+        SeguimientoCotizacion reenvio = envio(ENVIADO.plusDays(3));
+        when(seguimientos.findByCotizacion(15L)).thenReturn(List.of(reenvio, envio(ENVIADO)));
 
         assertEquals("APROBADA", servicio.registrar(15L, pedido("APROBADA", "Llamó el 16/11 a las 9:00", 7L)));
         assertEquals("APROBADA", enviada.getEstadoCotizacion().getCodigoEstado());
@@ -81,27 +87,55 @@ class RespuestaClienteServiceTest {
         BusinessException segunda = assertThrows(BusinessException.class,
                 () -> servicio.registrar(15L, pedido("APROBADA", "Llamó el 16/11 a las 9:00", 7L)));
         assertEquals("Esta cotización ya no se puede aprobar ni rechazar", segunda.getMessage());
-        verify(cotizaciones, org.mockito.Mockito.times(1)).save(any());
+        verify(cotizaciones, times(1)).save(any());
 
         Cotizacion negociacion = cotizacion(16L, "EN_NEGOCIACION");
         when(cotizaciones.findById(16L)).thenReturn(Optional.of(negociacion));
-        when(adjuntos.findById(8L)).thenReturn(Optional.of(adjunto(8L, negociacion)));
+        when(adjuntos.findById(8L)).thenReturn(Optional.of(adjunto(8L, negociacion, "correo-minera.pdf")));
+        when(seguimientos.findByCotizacion(16L)).thenReturn(List.of(envio(ENVIADO)));
 
         assertEquals("APROBADA", servicio.registrar(16L, pedido("APROBADA", "Correo del 16/11 10:15", 8L)));
         assertEquals("APROBADA", negociacion.getEstadoCotizacion().getCodigoEstado());
-        verify(cotizaciones, org.mockito.Mockito.times(2)).save(any());
+        verify(cotizaciones, times(2)).save(any());
+
+        ArgumentCaptor<SeguimientoCotizacion> guardados = ArgumentCaptor.forClass(SeguimientoCotizacion.class);
+        verify(seguimientos, times(2)).save(guardados.capture());
+        assertEquals("Llamó el 16/11 a las 9:00 (adjunto: llamada.pdf)", guardados.getAllValues().get(0).getComentario());
+        assertEquals("Correo del 16/11 10:15 (adjunto: correo-minera.pdf)", guardados.getAllValues().get(1).getComentario());
     }
 
     @Test
     void elRechazoNoDejaLaCotizacionAprobada() {
         Cotizacion enviada = cotizacion(15L, "ENVIADA");
         when(cotizaciones.findById(15L)).thenReturn(Optional.of(enviada));
-        when(adjuntos.findById(7L)).thenReturn(Optional.of(adjunto(7L, enviada)));
+        when(adjuntos.findById(7L)).thenReturn(Optional.of(adjunto(7L, enviada, "correo-minera.pdf")));
         when(estados.findByCodigoEstado("RECHAZADA")).thenReturn(Optional.of(estado("RECHAZADA")));
+        when(seguimientos.findByCotizacion(15L)).thenReturn(List.of(envio(ENVIADO)));
 
         assertEquals("RECHAZADA", servicio.registrar(15L, pedido("RECHAZADA", "Correo del 16/11: no compran", 7L)));
 
         assertEquals("RECHAZADA", enviada.getEstadoCotizacion().getCodigoEstado());
+        ArgumentCaptor<SeguimientoCotizacion> guardado = ArgumentCaptor.forClass(SeguimientoCotizacion.class);
+        verify(seguimientos).save(guardado.capture());
+        assertEquals("Correo del 16/11: no compran (adjunto: correo-minera.pdf)", guardado.getValue().getComentario());
+    }
+
+    @Test
+    void adjuntoAnteriorAlEnvioNoSirve() {
+        Cotizacion enviada = cotizacion(15L, "ENVIADA");
+        when(cotizaciones.findById(15L)).thenReturn(Optional.of(enviada));
+        AdjuntoCotizacion delBorrador = adjunto(7L, enviada, "borrador.pdf");
+        delBorrador.setDateCreate(ENVIADO);
+        when(adjuntos.findById(7L)).thenReturn(Optional.of(delBorrador));
+        when(seguimientos.findByCotizacion(15L)).thenReturn(List.of(envio(ENVIADO)));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> servicio.registrar(15L, pedido("APROBADA", "Llamó el 16/11 a las 9:00", 7L)));
+
+        assertEquals(RespuestaClienteService.ADJUNTO_OBLIGATORIO, error.getMessage());
+        assertEquals("ENVIADA", enviada.getEstadoCotizacion().getCodigoEstado());
+        verify(cotizaciones, never()).save(any());
+        verify(seguimientos, never()).save(any());
     }
 
     @Test
@@ -125,7 +159,8 @@ class RespuestaClienteServiceTest {
         Cotizacion enviada = cotizacion(15L, "ENVIADA");
         enviada.setFechaValidez(LocalDate.now(PlazoDespacho.LIMA).minusDays(1));
         when(cotizaciones.findById(15L)).thenReturn(Optional.of(enviada));
-        when(adjuntos.findById(7L)).thenReturn(Optional.of(adjunto(7L, enviada)));
+        when(adjuntos.findById(7L)).thenReturn(Optional.of(adjunto(7L, enviada, "correo-minera.pdf")));
+        when(seguimientos.findByCotizacion(15L)).thenReturn(List.of(envio(ENVIADO)));
 
         BusinessException vencida = assertThrows(BusinessException.class,
                 () -> servicio.registrar(15L, pedido("APROBADA", "Llamó el 16/11 a las 9:00", 7L)));
@@ -151,7 +186,8 @@ class RespuestaClienteServiceTest {
     void unEstadoQueNoEsEnviadaNiNegociacionSeRechaza() {
         Cotizacion borrador = cotizacion(15L, "BORRADOR");
         when(cotizaciones.findById(15L)).thenReturn(Optional.of(borrador));
-        when(adjuntos.findById(7L)).thenReturn(Optional.of(adjunto(7L, borrador)));
+        when(adjuntos.findById(7L)).thenReturn(Optional.of(adjunto(7L, borrador, "correo-minera.pdf")));
+        when(seguimientos.findByCotizacion(15L)).thenReturn(List.of(envio(ENVIADO)));
 
         BusinessException error = assertThrows(BusinessException.class,
                 () -> servicio.registrar(15L, pedido("APROBADA", "Llamó el 16/11 a las 9:00", 7L)));
@@ -160,6 +196,8 @@ class RespuestaClienteServiceTest {
         assertEquals("BORRADOR", borrador.getEstadoCotizacion().getCodigoEstado());
         verify(cotizaciones, never()).save(any());
     }
+
+    private static final LocalDateTime ENVIADO = LocalDateTime.of(2026, 11, 10, 9, 0);
 
     private static RespuestaClienteRequest pedido(String codigo, String comentario, Long idAdjunto) {
         RespuestaClienteRequest request = new RespuestaClienteRequest();
@@ -185,11 +223,20 @@ class RespuestaClienteServiceTest {
         return estado;
     }
 
-    private static AdjuntoCotizacion adjunto(Long id, Cotizacion cotizacion) {
+    private static SeguimientoCotizacion envio(LocalDateTime fecha) {
+        SeguimientoCotizacion seguimiento = new SeguimientoCotizacion();
+        seguimiento.setEstadoCotizacion(estado("ENVIADA"));
+        seguimiento.setFechaEvento(fecha);
+        return seguimiento;
+    }
+
+    private static AdjuntoCotizacion adjunto(Long id, Cotizacion cotizacion, String nombre) {
         AdjuntoCotizacion adjunto = new AdjuntoCotizacion();
         adjunto.setIdAdjunto(id);
         adjunto.setCotizacion(cotizacion);
         adjunto.setStatus("A");
+        adjunto.setNombreArchivo(nombre);
+        adjunto.setDateCreate(ENVIADO.plusHours(2));
         return adjunto;
     }
 }

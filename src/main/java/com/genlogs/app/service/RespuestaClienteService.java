@@ -1,5 +1,9 @@
 package com.genlogs.app.service;
 
+import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.Objects;
+
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -13,9 +17,11 @@ import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
 import com.genlogs.app.model.AdjuntoCotizacion;
 import com.genlogs.app.model.Cotizacion;
+import com.genlogs.app.model.SeguimientoCotizacion;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.AdjuntoCotizacionRepository;
 import com.genlogs.app.repository.CotizacionRepository;
+import com.genlogs.app.repository.SeguimientoCotizacionRepository;
 import com.genlogs.app.repository.UsuarioRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -42,6 +48,7 @@ public class RespuestaClienteService {
 
     private final CotizacionRepository cotizacionRepository;
     private final AdjuntoCotizacionRepository adjuntoCotizacionRepository;
+    private final SeguimientoCotizacionRepository seguimientoCotizacionRepository;
     private final UsuarioRepository usuarioRepository;
     private final PortalCotizacionService portalCotizacionService;
 
@@ -56,8 +63,9 @@ public class RespuestaClienteService {
         CodigoEstadoCotizacion destino = destino(request);
         Cotizacion cotizacion = cotizacionRepository.findById(idCotizacion)
                 .orElseThrow(() -> new ResourceNotFoundException("Cotización no encontrada"));
-        exigirAdjuntoNuevo(cotizacion, request == null ? null : request.getIdAdjunto());
-        portalCotizacionService.aplicarDecisionCliente(cotizacion, destino, jefe, comentario, PROCESO);
+        AdjuntoCotizacion adjunto = exigirAdjuntoNuevo(cotizacion, request == null ? null : request.getIdAdjunto());
+        String conArchivo = comentario + " (adjunto: " + adjunto.getNombreArchivo() + ")";
+        portalCotizacionService.aplicarDecisionCliente(cotizacion, destino, jefe, conArchivo, PROCESO);
         return destino.name();
     }
 
@@ -93,16 +101,36 @@ public class RespuestaClienteService {
         throw new BusinessException(DESTINO_NO_ADMITIDO);
     }
 
-    /** Los adjuntos viejos no cuentan: este registro tiene que traer uno nuevo. */
-    private void exigirAdjuntoNuevo(Cotizacion cotizacion, Long idAdjunto) {
+    /**
+     * Vale el adjunto activo de esta cotización subido después del primer paso a ENVIADA.
+     * Un archivo del borrador, o uno anterior o igual a ese envío, no sirve.
+     */
+    private AdjuntoCotizacion exigirAdjuntoNuevo(Cotizacion cotizacion, Long idAdjunto) {
         if (idAdjunto == null) {
             throw new BusinessException(ADJUNTO_OBLIGATORIO);
         }
         AdjuntoCotizacion adjunto = adjuntoCotizacionRepository.findById(idAdjunto)
                 .orElseThrow(() -> new BusinessException(ADJUNTO_OBLIGATORIO));
         Long dueno = adjunto.getCotizacion() == null ? null : adjunto.getCotizacion().getIdCotizacion();
-        if (!cotizacion.getIdCotizacion().equals(dueno) || !"A".equals(adjunto.getStatus())) {
+        LocalDateTime envio = fechaDelPrimerEnvio(cotizacion.getIdCotizacion());
+        if (!cotizacion.getIdCotizacion().equals(dueno)
+                || !"A".equals(adjunto.getStatus())
+                || envio == null
+                || adjunto.getDateCreate() == null
+                || !adjunto.getDateCreate().isAfter(envio)) {
             throw new BusinessException(ADJUNTO_OBLIGATORIO);
         }
+        return adjunto;
+    }
+
+    /** El seguimiento ENVIADA más antiguo. Un reenvío posterior no mueve esta fecha. */
+    private LocalDateTime fechaDelPrimerEnvio(Long idCotizacion) {
+        return seguimientoCotizacionRepository.findByCotizacion(idCotizacion).stream()
+                .filter(s -> s.getEstadoCotizacion() != null
+                        && CodigoEstadoCotizacion.ENVIADA.name().equals(s.getEstadoCotizacion().getCodigoEstado()))
+                .map(SeguimientoCotizacion::getFechaEvento)
+                .filter(Objects::nonNull)
+                .min(Comparator.naturalOrder())
+                .orElse(null);
     }
 }
