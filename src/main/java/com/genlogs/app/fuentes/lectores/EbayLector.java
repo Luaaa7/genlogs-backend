@@ -40,6 +40,17 @@ public class EbayLector implements LectorFuenteEspecifico {
     static final int MAX_RESULTADOS = 8;
     /** Bloque que muestra eBay cuando la búsqueda no encuentra nada ("No se ha encontrado ninguna coincidencia exacta"). */
     static final String SIN_RESULTADOS = ".srp-save-null-search";
+    /**
+     * Página "El acceso al sitio web está bloqueado" (ebay.com/splashui/mitigation?page=drop).
+     * Tomado del HTML real (16/11/2026): el título va en div.pgHeading > h1 y la búsqueda no lo usa.
+     */
+    static final String BLOQUEO = ".pgHeading > h1";
+    /**
+     * Página de verificación de eBay (splashui/challenge, "Checking your browser").
+     * Por confirmar con un captcha real: eBay no deja abrirla directo. El servicio de lectura
+     * además detecta por su cuenta reCAPTCHA, hCaptcha y títulos con "captcha".
+     */
+    static final String VERIFICACION = "#captcha_loading, #captcha_form, form[action*=captcha]";
     private static final int LARGO_CONSULTA = 200;
 
     private final LectorRemotoClient cliente;
@@ -78,6 +89,7 @@ public class EbayLector implements LectorFuenteEspecifico {
         }
         // Sin esto, una búsqueda sin resultados se tomaría como reglas rotas (CON_ERROR y aviso al Jefe).
         reglas.put("sinResultados", SIN_RESULTADOS);
+        agregarAvisos(reglas);
         String url = urlBusqueda(urlBase, texto);
         return leer(sesion, s -> cliente.buscar(
                 new ContratoLector.Peticion(CodigoFuente.EBAY.name(), url, reglas, s, null, MAX_RESULTADOS)));
@@ -98,9 +110,19 @@ public class EbayLector implements LectorFuenteEspecifico {
             return ResultadoLectura.error("eBay no tiene reglas de ficha completas: faltan NOMBRE o PRECIO"
                     + " en Configuración > Fuentes.", false);
         }
+        agregarAvisos(reglas);
         String limpia = url.trim();
         return leer(sesion, s -> cliente.leerFicha(
                 new ContratoLector.Peticion(CodigoFuente.EBAY.name(), limpia, reglas, s, null, 1)));
+    }
+
+    /**
+     * Para que el servicio de lectura distinga un captcha (REQUIERE_VERIFICACION) o un bloqueo
+     * (BLOQUEADA) de eBay de una página sin resultados o con reglas rotas.
+     */
+    static void agregarAvisos(Map<String, Object> reglas) {
+        reglas.put("verificacion", VERIFICACION);
+        reglas.put("bloqueo", BLOQUEO);
     }
 
     /** Llama al servicio de lectura con la sesión y traduce la respuesta o el error. */
