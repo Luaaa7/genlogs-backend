@@ -4,8 +4,10 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,8 +22,9 @@ import com.genlogs.app.fuentes.config.CampoSelector;
  * <ul>
  *   <li>Una ficha sin NOMBRE o sin ENLACE se descarta.</li>
  *   <li>Enlaces e imágenes relativos ("/itm/123") se completan con la URL base de la tienda.</li>
- *   <li>Un mismo enlace repetido cuenta una sola vez (sin mirar los parámetros "?...",
- *       así los patrocinados que solo cambian el rastreo no se repiten).</li>
+ *   <li>Un mismo producto repetido cuenta una sola vez: se ignoran solo los parámetros de
+ *       rastreo (ref, utm_*, pd_rd_w...), así los patrocinados no se repiten; los que dicen
+ *       qué producto es (pd_rd_i, url, id...) se respetan.</li>
  *   <li>Las fichas descartadas se cuentan en el log, para notar una regla rota.</li>
  *   <li>Precio y moneda pasan por {@link NormalizadorPrecio}.</li>
  *   <li>Se devuelven como máximo {@code maximo} fichas (BUSQUEDA_MAX_RESULTADOS).</li>
@@ -33,6 +36,14 @@ public final class ExtraccionComun {
 
     private static final int LARGO_NOMBRE = 255;
     private static final int LARGO_DESCRIPCION = 2000;
+
+    /** Parámetros de rastreo: cambian entre un resultado normal y uno patrocinado del mismo producto. */
+    private static final Set<String> RASTREO = Set.of(
+            "ref", "ref_", "qid", "sr", "sprefix", "crid", "keywords", "dib", "dib_tag", "th", "psc",
+            "spla", "sp_csd", "spc", "ie", "content-id", "smid", "linkcode", "tag", "camp", "creative",
+            "_skw", "itmmeta", "hash", "itmprp", "_trksid", "_trkparms", "_from", "mkcid", "mkevt",
+            "spm", "scm", "algo_pvid", "algo_exp_id", "pvid", "utparam", "pdp_npi", "pdp_ext_f",
+            "gclid", "fbclid", "srsltid", "tracking_id", "searchvariation");
 
     private ExtraccionComun() {
     }
@@ -47,7 +58,7 @@ public final class ExtraccionComun {
                                              String monedaPorDefecto, int maximo) {
         List<FichaExtraida> fichas = new ArrayList<>();
         if (fichasEnTexto == null) return fichas;
-        Set<String> enlacesVistos = new LinkedHashSet<>();
+        Set<String> productosVistos = new LinkedHashSet<>();
         int incompletas = 0;
         int repetidas = 0;
         for (Map<CampoSelector, String> campos : fichasEnTexto) {
@@ -55,7 +66,7 @@ public final class ExtraccionComun {
             FichaExtraida ficha = ficha(campos, urlBase, monedaPorDefecto);
             if (ficha == null) {
                 incompletas++;
-            } else if (!enlacesVistos.add(sinParametros(ficha.enlace()))) {
+            } else if (!productosVistos.add(claveEnlace(ficha.enlace()))) {
                 repetidas++;
             } else {
                 fichas.add(ficha);
@@ -85,20 +96,41 @@ public final class ExtraccionComun {
                 enlace);
     }
 
-    /** El enlace sin "?..." ni "#...": dos patrocinados del mismo producto cuentan como uno. */
-    static String sinParametros(String enlace) {
-        int corte = enlace.length();
-        int pregunta = enlace.indexOf('?');
-        int numeral = enlace.indexOf('#');
-        if (pregunta >= 0) corte = Math.min(corte, pregunta);
-        if (numeral >= 0) corte = Math.min(corte, numeral);
-        return enlace.substring(0, corte);
+    /**
+     * Qué producto es el enlace, para no repetirlo: sin "www.", sin "#..." y sin los parámetros
+     * de rastreo; los demás parámetros se ordenan. Así "…/dp/B01?ref=sr_1" y "…/dp/B01?ref=sspa"
+     * son el mismo, pero "…?pd_rd_i=B01" y "…?pd_rd_i=B02" son dos productos.
+     */
+    static String claveEnlace(String enlace) {
+        try {
+            URI uri = new URI(enlace);
+            String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
+            if (host.startsWith("www.")) host = host.substring(4);
+            String camino = uri.getRawPath() == null ? "" : uri.getRawPath();
+            Set<String> parametros = new TreeSet<>();
+            String consulta = uri.getRawQuery();
+            if (consulta != null) {
+                for (String par : consulta.split("&")) {
+                    if (par.isEmpty()) continue;
+                    String nombre = par.split("=", 2)[0].toLowerCase(Locale.ROOT);
+                    if (!esRastreo(nombre)) parametros.add(par);
+                }
+            }
+            return host + camino + (parametros.isEmpty() ? "" : "?" + String.join("&", parametros));
+        } catch (Exception e) {
+            return enlace;
+        }
     }
 
-    /** Texto sin espacios de más; null si queda vacío. */
+    private static boolean esRastreo(String nombre) {
+        return RASTREO.contains(nombre) || nombre.startsWith("utm_") || nombre.startsWith("pf_rd_")
+                || (nombre.startsWith("pd_rd_") && !nombre.equals("pd_rd_i"));
+    }
+
+    /** Texto sin espacios de más (incluidos los Unicode); null si queda vacío. */
     static String limpio(String texto) {
         if (texto == null) return null;
-        String t = texto.replaceAll("[\\s\\u00A0\\u202F]+", " ").trim();
+        String t = texto.replaceAll("[\\s\\p{Zs}]+", " ").trim();
         return t.isEmpty() ? null : t;
     }
 

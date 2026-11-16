@@ -16,7 +16,7 @@ import com.genlogs.app.sourcing.ConsultaBusqueda;
 import com.genlogs.app.sourcing.MetodoBusqueda;
 import com.genlogs.app.sourcing.ResultadoBusqueda;
 
-/** A4: los 5 lectores entregan las fichas igual, venga de la tienda que venga. */
+/** A4: los 5 lectores entregan las fichas igual, venga de la tienda que venga (incluye la auditoría del PR #94). */
 class ExtraccionComunTest {
 
     private static final String EBAY = "https://www.ebay.com";
@@ -110,16 +110,49 @@ class ExtraccionComunTest {
     }
 
     @Test
-    void unPatrocinadoQueSoloCambiaLosParametrosNoSeRepite() {
+    void unPatrocinadoQueSoloCambiaElRastreoNoSeRepite() {
         List<Map<CampoSelector, String>> leidas = List.of(
-                ficha("Filtro", "$10", "https://www.amazon.com/dp/B000123?ref=sr_1"),
-                ficha("Filtro patrocinado", "$10", "https://www.amazon.com/dp/B000123?ref=sspa#x"),
+                ficha("Filtro", "$10", "https://www.amazon.com/dp/B000123?ref=sr_1&qid=111"),
+                ficha("Filtro patrocinado", "$10", "https://www.amazon.com/dp/B000123?ref=sspa&utm_source=x#x"),
+                ficha("Filtro sin www", "$10", "https://amazon.com/dp/B000123?pd_rd_w=abc&pf_rd_p=def"),
                 ficha("Otro", "$11", "https://www.amazon.com/dp/B000999"));
 
         List<FichaExtraida> fichas = ExtraccionComun.fichas(leidas, "https://www.amazon.com", "USD", 8);
 
         assertEquals(2, fichas.size());
-        assertEquals("https://www.amazon.com/dp/B000123?ref=sr_1", fichas.get(0).enlace());
-        assertEquals("https://www.amazon.com/dp/B000123", ExtraccionComun.sinParametros(fichas.get(0).enlace()));
+        assertEquals("https://www.amazon.com/dp/B000123?ref=sr_1&qid=111", fichas.get(0).enlace());
+        assertEquals("Otro", fichas.get(1).nombre());
+    }
+
+    @Test
+    void dosProductosConDistintoPdRdISonDosFichas() {
+        List<Map<CampoSelector, String>> leidas = List.of(
+                ficha("Filtro A", "$10", "https://www.amazon.com/sspa/click?pd_rd_i=B0AAAA1111&ref=sspa&qid=1"),
+                ficha("Filtro B", "$12", "https://www.amazon.com/sspa/click?pd_rd_i=B0BBBB2222&ref=sspa&qid=1"),
+                ficha("Filtro A otra vez", "$10", "https://www.amazon.com/sspa/click?qid=2&pd_rd_i=B0AAAA1111"));
+
+        List<FichaExtraida> fichas = ExtraccionComun.fichas(leidas, "https://www.amazon.com", "USD", 8);
+
+        assertEquals(2, fichas.size());
+        assertEquals("Filtro A", fichas.get(0).nombre());
+        assertEquals("Filtro B", fichas.get(1).nombre());
+    }
+
+    @Test
+    void laClaveDelEnlaceSoloQuitaElRastreo() {
+        assertEquals("amazon.com/dp/B000123",
+                ExtraccionComun.claveEnlace("https://www.amazon.com/dp/B000123?ref=sr_1&utm_medium=x#reviews"));
+        assertEquals("amazon.com/sspa/click?pd_rd_i=B0AAAA1111&url=%2Fdp%2FB0AAAA1111",
+                ExtraccionComun.claveEnlace("https://www.amazon.com/sspa/click?url=%2Fdp%2FB0AAAA1111&pd_rd_i=B0AAAA1111&sp_csd=x"));
+        assertEquals("ebay.com/itm/375375806750",
+                ExtraccionComun.claveEnlace("https://www.ebay.com/itm/375375806750?_skw=CAT&itmmeta=01M&hash=item57"));
+        assertEquals("aliexpress.com/item/100500.html",
+                ExtraccionComun.claveEnlace("https://www.aliexpress.com/item/100500.html?spm=a2g0o&algo_pvid=9"));
+    }
+
+    @Test
+    void limpiaLosEspaciosUnicode() {
+        assertEquals("Filtro de aceite", ExtraccionComun.limpio("\u00A0Filtro\u202Fde\u2009aceite\u00A0"));
+        assertNull(ExtraccionComun.limpio("\u00A0\u202F"));
     }
 }
