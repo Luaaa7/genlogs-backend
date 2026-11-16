@@ -26,6 +26,11 @@ public final class ClavesParametro {
     public static final String VERIFICACION_DIAS = "VERIFICACION_DIAS";
     public static final String OCULTAR_SIN_VERIF_DIAS = "OCULTAR_SIN_VERIF_DIAS";
     public static final String OCULTAR_FALLAS = "OCULTAR_FALLAS";
+    /**
+     * R1 (v3.3): consultas por tienda que puede usar la verificación de las 06:10; el cupo real es
+     * min(este valor, limite_diario / 5). Valor inicial 10 (v3_3.sql); si falta la fila, se usa 10.
+     */
+    public static final String VERIFICACION_MAX_DIA = "VERIFICACION_MAX_DIA";
 
     /** Márgenes de repuestos (%). Al editarlos debe cumplirse MIN <= DEFAULT <= MAX. */
     public static final String MARGEN_REP_MIN = "MARGEN_REP_MIN";

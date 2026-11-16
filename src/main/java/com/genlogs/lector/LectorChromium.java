@@ -147,7 +147,7 @@ public final class LectorChromium implements ServicioLectura.Motor {
     }
     private static boolean visible(Page page, String selector) { return selector != null && page.locator("css=" + selector).first().isVisible(); }
 
-    static List<Resultado> extraer(String html, String url, Peticion req, boolean buscar) {
+    public static List<Resultado> extraer(String html, String url, Peticion req, boolean buscar) {
         Element document = Jsoup.parse(html, url);
         Map<String, Object> rules = req.reglas();
         List<? extends Element> roots = buscar ? document.select(texto(rules, "contenedor")) : List.of(document);
@@ -155,10 +155,11 @@ public final class LectorChromium implements ServicioLectura.Motor {
         int limit = req.maxResultados() == null ? 8 : req.maxResultados();
         for (Element root : roots.stream().limit(limit).toList()) {
             String nombre = valor(root, campo(rules, "nombre"));
-            BigDecimal precio = precio(valor(root, campo(rules, "precio")), texto(rules, "separadorDecimal"),
+            String textoPrecio = valor(root, campo(rules, "precio"));
+            if (textoPrecio != null && (textoPrecio.indexOf('€') >= 0 || textoPrecio.indexOf('£') >= 0)) continue;
+            BigDecimal precio = precio(textoPrecio, texto(rules, "separadorDecimal"),
                     "mayor".equals(texto(rules, "precioRango")));
-            String moneda = valor(root, campo(rules, "moneda"));
-            if (moneda == null) moneda = texto(rules, "codigoMoneda");
+            String moneda = moneda(valor(root, campo(rules, "moneda")), textoPrecio, texto(rules, "codigoMoneda"));
             String enlace = valor(root, campo(rules, "enlace"));
             if (enlace == null && !buscar) enlace = url;
             if (nombre == null || precio == null || moneda == null || !moneda.matches("[A-Z]{3}") || enlace == null) continue;
@@ -176,6 +177,23 @@ public final class LectorChromium implements ServicioLectura.Motor {
         String empty = texto(rules, "sinResultados");
         if (results.isEmpty() && (!roots.isEmpty() || empty == null || document.select(empty).isEmpty())) ValidacionLectura.fallar(Estado.REGLAS_INVALIDAS);
         return results;
+    }
+    /**
+     * Tres letras de la regla MONEDA ganan. S/ de esa regla queda en PEN.
+     * PEN y S/ del precio ganan a US$. Solo USD, US$ y «US $» son dólares.
+     * Un $ suelto y un precio sin símbolo usan el respaldo codigoMoneda.
+     */
+    private static String moneda(String regla, String textoPrecio, String respaldo) {
+        if (regla != null) {
+            String limpia = regla.trim();
+            if (limpia.matches("[A-Z]{3}")) return limpia;
+            if ("S/".equals(limpia)) return "PEN";
+        }
+        if (textoPrecio != null && (textoPrecio.contains("PEN") || textoPrecio.contains("S/"))) return "PEN";
+        if (textoPrecio != null && (textoPrecio.contains("USD") || textoPrecio.contains("US$") || textoPrecio.contains("US $"))) {
+            return "USD";
+        }
+        return respaldo;
     }
     /**
      * KA (v3.3): con la regla precioRango="mayor" (solo la manda el lector de Alibaba), un rango
