@@ -1,6 +1,7 @@
 package com.genlogs.app.service;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -51,6 +52,16 @@ public class PortalCotizacionService {
     private final EstadoCotizacionRepository estadoCotizacionRepository;
     private final SeguimientoCotizacionRepository seguimientoCotizacionRepository;
     private final OrdenCompraRepository ordenCompraRepository;
+    private Clock clock = Clock.system(PlazoDespacho.LIMA);
+
+    /** Solo para pruebas. */
+    void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
+    static LocalDate hoyLima(Clock clock) {
+        return LocalDate.now(clock.withZone(PlazoDespacho.LIMA));
+    }
 
     @Transactional(readOnly = true)
     public List<PortalCotizacionResponse> listar() {
@@ -79,6 +90,20 @@ public class PortalCotizacionService {
     private PortalCotizacionResponse decidir(Long id, CodigoEstadoCotizacion destino, String proceso, String comentario) {
         Usuario usuario = exigirCliente();
         Cotizacion cotizacion = visible(id, usuario.getCliente().getIdCliente());
+        aplicarDecisionCliente(cotizacion, destino, usuario, comentario, proceso);
+        return aRespuesta(cotizacion, true);
+    }
+
+    /**
+     * El mismo cambio de estado que aprobar o rechazar en el portal:
+     * solo ENVIADA o EN_NEGOCIACION, y el día de fechaValidez sigue abierto.
+     */
+    void aplicarDecisionCliente(
+            Cotizacion cotizacion,
+            CodigoEstadoCotizacion destino,
+            Usuario usuario,
+            String comentario,
+            String proceso) {
         exigirDecidible(cotizacion);
         EstadoCotizacion estado = estadoCotizacionRepository.findByCodigoEstado(destino.name())
                 .orElseThrow(() -> new BusinessException("No existe el estado " + destino.name() + " configurado"));
@@ -87,23 +112,28 @@ public class PortalCotizacionService {
         cotizacion.setProcessUpdate(proceso);
         cotizacion.setDateUpdate(LocalDateTime.now());
         cotizacionRepository.save(cotizacion);
-        seguimiento(cotizacion, estado, usuario, comentario);
-        return aRespuesta(cotizacion, true);
+        seguimiento(cotizacion, estado, usuario, comentario, proceso);
     }
 
     private void exigirDecidible(Cotizacion cotizacion) {
-        if (puedeDecidir(cotizacion)) {
+        LocalDate hoy = hoyLima(clock);
+        if (puedeDecidir(cotizacion, hoy)) {
             return;
         }
-        if (!fechaPermiteDecision(cotizacion)) {
+        if (!fechaPermiteDecision(cotizacion, hoy)) {
             throw new BusinessException(VENCIDA);
         }
         throw new BusinessException(YA_RESUELTA);
     }
 
-    /** ENVIADA o EN_NEGOCIACION, y fechaValidez nula o no anterior a hoy. */
+    /** ENVIADA o EN_NEGOCIACION, y fechaValidez nula o no anterior a hoy en Lima. */
     static boolean puedeDecidir(Cotizacion cotizacion) {
-        return estadoPermiteDecision(cotizacion) && fechaPermiteDecision(cotizacion);
+        return puedeDecidir(cotizacion, LocalDate.now(PlazoDespacho.LIMA));
+    }
+
+    /** fechaValidez inclusive: el día de validez se puede decidir; el siguiente, no. */
+    static boolean puedeDecidir(Cotizacion cotizacion, LocalDate hoy) {
+        return estadoPermiteDecision(cotizacion) && fechaPermiteDecision(cotizacion, hoy);
     }
 
     private static boolean estadoPermiteDecision(Cotizacion cotizacion) {
@@ -114,9 +144,9 @@ public class PortalCotizacionService {
                 || CodigoEstadoCotizacion.EN_NEGOCIACION.name().equals(codigo);
     }
 
-    private static boolean fechaPermiteDecision(Cotizacion cotizacion) {
+    private static boolean fechaPermiteDecision(Cotizacion cotizacion, LocalDate hoy) {
         LocalDate fecha = cotizacion.getFechaValidez();
-        return fecha == null || !fecha.isBefore(LocalDate.now());
+        return fecha == null || !fecha.isBefore(hoy);
     }
 
     private Cotizacion visible(Long id) {
@@ -151,7 +181,8 @@ public class PortalCotizacionService {
         return usuario;
     }
 
-    private void seguimiento(Cotizacion cotizacion, EstadoCotizacion estado, Usuario usuario, String comentario) {
+    private void seguimiento(
+            Cotizacion cotizacion, EstadoCotizacion estado, Usuario usuario, String comentario, String proceso) {
         SeguimientoCotizacion seguimiento = SeguimientoCotizacion.builder()
                 .cotizacion(cotizacion)
                 .estadoCotizacion(estado)
@@ -160,7 +191,7 @@ public class PortalCotizacionService {
                 .comentario(comentario)
                 .build();
         seguimiento.setUserCreate(usuario.getNombreUsuario());
-        seguimiento.setProcessCreate("PORTAL_COTIZACION");
+        seguimiento.setProcessCreate(proceso);
         seguimientoCotizacionRepository.save(seguimiento);
     }
 
@@ -187,13 +218,31 @@ public class PortalCotizacionService {
                 .puedeDecidir(puedeDecidir(cotizacion))
                 .total(total)
                 .moneda(cotizacion.getMoneda() != null ? cotizacion.getMoneda().getCodigoMoneda() : null)
-                .numeroOcCliente(numeroOc(cotizacion.getIdCotizacion()));
+                .numeroOcCliente(numeroOc(cotizacion.getIdCotizacion()))
+                .motivoAnulacion(motivoAnulacion(cotizacion));
         if (conLineas) {
             builder.lineas(cotizacionDetalleRepository.findByCotizacion(cotizacion.getIdCotizacion()).stream()
                     .map(PortalCotizacionService::linea)
                     .toList());
         }
         return builder.build();
+    }
+
+    /** El comentario con el que se pasó a ANULADA. En otro estado no va. */
+    private String motivoAnulacion(Cotizacion cotizacion) {
+        String codigo = cotizacion.getEstadoCotizacion() == null
+                ? null
+                : cotizacion.getEstadoCotizacion().getCodigoEstado();
+        if (!CodigoEstadoCotizacion.ANULADA.name().equals(codigo) || cotizacion.getIdCotizacion() == null) {
+            return null;
+        }
+        return seguimientoCotizacionRepository.findByCotizacion(cotizacion.getIdCotizacion()).stream()
+                .filter(s -> s.getEstadoCotizacion() != null
+                        && CodigoEstadoCotizacion.ANULADA.name().equals(s.getEstadoCotizacion().getCodigoEstado()))
+                .map(SeguimientoCotizacion::getComentario)
+                .filter(c -> c != null && !c.isBlank())
+                .findFirst()
+                .orElse(null);
     }
 
     private String numeroOc(Long idCotizacion) {

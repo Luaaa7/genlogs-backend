@@ -33,6 +33,8 @@ public class DespachoService {
 
     private static final Logger log = LoggerFactory.getLogger(DespachoService.class);
     private static final String ACTIVO = "A";
+    public static final String OC_SIN_CONFIRMAR =
+            "Confirma la OC de la minera antes de registrar el despacho.";
 
     private final DespachoRepository despachoRepository;
     private final OrdenCompraRepository ordenCompraRepository;
@@ -66,6 +68,9 @@ public class DespachoService {
                 : orden.getCotizacion().getEstadoCotizacion().getCodigoEstado();
         if (!"APROBADA".equals(estado)) {
             throw new BusinessException("La cotización de la orden no está aprobada");
+        }
+        if (orden.getOcConfirmadaPor() == null) {
+            throw new BusinessException(OC_SIN_CONFIRMAR);
         }
         if (despachoRepository.existsByOrdenCompra_IdOrdenCompraAndStatus(idOrdenCompra, ACTIVO)) {
             throw new BusinessException("Esta orden ya tiene un despacho activo");

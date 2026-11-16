@@ -27,14 +27,15 @@ public class TasaIgvService {
     /** Porcentaje que rige hoy (por ejemplo 18.00). */
     @Transactional(readOnly = true)
     public BigDecimal porcentajeVigente() {
-        return porcentajeVigente(LocalDate.now());
+        return porcentajeVigente(LocalDate.now(PlazoDespacho.LIMA));
     }
 
     /** Porcentaje que rige en una fecha. */
     @Transactional(readOnly = true)
     public BigDecimal porcentajeVigente(LocalDate fecha) {
         return tasaIgvRepository
-                .findFirstByVigenteDesdeLessThanEqualOrderByVigenteDesdeDesc(fecha != null ? fecha : LocalDate.now())
+                .findFirstByVigenteDesdeLessThanEqualOrderByVigenteDesdeDesc(
+                        fecha != null ? fecha : LocalDate.now(PlazoDespacho.LIMA))
                 .map(TasaIgv::getPorcentaje)
                 .orElse(PORCENTAJE_POR_DEFECTO);
     }

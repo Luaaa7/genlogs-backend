@@ -10,8 +10,12 @@ import com.genlogs.app.model.Producto;
 import com.genlogs.app.model.ProductoImagen;
 import com.genlogs.app.model.UnidadMedida;
 import com.genlogs.app.repository.*;
+import com.genlogs.app.dto.TipoCambioDia;
+import com.genlogs.app.enums.FuenteTipoCambio;
+import com.genlogs.app.model.Moneda;
 import com.genlogs.app.service.NotificacionService;
 import com.genlogs.app.service.ProductoService;
+import com.genlogs.app.service.TipoCambioService;
 import com.genlogs.app.sourcing.EstadoSourcing;
 import com.genlogs.app.sourcing.HistorialSourcing;
 import com.genlogs.app.sourcing.HistorialSourcingRepository;
@@ -45,6 +49,7 @@ class VitrinaServiceTest {
     private HistorialSourcingRepository historialRepo;
     private NotificacionService notificaciones;
     private MargenRepuesto margen;
+    private TipoCambioService tipoCambio;
     private VitrinaService servicio;
 
     private final CategoriaProducto filtros = CategoriaProducto.builder().idCategoriaProducto(3).nombreCategoria("Filtros").build();
@@ -73,8 +78,10 @@ class VitrinaServiceTest {
         });
         when(historialRepo.findFirstByIdProductoOrderByCreadoEnDesc(anyLong())).thenReturn(Optional.empty());
 
+        tipoCambio = mock(TipoCambioService.class);
         servicio = new VitrinaService(productoRepo, imagenRepo, historialRepo, categorias, unidades,
-                mock(MarcaRepository.class), mock(UsuarioRepository.class), productoService, margen, notificaciones);
+                mock(MarcaRepository.class), mock(UsuarioRepository.class), productoService, margen, notificaciones,
+                tipoCambio);
         sesion("asistente", "ASISTENTE_LOGISTICO");
     }
 
@@ -116,6 +123,69 @@ class VitrinaServiceTest {
     }
 
     @Test
+    void r2_tomaLaDescripcionDelHistorialSiNoSeEscribeOtra() {
+        HistorialSourcing ref = util(new BigDecimal("455.00"));
+        ref.setDescripcion("  Filtro de combustible original Caterpillar  ");
+        when(historialRepo.findById(7L)).thenReturn(Optional.of(ref));
+
+        servicio.convertir(pedido(null));
+
+        ArgumentCaptor<Producto> guardado = ArgumentCaptor.forClass(Producto.class);
+        verify(productoRepo).save(guardado.capture());
+        assertThat(guardado.getValue().getDescripcion()).isEqualTo("Filtro de combustible original Caterpillar");
+    }
+
+    @Test
+    void r2_laDescripcionEscritaAlConvertirGanaALaDelHistorial() {
+        HistorialSourcing ref = util(new BigDecimal("455.00"));
+        ref.setDescripcion("Texto de la tienda");
+        when(historialRepo.findById(7L)).thenReturn(Optional.of(ref));
+        ConvertirProductoRequest req = new ConvertirProductoRequest(7L, "Filtro de combustible CAT 1R-0750",
+                "Descripción propia de GENLOGS", 3, 1, null, null, TipoRepuesto.OEM, null, null, null);
+
+        servicio.convertir(req);
+
+        ArgumentCaptor<Producto> guardado = ArgumentCaptor.forClass(Producto.class);
+        verify(productoRepo).save(guardado.capture());
+        assertThat(guardado.getValue().getDescripcion()).isEqualTo("Descripción propia de GENLOGS");
+    }
+
+    @Test
+    void r2_elEnlaceYLaImagenDeLaTiendaNoPasanAlProducto() {
+        HistorialSourcing ref = util(new BigDecimal("455.00"));
+        ref.setFuente("MERCADO_LIBRE");
+        ref.setUrlReferencia("https://articulo.mercadolibre.com.pe/MPE-123");
+        ref.setUrlImagenRef("https://http2.mlstatic.com/D_123.jpg");
+        ref.setDescripcion("Ficha de Mercado Libre");
+        when(historialRepo.findById(7L)).thenReturn(Optional.of(ref));
+
+        ProductoVitrinaResponse r = servicio.convertir(pedido(null));
+
+        assertThat(r.estado()).isEqualTo(EstadoPublicacion.BORRADOR);
+        verifyNoInteractions(imagenRepo);
+        ArgumentCaptor<Producto> guardado = ArgumentCaptor.forClass(Producto.class);
+        verify(productoRepo).save(guardado.capture());
+        for (java.lang.reflect.Field campo : Producto.class.getDeclaredFields()) {
+            if (campo.getType() != String.class) continue;
+            campo.setAccessible(true);
+            Object valor;
+            try {
+                valor = campo.get(guardado.getValue());
+            } catch (IllegalAccessException e) {
+                throw new AssertionError(e);
+            }
+            assertThat(String.valueOf(valor)).as("Producto.%s", campo.getName())
+                    .doesNotContain("mercadolibre.com.pe")
+                    .doesNotContain("mlstatic.com");
+        }
+        assertThat(r.imagenes()).isEmpty();
+        assertThat(r.tieneImagenVerificada()).isFalse();
+        assertThat(r.toString())
+                .doesNotContain("mercadolibre.com.pe")
+                .doesNotContain("mlstatic.com");
+    }
+
+    @Test
     void soloSeConviertenReferenciasUtiles() {
         HistorialSourcing ref = util(new BigDecimal("100"));
         ref.setEstado(EstadoSourcing.CAPTURADO);
@@ -131,6 +201,65 @@ class VitrinaServiceTest {
         when(historialRepo.findById(7L)).thenReturn(Optional.of(util(null)));
         assertThatThrownBy(() -> servicio.convertir(pedido(null)))
                 .isInstanceOf(BusinessException.class).hasMessageContaining("costo puesto en Lima");
+    }
+
+    private static HistorialSourcing resultadoDeBusqueda(String precio, String codigoMoneda) {
+        HistorialSourcing ref = util(null);
+        ref.setFuente("EBAY");
+        ref.setPrecioRef(new BigDecimal(precio));
+        ref.setMoneda(Moneda.builder().idMoneda(2).codigoMoneda(codigoMoneda).build());
+        return ref;
+    }
+
+    private void dolarDelDia(String valor) {
+        when(tipoCambio.delDia("USD")).thenReturn(Optional.of(new TipoCambioDia(
+                java.time.LocalDate.of(2026, 11, 15), "USD", new BigDecimal(valor), FuenteTipoCambio.SUNAT, true)));
+    }
+
+    @Test
+    void r4_resultadoEnDolares_usaElTipoDeCambioDelDiaYMargenRep() {
+        HistorialSourcing ref = resultadoDeBusqueda("120.00", "USD");
+        when(historialRepo.findById(7L)).thenReturn(Optional.of(ref));
+        dolarDelDia("3.75");
+
+        ProductoVitrinaResponse r = servicio.convertir(pedido(null));
+
+        assertThat(r.costoPuestoLima()).isEqualByComparingTo("450.00");    // 120 × 3,75
+        assertThat(r.precioReferencial()).isEqualByComparingTo("562.50");  // 450 × 1,25 (MARGEN_REP sugerido)
+        assertThat(ref.getTipoCambioUsado()).isEqualByComparingTo("3.75");
+    }
+
+    @Test
+    void r4_resultadoEnSoles_noNecesitaTipoDeCambio() {
+        when(historialRepo.findById(7L)).thenReturn(Optional.of(resultadoDeBusqueda("300.00", "PEN")));
+
+        ProductoVitrinaResponse r = servicio.convertir(pedido(null));
+
+        assertThat(r.precioReferencial()).isEqualByComparingTo("375.00");  // 300 × 1,25
+        verifyNoInteractions(tipoCambio);
+    }
+
+    @Test
+    void r4_sinTipoDeCambioDelDolar_pideElCostoAlConvertir() {
+        when(historialRepo.findById(7L)).thenReturn(Optional.of(resultadoDeBusqueda("120.00", "USD")));
+        when(tipoCambio.delDia("USD")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> servicio.convertir(pedido(null)))
+                .isInstanceOf(BusinessException.class).hasMessageContaining("tipo de cambio");
+        verify(productoRepo, never()).save(any());
+    }
+
+    @Test
+    void r4_elCostoEscritoAlConvertirGanaAlPrecioDeLaTienda() {
+        when(historialRepo.findById(7L)).thenReturn(Optional.of(resultadoDeBusqueda("120.00", "USD")));
+        ConvertirProductoRequest req = new ConvertirProductoRequest(7L, "Filtro de combustible CAT 1R-0750", null,
+                3, 1, null, null, TipoRepuesto.ALTERNATIVO, null, new BigDecimal("520.00"), null);
+
+        ProductoVitrinaResponse r = servicio.convertir(req);
+
+        assertThat(r.precioReferencial()).isEqualByComparingTo("650.00");  // 520 × 1,25
+        assertThat(r.tipoRepuesto()).isEqualTo(TipoRepuesto.ALTERNATIVO);
+        verifyNoInteractions(tipoCambio);
     }
 
     @Test

@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.math.BigDecimal;
 import java.util.List;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -49,6 +51,15 @@ class VisibilidadMargenTest {
     @Test
     void sinAutenticacionNoVeMargen() {
         assertFalse(VisibilidadMargen.puedeVerMargen(null));
+    }
+
+    @Test
+    void elJsonDelAsistenteAdministrativoOmiteCostoMargenYPrecioDeProveedor() throws Exception {
+        String json = new ObjectMapper().writeValueAsString(armar(RolSistema.ASISTENTE_ADMINISTRATIVO));
+
+        assertFalse(json.contains("\"costo\""));
+        assertFalse(json.contains("\"margen\""));
+        assertFalse(json.contains("\"precioProveedor\""));
     }
 
     private static CotizacionResponse armar(RolSistema rol) {
