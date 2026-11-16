@@ -45,16 +45,18 @@ public class MercadoLibreLector implements LectorFuenteEspecifico {
     static final int MAX_RESULTADOS = 8;
     /**
      * Bloque "No hay publicaciones que coincidan con tu búsqueda" del listado.
-     * Por confirmar con las páginas guardadas de P4.
+     * Por confirmar cuando funcione «Probar sesión» (Luana): sin sesión, Mercado Libre no deja ver el listado.
      */
     static final String SIN_RESULTADOS = ".ui-search-rescue";
     /**
-     * Desafío de Mercado Libre (captcha o verificación de cuenta). Por confirmar con un caso real;
-     * el servicio de lectura además detecta por su cuenta reCAPTCHA, hCaptcha y títulos con "captcha".
-     * El bloqueo no se manda hasta tener el HTML real: sin él, una página bloqueada sale como error
-     * y nunca como "sin resultados".
+     * Página de verificación de cuenta de Mercado Libre: sin sesión, el listado redirige a
+     * /gz/account-verification ("¡Hola! Para continuar, ingresa a tu cuenta"). Tomado del HTML real
+     * (16/11/2026): su contenido va en div.account-verification-main, que el listado no usa.
+     * Los otros tres son captchas genéricos; el servicio de lectura además detecta por su cuenta
+     * reCAPTCHA, hCaptcha y títulos con "captcha". El bloqueo no se manda hasta tener el HTML real:
+     * sin él, una página bloqueada sale como error y nunca como "sin resultados".
      */
-    static final String VERIFICACION = "form[action*=captcha], .g-recaptcha, #captcha";
+    static final String VERIFICACION = ".account-verification-main, form[action*=captcha], .g-recaptcha, #captcha";
     private static final int LARGO_CONSULTA = 200;
 
     private final LectorRemotoClient cliente;

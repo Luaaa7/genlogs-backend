@@ -102,6 +102,22 @@ class MercadoLibreLectorTest {
     }
 
     @Test
+    void laVerificacionReconoceLaPaginaDeVerificacionDeCuenta() {
+        // Estructura real de /gz/account-verification (16/11/2026), recortada.
+        String verificacion = "<main id=\"root-app\"><div class=\"account-verification-main desktop-view\">"
+                + "<div class=\"account-verification-header\"></div><div class=\"andes-card message-card\">"
+                + "¡Hola! Para continuar, ingresa a tu cuenta</div></div></main>";
+        String listado = "<ol><li class=\"ui-search-layout__item\"><a class=\"poly-component__title\""
+                + " href=\"/MPE-1\">Filtro CAT 1R-0750</a></li></ol>";
+
+        assertThat(org.jsoup.Jsoup.parse(verificacion).select(MercadoLibreLector.VERIFICACION)).hasSize(1);
+        assertThat(org.jsoup.Jsoup.parse(listado).select(MercadoLibreLector.VERIFICACION)).isEmpty();
+        // No choca con "sin resultados" y el servicio de lectura acepta el largo.
+        assertThat(MercadoLibreLector.VERIFICACION).doesNotContain(MercadoLibreLector.SIN_RESULTADOS)
+                .hasSizeLessThanOrEqualTo(500);
+    }
+
+    @Test
     void unResultadoSinPrecioQuedaVacioNuncaEnCero() {
         when(cliente.buscar(any())).thenReturn(respuesta(new ContratoLector.Resultado("Filtro sin precio", null,
                 null, "PEN", null, "MERCADO_LIBRE", "https://articulo.mercadolibre.com.pe/MPE-2")));
