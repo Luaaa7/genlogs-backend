@@ -11,7 +11,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
@@ -139,7 +142,7 @@ class CotizacionAltaTipoCambioTest {
         borrador.setNombreEstado("Borrador");
         when(estados.findByCodigoEstado("BORRADOR")).thenReturn(Optional.of(borrador));
 
-        when(tasaIgv.porcentajeVigente()).thenReturn(new BigDecimal("18.00"));
+        when(tasaIgv.porcentajeVigente(any(LocalDate.class))).thenReturn(new BigDecimal("18.00"));
         when(tipoCambioCotizacion.vigente()).thenReturn(VIGENTE);
         when(unidades.findFirstByStatusOrderByIdUnidadMedidaAsc("A")).thenReturn(Optional.of(new UnidadMedida()));
 
@@ -163,6 +166,39 @@ class CotizacionAltaTipoCambioTest {
     @AfterEach
     void limpia() {
         SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void elAltaYLaCopiaUsanElDiaDeLimaYLaValidezEsQuinceDiasDespues() {
+        servicio.setClock(Clock.fixed(Instant.parse("2026-11-16T03:00:00Z"), ZoneOffset.UTC));
+        servicio.crear(pedido());
+        assertEquals(LocalDate.of(2026, 11, 15), guardada.get().getFechaCotizacion());
+        assertEquals(LocalDate.of(2026, 11, 30), guardada.get().getFechaValidez());
+
+        servicio.setClock(Clock.fixed(Instant.parse("2026-11-16T05:00:00Z"), ZoneOffset.UTC));
+        servicio.crear(pedido());
+        assertEquals(LocalDate.of(2026, 11, 16), guardada.get().getFechaCotizacion());
+        assertEquals(LocalDate.of(2026, 12, 1), guardada.get().getFechaValidez());
+
+        when(cotizaciones.findById(20L)).thenReturn(Optional.of(original()));
+
+        servicio.setClock(Clock.fixed(Instant.parse("2026-11-16T03:00:00Z"), ZoneOffset.UTC));
+        servicio.duplicar(20L);
+        assertEquals(LocalDate.of(2026, 11, 15), guardada.get().getFechaCotizacion());
+        assertEquals(LocalDate.of(2026, 11, 30), guardada.get().getFechaValidez());
+
+        servicio.setClock(Clock.fixed(Instant.parse("2026-11-16T05:00:00Z"), ZoneOffset.UTC));
+        servicio.duplicar(20L);
+        assertEquals(LocalDate.of(2026, 11, 16), guardada.get().getFechaCotizacion());
+        assertEquals(LocalDate.of(2026, 12, 1), guardada.get().getFechaValidez());
+
+        ArgumentCaptor<LocalDate> dias = ArgumentCaptor.forClass(LocalDate.class);
+        verify(tasaIgv, times(4)).porcentajeVigente(dias.capture());
+        assertEquals(List.of(
+                LocalDate.of(2026, 11, 15),
+                LocalDate.of(2026, 11, 16),
+                LocalDate.of(2026, 11, 15),
+                LocalDate.of(2026, 11, 16)), dias.getAllValues());
     }
 
     @Test
@@ -407,6 +443,24 @@ class CotizacionAltaTipoCambioTest {
         cotizacion.setFechaCotizacion(LocalDate.of(2026, 11, 12));
         cotizacion.setTipoCambioUsado(tipoCambio);
         return cotizacion;
+    }
+
+    private static Cotizacion original() {
+        Cliente cliente = new Cliente();
+        cliente.setIdCliente(1L);
+        Tercero tercero = new Tercero();
+        tercero.setRazonSocial("Minera Sur");
+        cliente.setTercero(tercero);
+        Moneda sol = new Moneda();
+        sol.setCodigoMoneda("PEN");
+        Cotizacion original = new Cotizacion();
+        original.setIdCotizacion(20L);
+        original.setCodigoCotizacion("COT-20");
+        original.setCliente(cliente);
+        original.setMoneda(sol);
+        original.setFechaCotizacion(LocalDate.of(2026, 1, 1));
+        original.setFechaValidez(LocalDate.of(2026, 1, 16));
+        return original;
     }
 
     private static CotizacionRequest pedido() {
