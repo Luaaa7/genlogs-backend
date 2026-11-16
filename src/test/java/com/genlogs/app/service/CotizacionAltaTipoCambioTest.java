@@ -327,7 +327,7 @@ class CotizacionAltaTipoCambioTest {
 
     @Test
     void enviarConservaElCambioAunqueElVigenteSeaOtro() {
-        Cotizacion cotizacion = aprobada(new BigDecimal("3.7100"));
+        Cotizacion cotizacion = aprobada(new BigDecimal("3.7500"));
         when(cotizaciones.findById(15L)).thenReturn(Optional.of(cotizacion));
         when(tipoCambioCotizacion.vigente()).thenReturn(new BigDecimal("3.9000"));
         estadoEnviada();
@@ -335,12 +335,12 @@ class CotizacionAltaTipoCambioTest {
         servicio.marcarComoEnviadaSiBorrador(15L, usuario(), "cliente@mina.pe");
 
         assertEquals("ENVIADA", cotizacion.getEstadoCotizacion().getCodigoEstado());
-        assertEquals(0, new BigDecimal("3.7100").compareTo(cotizacion.getTipoCambioUsado()));
+        assertEquals(0, new BigDecimal("3.7500").compareTo(cotizacion.getTipoCambioUsado()));
         verify(tipoCambioCotizacion, never()).vigente();
     }
 
     @Test
-    void enviarSinCambioGuardadoLoCompletaUnaVez() {
+    void enviarSinCambioGuardadoLoDejaEnNull() {
         Cotizacion cotizacion = aprobada(null);
         when(cotizaciones.findById(15L)).thenReturn(Optional.of(cotizacion));
         when(tipoCambioCotizacion.vigente()).thenReturn(new BigDecimal("3.9000"));
@@ -348,8 +348,9 @@ class CotizacionAltaTipoCambioTest {
 
         servicio.marcarComoEnviadaSiBorrador(15L, usuario(), "cliente@mina.pe");
 
-        assertEquals(0, new BigDecimal("3.9000").compareTo(cotizacion.getTipoCambioUsado()));
-        verify(tipoCambioCotizacion, times(1)).vigente();
+        assertEquals("ENVIADA", cotizacion.getEstadoCotizacion().getCodigoEstado());
+        assertEquals(null, cotizacion.getTipoCambioUsado());
+        verify(tipoCambioCotizacion, never()).vigente();
     }
 
     @Test

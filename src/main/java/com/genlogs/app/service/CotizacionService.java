@@ -622,13 +622,6 @@ public class CotizacionService {
                 cotizacion.getEstadoCotizacion().getCodigoEstado(),
                 CodigoEstadoCotizacion.APROBADA_INTERNA,
                 ReglasAprobacionCotizacion.SOLO_APROBADA_INTERNA);
-        // Propuesta C1: el cambio guardado se conserva al enviar. Solo las cotizaciones
-        // antiguas, sin valor, se completan una vez.
-        if (cotizacion.getTipoCambioUsado() == null) {
-            log.warn("Cotización {} sin tipo de cambio guardado; se completa una vez con el vigente",
-                    idCotizacion);
-            cotizacion.setTipoCambioUsado(tipoCambioCotizacion.vigente());
-        }
         EstadoCotizacion enviada = estadoDe(CodigoEstadoCotizacion.ENVIADA);
         aplicarEstado(cotizacion, enviada, usuario, "ENVIO_COTIZACION");
         cotizacionRepository.save(cotizacion);

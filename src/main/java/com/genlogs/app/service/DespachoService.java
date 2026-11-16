@@ -34,7 +34,7 @@ public class DespachoService {
     private static final Logger log = LoggerFactory.getLogger(DespachoService.class);
     private static final String ACTIVO = "A";
     public static final String OC_SIN_CONFIRMAR =
-            "Confirma la orden de compra del cliente antes de registrar el despacho.";
+            "Confirma la OC de la minera antes de registrar el despacho.";
 
     private final DespachoRepository despachoRepository;
     private final OrdenCompraRepository ordenCompraRepository;
