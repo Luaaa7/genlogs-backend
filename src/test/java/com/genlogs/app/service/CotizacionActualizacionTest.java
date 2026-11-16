@@ -212,6 +212,25 @@ class CotizacionActualizacionTest {
     }
 
     @Test
+    void borradorNoPasaARechazadaNiVencida() {
+        Cotizacion cotizacion = cotizacion("BORRADOR", false);
+        when(cotizaciones.findById(15L)).thenReturn(Optional.of(cotizacion));
+
+        for (String destino : List.of("RECHAZADA", "VENCIDA")) {
+            CambiarEstadoCotizacionRequest pedido = new CambiarEstadoCotizacionRequest();
+            pedido.setCodigoEstado(destino);
+            pedido.setComentario("motivo");
+            BusinessException error = assertThrows(BusinessException.class,
+                    () -> servicio.cambiarEstado(15L, pedido));
+            assertEquals(ReglasAprobacionCotizacion.DESTINO_NO_PERMITIDO, error.getMessage());
+        }
+
+        assertEquals("BORRADOR", cotizacion.getEstadoCotizacion().getCodigoEstado());
+        verify(cotizaciones, never()).save(any());
+        verify(seguimientos, never()).save(any());
+    }
+
+    @Test
     void putFueraDeBorradorSeRechaza() {
         when(cotizaciones.findById(15L)).thenReturn(Optional.of(cotizacion("PENDIENTE_APROBACION", false)));
         BusinessException pendiente = assertThrows(BusinessException.class,
