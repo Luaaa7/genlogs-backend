@@ -6,7 +6,6 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -19,7 +18,6 @@ import com.genlogs.app.fuentes.config.SelectorFuenteDto;
 import com.genlogs.app.sourcing.ConsultaBusqueda;
 import com.genlogs.app.sourcing.lector.ContratoLector;
 import com.genlogs.app.sourcing.lector.LectorRemotoClient;
-import com.genlogs.app.sourcing.lector.LectorRemotoException;
 
 /**
  * ME (v3.3) · Lector de eBay para el despachador multifuente (BPMN 9-B.1).
@@ -40,7 +38,17 @@ public class EbayLector implements LectorFuenteEspecifico {
     static final int MAX_RESULTADOS = 8;
     /** Bloque que muestra eBay cuando la búsqueda no encuentra nada ("No se ha encontrado ninguna coincidencia exacta"). */
     static final String SIN_RESULTADOS = ".srp-save-null-search";
-    private static final int LARGO_CONSULTA = 200;
+    /**
+     * Página "El acceso al sitio web está bloqueado" (ebay.com/splashui/mitigation?page=drop).
+     * Tomado del HTML real (16/11/2026): el título va en div.pgHeading > h1 y la búsqueda no lo usa.
+     */
+    static final String BLOQUEO = ".pgHeading > h1";
+    /**
+     * Página de verificación de eBay (splashui/challenge, "Checking your browser").
+     * Por confirmar con un captcha real: eBay no deja abrirla directo. El servicio de lectura
+     * además detecta por su cuenta reCAPTCHA, hCaptcha y títulos con "captcha".
+     */
+    static final String VERIFICACION = "#captcha_loading, #captcha_form, form[action*=captcha]";
 
     private final LectorRemotoClient cliente;
     private final Clock reloj;
@@ -66,7 +74,7 @@ public class EbayLector implements LectorFuenteEspecifico {
         if (codigo != CodigoFuente.EBAY) {
             return ResultadoLectura.error("Este lector solo atiende eBay.", false);
         }
-        String texto = textoDeBusqueda(consulta);
+        String texto = PuenteLector.textoDeBusqueda(consulta);
         if (texto == null) {
             return ResultadoLectura.sinResultados();
         }
@@ -78,8 +86,9 @@ public class EbayLector implements LectorFuenteEspecifico {
         }
         // Sin esto, una búsqueda sin resultados se tomaría como reglas rotas (CON_ERROR y aviso al Jefe).
         reglas.put("sinResultados", SIN_RESULTADOS);
+        agregarAvisos(reglas);
         String url = urlBusqueda(urlBase, texto);
-        return leer(sesion, s -> cliente.buscar(
+        return PuenteLector.leer(TIENDA, sesion, reloj, s -> cliente.buscar(
                 new ContratoLector.Peticion(CodigoFuente.EBAY.name(), url, reglas, s, null, MAX_RESULTADOS)));
     }
 
@@ -98,46 +107,19 @@ public class EbayLector implements LectorFuenteEspecifico {
             return ResultadoLectura.error("eBay no tiene reglas de ficha completas: faltan NOMBRE o PRECIO"
                     + " en Configuración > Fuentes.", false);
         }
+        agregarAvisos(reglas);
         String limpia = url.trim();
-        return leer(sesion, s -> cliente.leerFicha(
+        return PuenteLector.leer(TIENDA, sesion, reloj, s -> cliente.leerFicha(
                 new ContratoLector.Peticion(CodigoFuente.EBAY.name(), limpia, reglas, s, null, 1)));
     }
 
-    /** Llama al servicio de lectura con la sesión y traduce la respuesta o el error. */
-    private ResultadoLectura leer(String sesion, Function<ContratoLector.Sesion, ContratoLector.Respuesta> llamada) {
-        ContratoLector.Sesion s;
-        try {
-            s = PuenteLector.sesion(sesion, reloj);
-        } catch (IllegalArgumentException e) {
-            return ResultadoLectura.error("La sesión guardada de eBay no se puede usar; vuelve a probar la sesión.",
-                    false);
-        }
-        try {
-            return PuenteLector.aResultado(llamada.apply(s));
-        } catch (LectorRemotoException e) {
-            return PuenteLector.deError(TIENDA, e);
-        }
-    }
-
-    /** Qué se escribe en el buscador de eBay; null si no hay nada que buscar (o es búsqueda por imagen). */
-    static String textoDeBusqueda(ConsultaBusqueda consulta) {
-        if (consulta == null || consulta.metodo() == null) {
-            return null;
-        }
-        String texto = switch (consulta.metodo()) {
-            case NUMERO_PARTE -> unir(consulta.marca(), consulta.numeroParte());
-            case GTIN -> consulta.gtin();
-            case PALABRAS -> unir(consulta.marca(), consulta.palabras());
-            default -> null;
-        };
-        if (texto == null) {
-            return null;
-        }
-        texto = texto.replaceAll("\\s+", " ").trim();
-        if (texto.isEmpty()) {
-            return null;
-        }
-        return texto.length() <= LARGO_CONSULTA ? texto : texto.substring(0, LARGO_CONSULTA).trim();
+    /**
+     * Para que el servicio de lectura distinga un captcha (REQUIERE_VERIFICACION) o un bloqueo
+     * (BLOQUEADA) de eBay de una página sin resultados o con reglas rotas.
+     */
+    static void agregarAvisos(Map<String, Object> reglas) {
+        reglas.put("verificacion", VERIFICACION);
+        reglas.put("bloqueo", BLOQUEO);
     }
 
     /** https://www.ebay.com/sch/i.html?_nkw=CAT+1R-0750 (la base sale de fuente_busqueda.url_base). */
@@ -147,11 +129,5 @@ public class EbayLector implements LectorFuenteEspecifico {
             base = base.substring(0, base.length() - 1);
         }
         return base + "/sch/i.html?_nkw=" + URLEncoder.encode(texto, StandardCharsets.UTF_8);
-    }
-
-    private static String unir(String a, String b) {
-        String x = a == null ? "" : a.trim();
-        String y = b == null ? "" : b.trim();
-        return (x + " " + y).trim();
     }
 }

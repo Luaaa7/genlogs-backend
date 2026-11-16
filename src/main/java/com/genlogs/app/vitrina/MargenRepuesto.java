@@ -49,22 +49,25 @@ public class MargenRepuesto {
                 valor(MARGEN_REP_MAX, ClavesParametro.MARGEN_SERV_MAX));
     }
 
-    /** precio = costo × (1 + margen / 100), a 2 decimales. */
+    /**
+     * D-40: precio = costo / (1 − margen / 100), a 2
+     * decimales. Es la misma cuenta que servicios y la cotización: S/ 100 con 30 % da S/ 142.86.
+     */
     public static BigDecimal precio(BigDecimal costo, BigDecimal margen) {
         if (costo == null || costo.signum() <= 0) {
             throw new BusinessException("El costo puesto en Lima debe ser mayor a cero");
         }
-        if (margen == null || margen.signum() < 0 || margen.compareTo(CIEN) > 0) {
-            throw new BusinessException("El margen debe estar entre 0 y 100 %");
+        if (margen == null || margen.signum() < 0 || margen.compareTo(CIEN) >= 0) {
+            throw new BusinessException("El margen debe ser de 0 a menos de 100 %");
         }
-        return costo.multiply(BigDecimal.ONE.add(margen.divide(CIEN, 6, RoundingMode.HALF_UP)))
-                .setScale(2, RoundingMode.HALF_UP);
+        return costo.divide(BigDecimal.ONE.subtract(margen.divide(CIEN, 6, RoundingMode.HALF_UP)),
+                2, RoundingMode.HALF_UP);
     }
 
-    /** margen = (precio / costo − 1) × 100, a 2 decimales. Null si falta algún dato. */
+    /** margen = (1 − costo / precio) × 100, a 2 decimales. Null si falta algún dato. */
     public static BigDecimal margenDe(BigDecimal costo, BigDecimal precio) {
-        if (costo == null || precio == null || costo.signum() <= 0) return null;
-        return precio.divide(costo, 6, RoundingMode.HALF_UP).subtract(BigDecimal.ONE).multiply(CIEN)
+        if (costo == null || precio == null || costo.signum() <= 0 || precio.signum() <= 0) return null;
+        return BigDecimal.ONE.subtract(costo.divide(precio, 6, RoundingMode.HALF_UP)).multiply(CIEN)
                 .setScale(2, RoundingMode.HALF_UP);
     }
 

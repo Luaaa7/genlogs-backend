@@ -100,6 +100,29 @@ class EbayLectorTest {
     }
 
     @Test
+    void laBusquedaMandaComoReconocerElBloqueoYElCaptchaDeEbay() {
+        when(cliente.buscar(any())).thenReturn(respuesta());
+
+        lector.buscar(CodigoFuente.EBAY, null, SESION, consulta, reglasEbay());
+
+        ArgumentCaptor<ContratoLector.Peticion> peticion = ArgumentCaptor.forClass(ContratoLector.Peticion.class);
+        verify(cliente).buscar(peticion.capture());
+        assertThat(peticion.getValue().reglas())
+                .containsEntry("bloqueo", ".pgHeading > h1")
+                .containsEntry("verificacion", "#captcha_loading, #captcha_form, form[action*=captcha]");
+    }
+
+    @Test
+    void losAvisosNoChocanConLasReglasDeLaBusqueda() {
+        // El bloqueo no puede confundirse con la tarjeta de resultado ni con "sin resultados".
+        assertThat(EbayLector.BLOQUEO).isNotEqualTo(EbayLector.SIN_RESULTADOS).doesNotContain("s-card");
+        assertThat(EbayLector.VERIFICACION).doesNotContain("pgHeading").doesNotContain("s-card");
+        // El servicio de lectura rechaza selectores vacíos o de más de 500 caracteres.
+        assertThat(EbayLector.BLOQUEO).isNotBlank().hasSizeLessThanOrEqualTo(500);
+        assertThat(EbayLector.VERIFICACION).isNotBlank().hasSizeLessThanOrEqualTo(500);
+    }
+
+    @Test
     void sinFichasEsSinResultados() {
         when(cliente.buscar(any())).thenReturn(respuesta());
         ResultadoLectura r = lector.buscar(CodigoFuente.EBAY, null, SESION, consulta, reglasEbay());
@@ -172,7 +195,10 @@ class EbayLectorTest {
         assertThat(peticion.getValue().maxResultados()).isEqualTo(1);
         assertThat(peticion.getValue().reglas())
                 .containsEntry("nombre", Map.of("selector", "h1.x-item-title"))
-                .doesNotContainKey("contenedor");
+                .containsEntry("bloqueo", ".pgHeading > h1")
+                .containsKey("verificacion")
+                .doesNotContainKey("contenedor")
+                .doesNotContainKey("sinResultados");
         assertThat(r.tipo()).isEqualTo(ResultadoLectura.Tipo.OK);
         assertThat(r.fichas().get(0).precio()).isEqualTo("12.00");
     }
@@ -186,12 +212,12 @@ class EbayLectorTest {
 
     @Test
     void armaElTextoDeBusquedaSegunElMetodo() {
-        assertThat(EbayLector.textoDeBusqueda(consulta)).isEqualTo("CAT 1R-0750");
-        assertThat(EbayLector.textoDeBusqueda(new ConsultaBusqueda(MetodoBusqueda.GTIN, null, null,
+        assertThat(PuenteLector.textoDeBusqueda(consulta)).isEqualTo("CAT 1R-0750");
+        assertThat(PuenteLector.textoDeBusqueda(new ConsultaBusqueda(MetodoBusqueda.GTIN, null, null,
                 "0123456789012", null, null))).isEqualTo("0123456789012");
-        assertThat(EbayLector.textoDeBusqueda(new ConsultaBusqueda(MetodoBusqueda.PALABRAS, null, "  Komatsu ",
+        assertThat(PuenteLector.textoDeBusqueda(new ConsultaBusqueda(MetodoBusqueda.PALABRAS, null, "  Komatsu ",
                 null, "bomba   hidraulica", null))).isEqualTo("Komatsu bomba hidraulica");
-        assertThat(EbayLector.textoDeBusqueda(null)).isNull();
+        assertThat(PuenteLector.textoDeBusqueda(null)).isNull();
         assertThat(EbayLector.urlBusqueda(null, "a b&c")).isEqualTo("https://www.ebay.com/sch/i.html?_nkw=a+b%26c");
     }
 }
