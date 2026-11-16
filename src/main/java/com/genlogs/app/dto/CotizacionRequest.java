@@ -1,5 +1,7 @@
 package com.genlogs.app.dto;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 import jakarta.validation.Valid;
@@ -37,6 +39,16 @@ public class CotizacionRequest {
     private Integer idSectorEconomico;
 
     private String observaciones;
+
+    /**
+     * Propuesta C1, pendiente de confirmar con el equipo: tipo de cambio que el
+     * formulario propone al preparar la cotización. El alta lo valida contra la
+     * tabla; no se inventa ni se toma de una cotización que todavía no existe.
+     */
+    private BigDecimal tipoCambio;
+
+    /** Propuesta C1: fecha del tipo de cambio propuesto. Va junto con {@code tipoCambio}. */
+    private LocalDate fechaTipoCambio;
 
     /** Líneas de la cotización. Alias aceptado: {@code detalles}. */
     private List<@Valid CotizacionDetalleRequest> lineas;
