@@ -1,6 +1,7 @@
 package com.genlogs.app.service;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -51,6 +52,16 @@ public class PortalCotizacionService {
     private final EstadoCotizacionRepository estadoCotizacionRepository;
     private final SeguimientoCotizacionRepository seguimientoCotizacionRepository;
     private final OrdenCompraRepository ordenCompraRepository;
+    private Clock clock = Clock.system(PlazoDespacho.LIMA);
+
+    /** Solo para pruebas. */
+    void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
+    static LocalDate hoyLima(Clock clock) {
+        return LocalDate.now(clock.withZone(PlazoDespacho.LIMA));
+    }
 
     @Transactional(readOnly = true)
     public List<PortalCotizacionResponse> listar() {
@@ -92,18 +103,24 @@ public class PortalCotizacionService {
     }
 
     private void exigirDecidible(Cotizacion cotizacion) {
-        if (puedeDecidir(cotizacion)) {
+        LocalDate hoy = hoyLima(clock);
+        if (puedeDecidir(cotizacion, hoy)) {
             return;
         }
-        if (!fechaPermiteDecision(cotizacion)) {
+        if (!fechaPermiteDecision(cotizacion, hoy)) {
             throw new BusinessException(VENCIDA);
         }
         throw new BusinessException(YA_RESUELTA);
     }
 
-    /** ENVIADA o EN_NEGOCIACION, y fechaValidez nula o no anterior a hoy. */
+    /** ENVIADA o EN_NEGOCIACION, y fechaValidez nula o no anterior a hoy en Lima. */
     static boolean puedeDecidir(Cotizacion cotizacion) {
-        return estadoPermiteDecision(cotizacion) && fechaPermiteDecision(cotizacion);
+        return puedeDecidir(cotizacion, LocalDate.now(PlazoDespacho.LIMA));
+    }
+
+    /** fechaValidez inclusive: el día de validez se puede decidir; el siguiente, no. */
+    static boolean puedeDecidir(Cotizacion cotizacion, LocalDate hoy) {
+        return estadoPermiteDecision(cotizacion) && fechaPermiteDecision(cotizacion, hoy);
     }
 
     private static boolean estadoPermiteDecision(Cotizacion cotizacion) {
@@ -114,9 +131,9 @@ public class PortalCotizacionService {
                 || CodigoEstadoCotizacion.EN_NEGOCIACION.name().equals(codigo);
     }
 
-    private static boolean fechaPermiteDecision(Cotizacion cotizacion) {
+    private static boolean fechaPermiteDecision(Cotizacion cotizacion, LocalDate hoy) {
         LocalDate fecha = cotizacion.getFechaValidez();
-        return fecha == null || !fecha.isBefore(LocalDate.now());
+        return fecha == null || !fecha.isBefore(hoy);
     }
 
     private Cotizacion visible(Long id) {

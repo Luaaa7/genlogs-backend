@@ -73,6 +73,24 @@ class AvisoAltoValorCotizacionTest {
     }
 
     @Test
+    void laConversionUsaElCambioGuardadoAunqueElDelDiaHayaCambiado() {
+        when(parametrosService.getDecimal(ClavesParametro.MONTO_ALTO_VALOR_PEN))
+                .thenReturn(new BigDecimal("20000"));
+
+        Cotizacion igual = cotizacion("USD", new BigDecimal("4.0000"));
+        aviso.alAprobar(igual, new BigDecimal("5000"));
+        assertFalse(Boolean.TRUE.equals(igual.getAvisoAltoValorEnviado()));
+
+        Cotizacion superior = cotizacion("USD", new BigDecimal("4.0000"));
+        aviso.alAprobar(superior, new BigDecimal("5000.01"));
+        assertTrue(superior.getAvisoAltoValorEnviado());
+
+        verify(notificacionService, times(1)).avisarRol(
+                eq(RolSistema.GERENTE_GENERAL), eq(TipoAviso.ALTO_VALOR),
+                anyString(), anyString(), anyString(), eq(true));
+    }
+
+    @Test
     void dolaresBajosNoAvisan() {
         when(parametrosService.getDecimal(ClavesParametro.MONTO_ALTO_VALOR_PEN))
                 .thenReturn(new BigDecimal("20000"));
