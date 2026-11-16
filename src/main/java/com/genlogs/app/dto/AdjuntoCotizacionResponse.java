@@ -1,6 +1,6 @@
 package com.genlogs.app.dto;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -35,6 +35,10 @@ public class AdjuntoCotizacionResponse {
      * pantalla de detalle. SIEMPRE debe venir un número (0 si no se conoce).
      */
     private Long tamanio;
-    private LocalDateTime fechaSubida;
+    /**
+     * Instante absoluto de la subida, la misma regla que fechaEvento del seguimiento.
+     * Se serializa con zona para que el navegador no la lea como hora de Lima.
+     */
+    private Instant fechaSubida;
     private String subidoPor;
 }

@@ -15,5 +15,12 @@ public record ResultadoBusqueda(
         BigDecimal precio,
         String codigoMoneda,
         String urlReferencia,
-        String urlImagen) {
+        String urlImagen,
+        String descripcion) {
+
+    /** Compatibilidad con EbayFuente y pruebas que no traen descripción. */
+    public ResultadoBusqueda(String titulo, String marca, String numeroParte, BigDecimal precio,
+                             String codigoMoneda, String urlReferencia, String urlImagen) {
+        this(titulo, marca, numeroParte, precio, codigoMoneda, urlReferencia, urlImagen, null);
+    }
 }

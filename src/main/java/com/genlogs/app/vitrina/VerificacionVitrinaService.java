@@ -9,14 +9,17 @@ import com.genlogs.app.repository.ProductoRepository;
 import com.genlogs.app.service.ClavesParametro;
 import com.genlogs.app.service.NotificacionService;
 import com.genlogs.app.service.ParametrosService;
+import com.genlogs.app.fuentes.config.CodigoFuente;
+import com.genlogs.app.fuentes.config.FuenteBusquedaConfig;
+import com.genlogs.app.fuentes.config.FuenteBusquedaConfigRepository;
 import com.genlogs.app.sourcing.ConsultaBusqueda;
-import com.genlogs.app.sourcing.FuenteBusqueda;
+import com.genlogs.app.sourcing.ConsultaFuente;
+import com.genlogs.app.sourcing.ConsultaFuenteService;
+import com.genlogs.app.sourcing.EstadoConsultaFuente;
 import com.genlogs.app.sourcing.HistorialSourcing;
 import com.genlogs.app.sourcing.HistorialSourcingRepository;
 import com.genlogs.app.sourcing.MetodoBusqueda;
-import com.genlogs.app.sourcing.ResultadoBusqueda;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -24,9 +27,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -35,8 +41,12 @@ import java.util.stream.Collectors;
  *  1. falló en OCULTAR_FALLAS cotizaciones (2), o
  *  2. pasaron OCULTAR_SIN_VERIF_DIAS (60) sin verificarlo, o
  *  3. tocaba verificarlo (cada VERIFICACION_DIAS, 15) y la fuente ya no lo tiene.
- * La consulta automática solo es posible con las fuentes conectadas (FuenteBusqueda);
- * lo capturado por URL lo verifica el Asistente Logístico con «Verificar».
+ * R1 (v3.3, BPMN 10.1): la consulta va por el 9-B.1 ({@link ConsultaFuenteService}) sin guardar,
+ * solo a la tienda del historial del producto y solo si está activa. Cada tienda tiene un cupo
+ * por corrida de min(VERIFICACION_MAX_DIA, limite_diario / 5) consultas (aprobado por Luana);
+ * las consultas cuentan en el mismo ControlCuota del 9-B.1, sin otro contador. Una tienda
+ * inactiva, caída, bloqueada, sin sesión o sin cupo nunca oculta un producto: queda para otro
+ * día, para «Verificar» del Asistente Logístico o para la regla de los 60 días.
  * Nada se borra (D-33): pasa a OCULTO y el asistente recibe un aviso.
  */
 @Slf4j
@@ -50,19 +60,30 @@ public class VerificacionVitrinaService {
     private final HistorialSourcingRepository historialRepository;
     private final ParametrosService parametrosService;
     private final NotificacionService notificacionService;
-    private final ObjectProvider<FuenteBusqueda> fuentes;
+    private final FuenteBusquedaConfigRepository fuenteRepository;
+    private final ConsultaFuenteService consultaFuente;
     private Clock clock = Clock.systemDefaultZone();
+
+    /** Si la fila VERIFICACION_MAX_DIA aún no está en parametro_sistema (v3_3.sql). */
+    static final int MAX_DIA_POR_DEFECTO = 10;
+
+    /** Estados en los que la tienda sí se consultó: gastan cupo aunque fallen. */
+    private static final Set<EstadoConsultaFuente> LLEGO_A_LA_TIENDA = EnumSet.of(
+            EstadoConsultaFuente.OK, EstadoConsultaFuente.SIN_RESULTADOS, EstadoConsultaFuente.BLOQUEADA,
+            EstadoConsultaFuente.CON_ERROR, EstadoConsultaFuente.REQUIERE_VERIFICACION);
 
     public VerificacionVitrinaService(ProductoRepository productoRepository,
                                       HistorialSourcingRepository historialRepository,
                                       ParametrosService parametrosService,
                                       NotificacionService notificacionService,
-                                      ObjectProvider<FuenteBusqueda> fuentes) {
+                                      FuenteBusquedaConfigRepository fuenteRepository,
+                                      ConsultaFuenteService consultaFuente) {
         this.productoRepository = productoRepository;
         this.historialRepository = historialRepository;
         this.parametrosService = parametrosService;
         this.notificacionService = notificacionService;
-        this.fuentes = fuentes;
+        this.fuenteRepository = fuenteRepository;
+        this.consultaFuente = consultaFuente;
     }
 
     /** Solo para pruebas. */
@@ -82,8 +103,10 @@ public class VerificacionVitrinaService {
                 cb.equal(root.get("status"), "A"),
                 cb.equal(root.get("estadoPublicacion"), EstadoPublicacion.PUBLICADO));
         List<Producto> productos = productoRepository.findAll(publicados, Sort.by("idProducto"));
-        Map<String, FuenteBusqueda> conectadas = fuentes.orderedStream()
-                .collect(Collectors.toMap(FuenteBusqueda::codigo, Function.identity(), (a, b) -> a));
+        Map<CodigoFuente, FuenteBusquedaConfig> activas = fuenteRepository.findByActivaTrueAndStatusOrderByIdFuente("A")
+                .stream().collect(Collectors.toMap(FuenteBusquedaConfig::getCodigo, Function.identity(), (a, b) -> a));
+        int maxDia = maxDia();
+        Map<CodigoFuente, Integer> usadas = new EnumMap<>(CodigoFuente.class);
 
         int verificados = 0;
         int ocultados = 0;
@@ -96,7 +119,7 @@ public class VerificacionVitrinaService {
                 ocultar(p, diasSinVerificar + " días sin verificar");
                 ocultados++;
             } else if (ultima.isBefore(ahora.minusDays(diasVerificacion))) {
-                switch (consultarFuente(p, conectadas)) {
+                switch (consultarFuente(p, activas, maxDia, usadas)) {
                     case DISPONIBLE -> {
                         p.setFechaUltimaVerificacion(ahora);
                         productoRepository.save(p);
@@ -106,7 +129,7 @@ public class VerificacionVitrinaService {
                         ocultar(p, "la fuente ya no lo tiene");
                         ocultados++;
                     }
-                    case SIN_CONSULTA -> { /* lo verifica el asistente; si no, se oculta a los 60 días */ }
+                    case SIN_CONSULTA -> { /* otro día, «Verificar» del asistente o se oculta a los 60 días */ }
                 }
             }
         }
@@ -148,19 +171,67 @@ public class VerificacionVitrinaService {
 
     enum Consulta { DISPONIBLE, NO_DISPONIBLE, SIN_CONSULTA }
 
-    private Consulta consultarFuente(Producto p, Map<String, FuenteBusqueda> conectadas) {
+    private Consulta consultarFuente(Producto p, Map<CodigoFuente, FuenteBusquedaConfig> activas,
+                                     int maxDia, Map<CodigoFuente, Integer> usadas) {
         Optional<HistorialSourcing> ref = historialRepository.findFirstByIdProductoOrderByCreadoEnDesc(p.getIdProducto());
         String numeroParte = p.getNumeroParte() != null ? p.getNumeroParte() : ref.map(HistorialSourcing::getNumeroParte).orElse(null);
-        FuenteBusqueda fuente = ref.map(HistorialSourcing::getFuente).map(conectadas::get).orElse(null);
+        CodigoFuente codigo = ref.map(VerificacionVitrinaService::codigoDe).orElse(null);
+        FuenteBusquedaConfig fuente = codigo == null ? null : activas.get(codigo);
         if (fuente == null || numeroParte == null || numeroParte.isBlank()) return Consulta.SIN_CONSULTA;
+        if (usadas.getOrDefault(codigo, 0) >= cupo(fuente, maxDia)) return Consulta.SIN_CONSULTA;
+
+        ConsultaFuente r;
         try {
-            List<ResultadoBusqueda> r = fuente.buscar(new ConsultaBusqueda(MetodoBusqueda.NUMERO_PARTE, numeroParte,
+            r = consultaFuente.consultar(fuente, new ConsultaBusqueda(MetodoBusqueda.NUMERO_PARTE, numeroParte,
                     p.getMarca() != null ? p.getMarca().getNombreMarca() : null, null, null, null));
-            return r == null || r.isEmpty() ? Consulta.NO_DISPONIBLE : Consulta.DISPONIBLE;
         } catch (RuntimeException e) {
-            // Fuente caída o sin cuota: no se oculta por eso; se intenta otro día.
-            log.warn("No se pudo verificar {} en {}: {}", p.getCodigoProducto(), fuente.codigo(), e.getMessage());
+            log.warn("No se pudo verificar {} en {}: {}", p.getCodigoProducto(), codigo, e.getMessage());
             return Consulta.SIN_CONSULTA;
+        }
+        if (r == null) return Consulta.SIN_CONSULTA;
+        if (LLEGO_A_LA_TIENDA.contains(r.estado())) usadas.merge(codigo, 1, Integer::sum);
+        return switch (r.estado()) {
+            case OK -> r.fichas().isEmpty() ? Consulta.NO_DISPONIBLE : Consulta.DISPONIBLE;
+            case SIN_RESULTADOS -> Consulta.NO_DISPONIBLE;
+            // Caída, bloqueada, pide verificación, sin sesión, sin cuota o sin lector: no se oculta.
+            default -> Consulta.SIN_CONSULTA;
+        };
+    }
+
+    /** Cupo de la corrida para una tienda: min(VERIFICACION_MAX_DIA, limite_diario / 5). */
+    static int cupo(FuenteBusquedaConfig fuente, int maxDia) {
+        Integer limite = fuente.getLimiteDiario();
+        int limiteDiario = limite == null || limite < 1 ? 1 : limite;
+        return Math.max(0, Math.min(maxDia, limiteDiario / 5));
+    }
+
+    private int maxDia() {
+        return parametrosService.buscar(ClavesParametro.VERIFICACION_MAX_DIA)
+                .map(v -> {
+                    try {
+                        int n = Integer.parseInt(v);
+                        return n >= 0 ? n : MAX_DIA_POR_DEFECTO;
+                    } catch (NumberFormatException e) {
+                        return MAX_DIA_POR_DEFECTO;
+                    }
+                })
+                .orElse(MAX_DIA_POR_DEFECTO);
+    }
+
+    /**
+     * Tienda del historial. AliExpress se guarda como ALIBABA con la consulta "ALIEXPRESS | ..."
+     * (ConsultaFuenteService.codigoHistorial); PROVEEDOR o un código desconocido no se consultan.
+     */
+    static CodigoFuente codigoDe(HistorialSourcing ref) {
+        String f = ref.getFuente();
+        if (f == null || f.isBlank()) return null;
+        if ("ALIBABA".equals(f) && ref.getConsulta() != null && ref.getConsulta().startsWith("ALIEXPRESS |")) {
+            return CodigoFuente.ALIEXPRESS;
+        }
+        try {
+            return CodigoFuente.valueOf(f.trim());
+        } catch (IllegalArgumentException e) {
+            return null;
         }
     }
 

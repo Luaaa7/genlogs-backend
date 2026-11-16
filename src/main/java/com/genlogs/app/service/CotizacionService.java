@@ -2,8 +2,11 @@ package com.genlogs.app.service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -63,6 +66,8 @@ import com.genlogs.app.repository.ServicioRepository;
 import com.genlogs.app.repository.UnidadMedidaRepository;
 import com.genlogs.app.repository.UsuarioRepository;
 import com.genlogs.app.model.Tercero;
+import com.genlogs.app.model.TipoCambio;
+import com.genlogs.app.repository.TipoCambioRepository;
 import com.genlogs.app.service.pdf.PdfGenerationService;
 import com.genlogs.app.util.PdfUtils;
 import com.genlogs.app.service.pdf.PdfGenerationService.CotizacionPdfData;
@@ -135,6 +140,19 @@ public class CotizacionService {
      */
     private final EntityManager entityManager;
     private final AvisoOrdenNoCreada avisoOrdenNoCreada;
+    private final TipoCambioRepository tipoCambioRepository;
+    private Clock clock = Clock.system(PlazoDespacho.LIMA);
+
+    /** Solo para pruebas. */
+    void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
+    private static final String MENSAJE_TIPO_CAMBIO =
+            "El tipo de cambio cambió. Recalcula los importes y revísalos antes de solicitar aprobación.";
+
+    private static final String MENSAJE_MONEDA =
+            "La cotización solo admite soles o dólares.";
 
     @Transactional(readOnly = true)
     public CotizacionResponse buscarPorId(Long idCotizacion) {
@@ -199,32 +217,22 @@ public class CotizacionService {
     @Transactional
     public CotizacionResponse crear(CotizacionRequest request) {
         Long idCliente = resolverIdCliente(request);
-        Long idContacto = request.getIdContacto();
         Integer idMoneda = resolverIdMoneda(request);
         Integer idCondicionPago = resolverIdCondicionPago(request);
         List<CotizacionDetalleRequest> lineas = resolverLineas(request);
+        // El costo no viaja en el request: el backend no valida su conversión.
+        exigirImportes(lineas);
 
         Cliente cliente = clienteRepository.findById(idCliente)
                 .orElseThrow(() ->
                         new ResourceNotFoundException("Cliente no encontrado"));
 
-        ContactoTercero contacto = null;
-
-        if (idContacto != null) {
-            contacto = contactoTerceroRepository.findById(idContacto)
-                    .orElseThrow(() ->
-                            new ResourceNotFoundException("Contacto no encontrado"));
-
-            if (!contacto.getTercero().getIdTercero()
-                    .equals(cliente.getTercero().getIdTercero())) {
-                throw new BusinessException(
-                        "El contacto no pertenece a este cliente");
-            }
-        }
+        ContactoTercero contacto = resolverContacto(cliente, request.getIdContacto());
 
         Moneda moneda = monedaRepository.findById(idMoneda)
                 .orElseThrow(() ->
                         new ResourceNotFoundException("Moneda no encontrada"));
+        exigirMonedaCotizacion(moneda);
 
         CondicionPago condicionPago = condicionPagoRepository
                 .findById(idCondicionPago)
@@ -247,6 +255,7 @@ public class CotizacionService {
                                 "No existe el estado BORRADOR configurado"));
 
         Usuario vendedor = usuarioActual();
+        LocalDate hoy = LocalDate.now(clock.withZone(PlazoDespacho.LIMA));
 
         Cotizacion cotizacion = Cotizacion.builder()
                 .cliente(cliente)
@@ -256,12 +265,14 @@ public class CotizacionService {
                 .moneda(moneda)
                 .condicionPago(condicionPago)
                 .sectorEconomico(sector)
-                .fechaCotizacion(LocalDate.now())
-                .fechaValidez(LocalDate.now().plusDays(15))
+                .fechaCotizacion(hoy)
+                .fechaValidez(hoy.plusDays(15))
                 .observaciones(request.getObservaciones())
                 // La tasa que rige hoy queda guardada en la cotización.
-                .porcentajeIgv(tasaIgvService.porcentajeVigente())
-                .tipoCambioUsado(tipoCambioCotizacion.vigente())
+                .porcentajeIgv(tasaIgvService.porcentajeVigente(hoy))
+                // Propuesta C1: se valida el cambio propuesto. La cotización aún no existe,
+                // así que no hay un tipoCambioUsado previo que reutilizar.
+                .tipoCambioUsado(tipoCambioAlCrear(moneda, request))
                 .build();
 
         cotizacion.setUserCreate(vendedor.getNombreUsuario());
@@ -287,6 +298,57 @@ public class CotizacionService {
         return toResponseDetalle(cotizacion, codigoGenerado);
     }
 
+    /**
+     * Actualiza la misma cotización tras una devolución. No crea otra fila
+     * ni otro código. El tipoCambioUsado guardado se conserva (propuesta C1).
+     */
+    @Transactional
+    public CotizacionResponse actualizar(Long idCotizacion, CotizacionRequest request) {
+        Cotizacion cotizacion = obtenerOLanzar(idCotizacion);
+        String codigoEstado = cotizacion.getEstadoCotizacion().getCodigoEstado();
+        if (!CodigoEstadoCotizacion.BORRADOR.name().equalsIgnoreCase(codigoEstado)) {
+            throw new BusinessException("Solo se actualiza una cotización en borrador");
+        }
+
+        Long idCliente = resolverIdCliente(request);
+        Integer idMoneda = resolverIdMoneda(request);
+        Integer idCondicionPago = resolverIdCondicionPago(request);
+        List<CotizacionDetalleRequest> lineas = resolverLineas(request);
+        exigirImportes(lineas);
+
+        Cliente cliente = clienteRepository.findById(idCliente)
+                .orElseThrow(() -> new ResourceNotFoundException("Cliente no encontrado"));
+        ContactoTercero contacto = resolverContacto(cliente, request.getIdContacto());
+
+        Moneda moneda = monedaRepository.findById(idMoneda)
+                .orElseThrow(() -> new ResourceNotFoundException("Moneda no encontrada"));
+        exigirMonedaCotizacion(moneda);
+        CondicionPago condicionPago = condicionPagoRepository.findById(idCondicionPago)
+                .orElseThrow(() -> new ResourceNotFoundException("Condición de pago no encontrada"));
+        SectorEconomico sector = request.getIdSectorEconomico() != null
+                ? sectorEconomicoRepository.findById(request.getIdSectorEconomico())
+                        .orElseThrow(() -> new ResourceNotFoundException("Sector económico no encontrado"))
+                : cliente.getSectorEconomico();
+
+        conservarTipoCambio(cotizacion, moneda, request);
+        Usuario usuario = usuarioActual();
+        cotizacion.setCliente(cliente);
+        cotizacion.setContacto(contacto);
+        cotizacion.setMoneda(moneda);
+        cotizacion.setCondicionPago(condicionPago);
+        cotizacion.setSectorEconomico(sector);
+        cotizacion.setObservaciones(request.getObservaciones());
+        cotizacion.setUserUpdate(usuario.getNombreUsuario());
+        cotizacion.setProcessUpdate("ACTUALIZAR_COTIZACION");
+        cotizacion.setDateUpdate(LocalDateTime.now());
+        cotizacionRepository.save(cotizacion);
+
+        reemplazarLineas(cotizacion, lineas, usuario.getNombreUsuario());
+        registrarSeguimiento(cotizacion, cotizacion.getEstadoCotizacion(), usuario,
+                "Cotización actualizada tras devolución");
+        return toResponseDetalle(cotizacion);
+    }
+
     @Transactional
     public CotizacionResponse cambiarEstado(
             Long idCotizacion,
@@ -302,7 +364,9 @@ public class CotizacionService {
         }
 
         ReglasAprobacionCotizacion.validarCambioLibre(
-                cotizacion.getEstadoCotizacion().getCodigoEstado(), codigoEstado);
+                cotizacion.getEstadoCotizacion().getCodigoEstado(),
+                codigoEstado,
+                request.comentarioResuelto());
 
         EstadoCotizacion nuevoEstado = buscarEstado(codigoEstado);
 
@@ -425,7 +489,7 @@ public class CotizacionService {
                 .urlCloudinary(adjunto.getUrlArchivo())
                 .tipoArchivo(extensionDe(adjunto.getNombreArchivo()))
                 .tamanio(archivo.getSize())
-                .fechaSubida(adjunto.getDateCreate())
+                .fechaSubida(fechaSubida(adjunto.getDateCreate()))
                 .subidoPor(adjunto.getUserCreate())
                 .build();
     }
@@ -549,7 +613,6 @@ public class CotizacionService {
                 cotizacion.getEstadoCotizacion().getCodigoEstado(),
                 CodigoEstadoCotizacion.APROBADA_INTERNA,
                 ReglasAprobacionCotizacion.SOLO_APROBADA_INTERNA);
-        cotizacion.setTipoCambioUsado(tipoCambioCotizacion.vigente());
         EstadoCotizacion enviada = estadoDe(CodigoEstadoCotizacion.ENVIADA);
         aplicarEstado(cotizacion, enviada, usuario, "ENVIO_COTIZACION");
         cotizacionRepository.save(cotizacion);
@@ -630,6 +693,7 @@ public class CotizacionService {
     @Transactional
     public CotizacionResponse duplicar(Long idCotizacion) {
         Cotizacion original = obtenerOLanzar(idCotizacion);
+        exigirMonedaCotizacion(original.getMoneda());
 
         EstadoCotizacion estadoBorrador = estadoCotizacionRepository
                 .findByCodigoEstado("BORRADOR")
@@ -638,6 +702,7 @@ public class CotizacionService {
                                 "No existe el estado BORRADOR configurado"));
 
         Usuario usuario = usuarioActual();
+        LocalDate hoy = LocalDate.now(clock.withZone(PlazoDespacho.LIMA));
 
         Cotizacion copia = Cotizacion.builder()
                 .cliente(original.getCliente())
@@ -647,11 +712,11 @@ public class CotizacionService {
                 .moneda(original.getMoneda())
                 .condicionPago(original.getCondicionPago())
                 .sectorEconomico(original.getSectorEconomico())
-                .fechaCotizacion(LocalDate.now())
-                .fechaValidez(LocalDate.now().plusDays(15))
+                .fechaCotizacion(hoy)
+                .fechaValidez(hoy.plusDays(15))
                 .observaciones(original.getObservaciones())
                 // La copia es un documento nuevo: usa la tasa que rige hoy.
-                .porcentajeIgv(tasaIgvService.porcentajeVigente())
+                .porcentajeIgv(tasaIgvService.porcentajeVigente(hoy))
                 .tipoCambioUsado(tipoCambioCotizacion.vigente())
                 .build();
 
@@ -1183,6 +1248,126 @@ public class CotizacionService {
                         "Estado no encontrado: " + codigoEstado));
     }
 
+    /**
+     * Propuesta C1, pendiente de confirmar. USD valida el par propuesto contra
+     * tipo_cambio. PEN ignora esos campos y usa el vigente. EUR no llega aquí:
+     * la cotización solo admite soles o dólares.
+     * La cotización todavía no existe: no se reutiliza un tipoCambioUsado previo.
+     */
+    private BigDecimal tipoCambioAlCrear(Moneda moneda, CotizacionRequest request) {
+        if (!esUsd(moneda)) {
+            return tipoCambioCotizacion.vigente();
+        }
+        boolean traeValor = request.getTipoCambio() != null;
+        boolean traeFecha = request.getFechaTipoCambio() != null;
+        if (traeValor != traeFecha) {
+            throw new BusinessException("Indica el tipo de cambio y su fecha");
+        }
+        if (!traeValor) {
+            // TODO quitar cuando el frontend envíe el cambio propuesto
+            log.warn("Alta USD sin tipo de cambio propuesto; se usa el vigente de forma transitoria");
+            return tipoCambioCotizacion.vigente();
+        }
+        return validarTipoCambioPropuesto(request.getTipoCambio(), request.getFechaTipoCambio());
+    }
+
+    /** Una cotización guardada conserva su cambio. Solo un null antiguo acepta uno nuevo ya validado. */
+    private void conservarTipoCambio(Cotizacion cotizacion, Moneda moneda, CotizacionRequest request) {
+        BigDecimal guardado = cotizacion.getTipoCambioUsado();
+        BigDecimal propuesto = request.getTipoCambio();
+        if (guardado != null) {
+            if (propuesto != null && !mismaEscala(guardado, propuesto)) {
+                throw new BusinessException("El tipo de cambio de una cotización guardada no se modifica");
+            }
+            return;
+        }
+        boolean traeValor = propuesto != null;
+        boolean traeFecha = request.getFechaTipoCambio() != null;
+        if (!traeValor && !traeFecha) {
+            return;
+        }
+        if (traeValor != traeFecha) {
+            throw new BusinessException("Indica el tipo de cambio y su fecha");
+        }
+        if (!esUsd(moneda)) {
+            return;
+        }
+        cotizacion.setTipoCambioUsado(validarTipoCambioPropuesto(propuesto, request.getFechaTipoCambio()));
+    }
+
+    private BigDecimal validarTipoCambioPropuesto(BigDecimal propuesto, LocalDate fecha) {
+        TipoCambio fila = tipoCambioRepository
+                .findByMoneda_CodigoMonedaAndFecha(TipoCambioService.MONEDA_USD, fecha)
+                .orElseThrow(() -> new BusinessException(MENSAJE_TIPO_CAMBIO));
+        if (fila.getValor() == null || !mismaEscala(fila.getValor(), propuesto)) {
+            throw new BusinessException(MENSAJE_TIPO_CAMBIO);
+        }
+        return fila.getValor().setScale(4, RoundingMode.HALF_UP);
+    }
+
+    private ContactoTercero resolverContacto(Cliente cliente, Long idContacto) {
+        if (idContacto == null) {
+            return null;
+        }
+        ContactoTercero contacto = contactoTerceroRepository.findById(idContacto)
+                .orElseThrow(() -> new ResourceNotFoundException("Contacto no encontrado"));
+        if (!contacto.getTercero().getIdTercero()
+                .equals(cliente.getTercero().getIdTercero())) {
+            throw new BusinessException("El contacto no pertenece a este cliente");
+        }
+        return contacto;
+    }
+
+    private static void exigirMonedaCotizacion(Moneda moneda) {
+        String codigo = moneda == null || moneda.getCodigoMoneda() == null
+                ? ""
+                : moneda.getCodigoMoneda().trim();
+        if (!"PEN".equalsIgnoreCase(codigo)
+                && !TipoCambioService.MONEDA_USD.equalsIgnoreCase(codigo)) {
+            throw new BusinessException(MENSAJE_MONEDA);
+        }
+    }
+
+    private static boolean esUsd(Moneda moneda) {
+        return moneda != null
+                && moneda.getCodigoMoneda() != null
+                && TipoCambioService.MONEDA_USD.equalsIgnoreCase(moneda.getCodigoMoneda().trim());
+    }
+
+    private static boolean mismaEscala(BigDecimal guardado, BigDecimal propuesto) {
+        return guardado.setScale(4, RoundingMode.HALF_UP)
+                .compareTo(propuesto.setScale(4, RoundingMode.HALF_UP)) == 0;
+    }
+
+    /**
+     * Cantidad, precio y descuento son lo único que trae el request.
+     * El costo no viaja, así que aquí no se valida su conversión.
+     */
+    private static void exigirImportes(List<CotizacionDetalleRequest> lineas) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (CotizacionDetalleRequest linea : lineas) {
+            if (linea.getCantidad() == null || linea.getCantidad().compareTo(BigDecimal.ZERO) <= 0) {
+                throw new BusinessException("La cantidad debe ser mayor a 0");
+            }
+            if (linea.getPrecioUnitario() == null || linea.getPrecioUnitario().compareTo(BigDecimal.ZERO) < 0) {
+                throw new BusinessException("El precio no puede ser negativo");
+            }
+            BigDecimal descuento = linea.getDescuentoUnitario() != null
+                    ? linea.getDescuentoUnitario()
+                    : BigDecimal.ZERO;
+            if (descuento.compareTo(BigDecimal.ZERO) < 0) {
+                throw new BusinessException("El descuento no puede ser negativo");
+            }
+            if (descuento.compareTo(linea.getPrecioUnitario()) > 0) {
+                throw new BusinessException("El descuento no puede ser mayor que el precio");
+            }
+            total = total.add(linea.getCantidad().multiply(linea.getPrecioUnitario().subtract(descuento)));
+        }
+        if (total.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException("El total de la cotización no puede ser negativo");
+        }
+    }
+
     private List<CotizacionDetalleRequest> resolverLineas(
             CotizacionRequest request) {
 
@@ -1197,6 +1382,27 @@ public class CotizacionService {
         }
 
         return lineas;
+    }
+
+    /** Las líneas anteriores quedan inactivas. Las nuevas usan la misma construcción del alta. */
+    private void reemplazarLineas(
+            Cotizacion cotizacion,
+            List<CotizacionDetalleRequest> lineas,
+            String usuario) {
+
+        LocalDateTime ahora = LocalDateTime.now();
+        for (CotizacionDetalle anterior : cotizacionDetalleRepository.findByCotizacion(cotizacion.getIdCotizacion())) {
+            anterior.setStatus("I");
+            anterior.setUserUpdate(usuario);
+            anterior.setProcessUpdate("ACTUALIZAR_COTIZACION");
+            anterior.setDateUpdate(ahora);
+            cotizacionDetalleRepository.save(anterior);
+        }
+        cotizacionDetalleRepository.flush();
+        for (CotizacionDetalleRequest lineaRequest : lineas) {
+            cotizacionDetalleRepository.save(construirLinea(cotizacion, lineaRequest, usuario));
+        }
+        cotizacionDetalleRepository.flush();
     }
 
     // ------------------------------------------------------------
@@ -1481,9 +1687,13 @@ public class CotizacionService {
                 .tipoArchivo(extensionDe(a.getNombreArchivo()))
                 // La tabla no almacena el tamaño del archivo.
                 .tamanio(0L)
-                .fechaSubida(a.getDateCreate())
+                .fechaSubida(fechaSubida(a.getDateCreate()))
                 .subidoPor(a.getUserCreate())
                 .build();
+    }
+
+    private static Instant fechaSubida(LocalDateTime dateCreate) {
+        return dateCreate == null ? null : dateCreate.atZone(ZoneId.systemDefault()).toInstant();
     }
 
     private String extensionDe(String nombreArchivo) {

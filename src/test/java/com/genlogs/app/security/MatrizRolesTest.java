@@ -75,6 +75,10 @@ class MatrizRolesTest {
 
     private static final String NO_EXISTE = "999999";
 
+    /** Repuesto que pasa @Valid; la categoría y la unidad no existen, así que nunca se guarda. */
+    private static final String PRODUCTO_VALIDO = "{\"idCategoriaProducto\":" + NO_EXISTE
+            + ",\"idUnidadMedida\":" + NO_EXISTE + ",\"nombreProducto\":\"Filtro de prueba\",\"visibleWeb\":false}";
+
     @Autowired private MockMvc mockMvc;
     @Autowired private RolRepository rolRepository;
     @Autowired private UsuarioRepository usuarioRepository;
@@ -94,6 +98,14 @@ class MatrizRolesTest {
     static Stream<Caso> matriz() {
         String id = NO_EXISTE;
         return Stream.of(
+                // ---- Fuentes de búsqueda (v3.3, L5): configura el Jefe; el Asist. Log. solo ve el estado ----
+                caso("Fuentes", "GET", "/api/fuentes", null, "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO"),
+                caso("Fuentes", "PUT", "/api/fuentes/EBAY/credenciales", "{\"clave\":\"x\"}", "JEFE_ADMINISTRATIVO"),
+                caso("Fuentes", "PATCH", "/api/fuentes/EBAY/activar", "{\"activa\":false}", "JEFE_ADMINISTRATIVO"),
+                caso("Fuentes", "PATCH", "/api/fuentes/EBAY/parametros", "{\"pausaSegundos\":5,\"limiteDiario\":50}",
+                        "JEFE_ADMINISTRATIVO"),
+                caso("Fuentes", "GET", "/api/fuentes/EBAY/selectores", null, "JEFE_ADMINISTRATIVO"),
+                caso("Fuentes", "POST", "/api/fuentes/EBAY/probar", null, "JEFE_ADMINISTRATIVO"),
                 // ---- Solicitudes y plazos: crean y gestionan el Asistente Logístico y el Jefe ----
                 caso("Solicitudes", "PATCH", "/api/solicitudes/" + id + "/pausar", "{\"motivo\":\"PROVEEDOR\"}",
                         "ASISTENTE_LOGISTICO", "JEFE_ADMINISTRATIVO"),
@@ -167,6 +179,21 @@ class MatrizRolesTest {
                         "GERENTE_GENERAL", "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO", "ASISTENTE_ADMINISTRATIVO"),
                 caso("Vitrina", "POST", "/api/vitrina/productos/" + id + "/publicar", null,
                         "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO"),
+
+                // ---- Catálogo de repuestos (R3, v3.3): editan el Jefe y el Asistente Logístico; consulta el personal ----
+                // Cuerpos válidos: @Valid responde 400 antes que @PreAuthorize si el cuerpo está incompleto.
+                caso("Repuestos", "POST", "/api/productos", PRODUCTO_VALIDO,
+                        "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO"),
+                caso("Repuestos", "PUT", "/api/productos/" + id, PRODUCTO_VALIDO,
+                        "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO"),
+                caso("Repuestos", "DELETE", "/api/productos/" + id, null,
+                        "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO"),
+                caso("Repuestos", "POST", "/api/productos/" + id + "/caracteristicas",
+                        "{\"idCaracteristica\":" + id + ",\"valorCaracteristica\":\"10 micras\"}",
+                        "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO"),
+                caso("Repuestos", "DELETE", "/api/productos/imagenes/" + id, null,
+                        "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO"),
+                caso("Repuestos", "GET", "/api/productos", null, INTERNOS.toArray(String[]::new)),
 
                 // ---- Servicios: crean el Jefe y el Asistente Logístico ----
                 caso("Servicios", "POST", "/api/servicios", "{}",

@@ -55,6 +55,10 @@ public class HistorialSourcing {
     @Column(name = "titulo", columnDefinition = "TEXT")
     private String titulo;
 
+    /** v3.3 (v3_3.sql): descripción de la ficha leída; R2 la usa al convertir en producto. */
+    @Column(name = "descripcion", columnDefinition = "TEXT")
+    private String descripcion;
+
     @Column(name = "marca_texto", length = 100)
     private String marcaTexto;
 

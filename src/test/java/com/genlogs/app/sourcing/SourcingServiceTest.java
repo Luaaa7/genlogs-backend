@@ -1,14 +1,20 @@
 package com.genlogs.app.sourcing;
 
 import com.genlogs.app.exception.BusinessException;
+import com.genlogs.app.fuentes.config.CodigoFuente;
+import com.genlogs.app.fuentes.config.FuenteBusquedaConfig;
+import com.genlogs.app.fuentes.config.FuenteBusquedaConfigRepository;
 import com.genlogs.app.model.Moneda;
 import com.genlogs.app.repository.MonedaRepository;
 import com.genlogs.app.repository.SolicitudItemRepository;
 import com.genlogs.app.repository.UsuarioRepository;
+import com.genlogs.app.service.ClavesParametro;
+import com.genlogs.app.service.ParametrosService;
 import com.genlogs.app.sourcing.dto.BuscarReferenciasRequest;
 import com.genlogs.app.sourcing.dto.ResultadoBusquedaResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 
 import java.math.BigDecimal;
@@ -28,28 +34,35 @@ class SourcingServiceTest {
 
     private HistorialSourcingRepository historialRepo;
     private MonedaRepository monedaRepo;
-    private FuenteBusqueda ebay;
+    private FuenteBusquedaConfigRepository fuenteRepo;
+    private ConsultaFuenteService consultaFuente;
+    private ParametrosService parametros;
+    private FuenteBusquedaConfig ebay;
 
     @BeforeEach
     void setUp() {
         historialRepo = mock(HistorialSourcingRepository.class);
         monedaRepo = mock(MonedaRepository.class);
-        ebay = mock(FuenteBusqueda.class);
-        when(ebay.codigo()).thenReturn("EBAY");
+        fuenteRepo = mock(FuenteBusquedaConfigRepository.class);
+        consultaFuente = mock(ConsultaFuenteService.class);
+        parametros = mock(ParametrosService.class);
         when(historialRepo.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
         when(historialRepo.findByNumeroParteIgnoreCaseAndMetodoNotAndCreadoEnAfterOrderByCreadoEnDesc(
                 any(), any(), any())).thenReturn(List.of());
+        when(parametros.buscar(ClavesParametro.BUSQUEDA_REUSO_DIAS)).thenReturn(Optional.empty());
+        ebay = fuente(CodigoFuente.EBAY, true);
+        when(fuenteRepo.findByActivaTrueAndStatusOrderByIdFuente("A")).thenReturn(List.of(ebay));
     }
 
-    /** Crea el servicio con las fuentes indicadas, igual que Spring con ObjectProvider. */
-    private SourcingService servicio(FuenteBusqueda... fs) {
+    private SourcingService servicio(FuenteBusqueda... apis) {
         DefaultListableBeanFactory bf = new DefaultListableBeanFactory();
-        for (int i = 0; i < fs.length; i++) {
-            bf.registerSingleton("fuente" + i, fs[i]);
+        for (int i = 0; i < apis.length; i++) {
+            bf.registerSingleton("api" + i, apis[i]);
         }
         SourcingService s = new SourcingService(historialRepo, mock(SolicitudItemRepository.class),
-                monedaRepo, mock(UsuarioRepository.class), bf.getBeanProvider(FuenteBusqueda.class));
-        s.setClock(Clock.fixed(Instant.parse("2026-11-11T15:00:00Z"), ZoneId.of("America/Lima")));
+                monedaRepo, mock(UsuarioRepository.class), fuenteRepo, consultaFuente, parametros,
+                bf.getBeanProvider(FuenteBusqueda.class));
+        s.setClock(Clock.fixed(Instant.parse("2026-11-11T20:00:00Z"), ZoneId.of("America/Lima")));
         return s;
     }
 
@@ -57,49 +70,70 @@ class SourcingServiceTest {
         return new BuscarReferenciasRequest(null, numeroParte, "Caterpillar", null, null, forzar);
     }
 
+    private static FuenteBusquedaConfig fuente(CodigoFuente codigo, boolean activa) {
+        FuenteBusquedaConfig f = new FuenteBusquedaConfig();
+        f.setCodigo(codigo);
+        f.setNombre(codigo.name());
+        f.setUrlBase("https://example.com");
+        f.setActiva(activa);
+        f.setPausaSegundos(0);
+        f.setLimiteDiario(50);
+        f.setUserCreate("PRUEBA");
+        f.setProcessCreate("PRUEBA");
+        return f;
+    }
+
     @Test
-    void busquedaRepetidaEn24h_noConsultaLaFuente() {
+    void busquedaDeHaceTresDias_seReutiliza() {
         HistorialSourcing previo = HistorialSourcing.builder()
                 .idSourcing(1L).fuente("EBAY").metodo(MetodoBusqueda.NUMERO_PARTE)
                 .numeroParte("1R-0750").estado(EstadoSourcing.UTIL)
-                .creadoEn(LocalDateTime.of(2026, 11, 11, 8, 0)).build();
+                .creadoEn(LocalDateTime.of(2026, 11, 8, 8, 0)).build();
         when(historialRepo.findByNumeroParteIgnoreCaseAndMetodoNotAndCreadoEnAfterOrderByCreadoEnDesc(
                 eq("1R-0750"), eq(MetodoBusqueda.URL), any())).thenReturn(List.of(previo));
 
-        ResultadoBusquedaResponse r = servicio(ebay).buscar(pedido(" 1R-0750 ", false));
+        ResultadoBusquedaResponse r = servicio().buscar(pedido(" 1R-0750 ", false));
 
         assertThat(r.reutilizada()).isTrue();
         assertThat(r.referencias()).hasSize(1);
-        verify(ebay, never()).buscar(any());
+        verify(consultaFuente, never()).consultar(any(), any());
+        ArgumentCaptor<LocalDateTime> desde = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(historialRepo).findByNumeroParteIgnoreCaseAndMetodoNotAndCreadoEnAfterOrderByCreadoEnDesc(
+                eq("1R-0750"), eq(MetodoBusqueda.URL), desde.capture());
+        assertThat(desde.getValue()).isEqualTo(LocalDateTime.of(2026, 11, 4, 15, 0));
     }
 
     @Test
     void forzar_consultaAunqueHayaBusquedaReciente() {
-        when(ebay.buscar(any())).thenReturn(List.of());
-        servicio(ebay).buscar(pedido("1R-0750", true));
-        verify(ebay).buscar(any());
+        when(consultaFuente.consultar(any(), any())).thenReturn(
+                ConsultaFuente.de("EBAY", EstadoConsultaFuente.SIN_RESULTADOS, null, List.of()));
+        servicio().buscar(pedido("1R-0750", true));
+        verify(consultaFuente).consultar(eq(ebay), any());
         verify(historialRepo, never())
                 .findByNumeroParteIgnoreCaseAndMetodoNotAndCreadoEnAfterOrderByCreadoEnDesc(any(), any(), any());
     }
 
     @Test
-    void sinFuentesConfiguradas_funcionaYSugierePegarUrl() {
+    void sinFuentesActivas_funcionaYSugierePegarUrl() {
+        when(fuenteRepo.findByActivaTrueAndStatusOrderByIdFuente("A")).thenReturn(List.of());
         ResultadoBusquedaResponse r = servicio().buscar(pedido("1R-0750", false));
 
         assertThat(r.reutilizada()).isFalse();
         assertThat(r.referencias()).isEmpty();
         assertThat(r.sugerirUrl()).isTrue();
+        verify(consultaFuente, never()).consultar(any(), any());
     }
 
     @Test
     void resultadosSeGuardanComoCapturadoConSuMoneda() {
         Moneda usd = Moneda.builder().idMoneda(2).codigoMoneda("USD").build();
         when(monedaRepo.findByCodigoMoneda("USD")).thenReturn(Optional.of(usd));
-        when(ebay.buscar(any())).thenReturn(List.of(new ResultadoBusqueda(
-                "Filtro de aceite CAT 1R-0750", "Caterpillar", "1R-0750",
-                new BigDecimal("18.50"), "usd", "https://www.ebay.com/itm/1", "https://i.ebayimg.com/1.jpg")));
+        when(consultaFuente.consultar(eq(ebay), any())).thenReturn(ConsultaFuente.de("EBAY", EstadoConsultaFuente.OK, null,
+                List.of(new ResultadoBusqueda(
+                        "Filtro de aceite CAT 1R-0750", "Caterpillar", "1R-0750",
+                        new BigDecimal("18.50"), "usd", "https://www.ebay.com/itm/1", "https://i.ebayimg.com/1.jpg"))));
 
-        ResultadoBusquedaResponse r = servicio(ebay).buscar(pedido("1R-0750", false));
+        ResultadoBusquedaResponse r = servicio().buscar(pedido("1R-0750", false));
 
         assertThat(r.fuentesConsultadas()).containsExactly("EBAY");
         assertThat(r.referencias()).singleElement().satisfies(ref -> {
@@ -111,16 +145,18 @@ class SourcingServiceTest {
 
     @Test
     void unaFuenteQueFalla_noDetieneLaBusqueda() {
-        FuenteBusqueda ml = mock(FuenteBusqueda.class);
-        when(ml.codigo()).thenReturn("MERCADO_LIBRE");
-        when(ml.buscar(any())).thenThrow(new IllegalStateException("cuota agotada"));
-        when(ebay.buscar(any())).thenReturn(List.of(new ResultadoBusqueda(
-                "Filtro", null, null, BigDecimal.TEN, null, "https://www.ebay.com/itm/2", null)));
+        FuenteBusquedaConfig ml = fuente(CodigoFuente.MERCADO_LIBRE, true);
+        when(fuenteRepo.findByActivaTrueAndStatusOrderByIdFuente("A")).thenReturn(List.of(ml, ebay));
+        when(consultaFuente.consultar(eq(ml), any()))
+                .thenReturn(ConsultaFuente.de("MERCADO_LIBRE", EstadoConsultaFuente.CON_ERROR, "caída", List.of()));
+        when(consultaFuente.consultar(eq(ebay), any())).thenReturn(ConsultaFuente.de("EBAY", EstadoConsultaFuente.OK, null,
+                List.of(new ResultadoBusqueda(
+                        "Filtro", null, null, BigDecimal.TEN, null, "https://www.ebay.com/itm/2", null))));
 
-        ResultadoBusquedaResponse r = servicio(ml, ebay).buscar(pedido("1R-0750", false));
+        ResultadoBusquedaResponse r = servicio().buscar(pedido("1R-0750", false));
 
         assertThat(r.fuentesConError()).containsExactly("MERCADO_LIBRE");
-        assertThat(r.fuentesConsultadas()).containsExactly("EBAY");
+        assertThat(r.fuentesConsultadas()).containsExactly("MERCADO_LIBRE", "EBAY");
         assertThat(r.referencias()).hasSize(1);
     }
 
@@ -152,5 +188,37 @@ class SourcingServiceTest {
         when(historialRepo.save(h)).thenReturn(h);
 
         assertThat(servicio().cambiarEstado(7L, EstadoSourcing.UTIL).estado()).isEqualTo(EstadoSourcing.UTIL);
+    }
+
+    @Test
+    void apiEbay_seUsaSiElScrapingNoLeyoLaTienda() {
+        when(consultaFuente.consultar(eq(ebay), any()))
+                .thenReturn(ConsultaFuente.de("EBAY", EstadoConsultaFuente.NO_CONECTADO, "P2", List.of()));
+        FuenteBusqueda api = mock(FuenteBusqueda.class);
+        when(api.codigo()).thenReturn("EBAY");
+        when(api.buscar(any())).thenReturn(List.of(new ResultadoBusqueda(
+                "Filtro API", null, "1R-0750", new BigDecimal("9.00"), "USD",
+                "https://www.ebay.com/itm/api", null)));
+
+        ResultadoBusquedaResponse r = servicio(api).buscar(pedido("1R-0750", true));
+
+        verify(api).buscar(any());
+        assertThat(r.referencias()).hasSize(1);
+        assertThat(r.referencias().get(0).titulo()).isEqualTo("Filtro API");
+        assertThat(r.fuentesConsultadas()).contains("EBAY");
+        assertThat(r.fuentesSinLector()).isEmpty();
+    }
+
+    @Test
+    void apiEbay_noDuplicaSiEl9b1YaLeyo() {
+        when(consultaFuente.consultar(eq(ebay), any())).thenReturn(ConsultaFuente.de("EBAY", EstadoConsultaFuente.OK,
+                null, List.of(new ResultadoBusqueda("Scraping", null, null, BigDecimal.ONE, "USD",
+                        "https://www.ebay.com/itm/s", null))));
+        FuenteBusqueda api = mock(FuenteBusqueda.class);
+        when(api.codigo()).thenReturn("EBAY");
+
+        servicio(api).buscar(pedido("1R-0750", true));
+
+        verify(api, never()).buscar(any());
     }
 }
