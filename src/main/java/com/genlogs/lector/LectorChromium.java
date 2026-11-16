@@ -37,7 +37,7 @@ public final class LectorChromium implements ServicioLectura.Motor {
                  Browser browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(true)
                          .setTimeout(restante(deadline)).setProxy(new Proxy(proxy.url()))
                          .setArgs(List.of("--proxy-bypass-list=<-loopback>", "--disable-quic",
-                                 "--force-webrtc-ip-handling-policy=disable_non_proxied_udp")))) {
+                                 "--force-webrtc-ip-handling-policy=disable_non_proxied_udp", "--disable-dev-shm-usage")))) {
                 Browser.NewContextOptions options = new Browser.NewContextOptions()
                         .setServiceWorkers(ServiceWorkerPolicy.BLOCK).setAcceptDownloads(false);
                 if (req.sesion() != null) options.setStorageState(req.sesion().storageState().toString());
@@ -156,6 +156,7 @@ public final class LectorChromium implements ServicioLectura.Motor {
         for (Element root : roots.stream().limit(limit).toList()) {
             String nombre = valor(root, campo(rules, "nombre"));
             String textoPrecio = valor(root, campo(rules, "precio"));
+            if (textoPrecio != null && (textoPrecio.indexOf('€') >= 0 || textoPrecio.indexOf('£') >= 0)) continue;
             BigDecimal precio = precio(textoPrecio, texto(rules, "separadorDecimal"));
             String moneda = moneda(valor(root, campo(rules, "moneda")), textoPrecio, texto(rules, "codigoMoneda"));
             String enlace = valor(root, campo(rules, "enlace"));
@@ -178,8 +179,8 @@ public final class LectorChromium implements ServicioLectura.Motor {
     }
     /**
      * Tres letras de la regla MONEDA ganan. S/ de esa regla queda en PEN.
-     * Si no, PEN y S/ del precio ganan a US$; USD, US$ o $ quedan en USD.
-     * Sin símbolo se usa el respaldo codigoMoneda.
+     * PEN y S/ del precio ganan a US$. Solo USD, US$ y «US $» son dólares.
+     * Un $ suelto y un precio sin símbolo usan el respaldo codigoMoneda.
      */
     private static String moneda(String regla, String textoPrecio, String respaldo) {
         if (regla != null) {
@@ -188,7 +189,7 @@ public final class LectorChromium implements ServicioLectura.Motor {
             if ("S/".equals(limpia)) return "PEN";
         }
         if (textoPrecio != null && (textoPrecio.contains("PEN") || textoPrecio.contains("S/"))) return "PEN";
-        if (textoPrecio != null && (textoPrecio.contains("USD") || textoPrecio.contains("US$") || textoPrecio.contains("$"))) {
+        if (textoPrecio != null && (textoPrecio.contains("USD") || textoPrecio.contains("US$") || textoPrecio.contains("US $"))) {
             return "USD";
         }
         return respaldo;

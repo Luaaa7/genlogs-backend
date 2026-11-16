@@ -33,12 +33,15 @@ import com.genlogs.app.dto.CotizacionRequest;
 import com.genlogs.app.dto.CotizacionResponse;
 import com.genlogs.app.dto.EnviarCotizacionRequest;
 import com.genlogs.app.dto.EnviarCotizacionResponse;
+import com.genlogs.app.dto.RespuestaClienteRequest;
+import com.genlogs.app.enums.CodigoEstadoCotizacion;
 import com.genlogs.app.dto.EstadisticasCotizacionResponse;
 import com.genlogs.app.dto.PaginaResponse;
 import com.genlogs.app.dto.SeguimientoCotizacionResponse;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.service.CotizacionService;
 import com.genlogs.app.service.PermisosCotizacion;
+import com.genlogs.app.service.RespuestaClienteService;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -49,6 +52,7 @@ import lombok.RequiredArgsConstructor;
 public class CotizacionController {
 
     private final CotizacionService cotizacionService;
+    private final RespuestaClienteService respuestaClienteService;
 
     /**
      * Lista blanca de campos de ordenamiento del listado.
@@ -232,6 +236,21 @@ public class CotizacionController {
     public ResponseEntity<Void> eliminarAdjunto(@PathVariable Long idCotizacion, @PathVariable Long idAdjunto) {
         cotizacionService.eliminarAdjunto(idCotizacion, idAdjunto);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * El Jefe registra la respuesta que llegó por correo o por teléfono.
+     * APROBADA sigue el camino del portal: la decisión y después la orden, una sola vez.
+     */
+    @PreAuthorize(PermisosCotizacion.APROBAR)
+    @PostMapping("/{id}/respuesta-cliente")
+    public ResponseEntity<CotizacionResponse> registrarRespuestaCliente(
+            @PathVariable Long id, @RequestBody RespuestaClienteRequest request) {
+        String codigo = respuestaClienteService.registrar(id, request);
+        if (CodigoEstadoCotizacion.APROBADA.name().equals(codigo)) {
+            cotizacionService.registrarOrdenSiAprobada(id, codigo);
+        }
+        return ResponseEntity.ok(cotizacionService.buscarPorId(id));
     }
 
     @PreAuthorize(PermisosCotizacion.CREAR)

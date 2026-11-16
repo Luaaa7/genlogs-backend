@@ -148,6 +148,52 @@ class AmazonAliExpressLectorTest {
             assertThat(r.precio()).isEqualByComparingTo("40.70");
             assertThat(r.codigoMoneda()).isEqualTo("USD");
         });
+        assertThat(precioDe("$199", "MXN")).satisfies(r -> {
+            assertThat(r.precio()).isEqualByComparingTo("199");
+            assertThat(r.codigoMoneda()).isEqualTo("MXN");
+        });
+        assertThat(precioDe("$199", "USD")).satisfies(r -> {
+            assertThat(r.precio()).isEqualByComparingTo("199");
+            assertThat(r.codigoMoneda()).isEqualTo("USD");
+        });
+    }
+
+    @Test
+    void unPrecioEnEuroOLibraSeDescarta() {
+        assertThat(fichasDe("""
+                <html><body>
+                  <div class="s-result-item">
+                    <h2>Euro</h2>
+                    <span class="a-price">€12</span>
+                    <a class="s-no-outline" href="https://www.amazon.com/dp/B001">ver</a>
+                  </div>
+                  <div class="s-result-item">
+                    <h2>Soles</h2>
+                    <span class="a-price">PEN 31.28</span>
+                    <a class="s-no-outline" href="https://www.amazon.com/dp/B002">ver</a>
+                  </div>
+                </body></html>
+                """)).singleElement().satisfies(r -> {
+            assertThat(r.precio()).isEqualByComparingTo("31.28");
+            assertThat(r.codigoMoneda()).isEqualTo("PEN");
+        });
+        assertThat(fichasDe("""
+                <html><body>
+                  <div class="s-result-item">
+                    <h2>Libra</h2>
+                    <span class="a-price">£9.50</span>
+                    <a class="s-no-outline" href="https://www.amazon.com/dp/B001">ver</a>
+                  </div>
+                  <div class="s-result-item">
+                    <h2>Soles</h2>
+                    <span class="a-price">PEN 31.28</span>
+                    <a class="s-no-outline" href="https://www.amazon.com/dp/B002">ver</a>
+                  </div>
+                </body></html>
+                """)).singleElement().satisfies(r -> {
+            assertThat(r.precio()).isEqualByComparingTo("31.28");
+            assertThat(r.codigoMoneda()).isEqualTo("PEN");
+        });
     }
 
     @Test
@@ -172,7 +218,11 @@ class AmazonAliExpressLectorTest {
     }
 
     private static ContratoLector.Resultado precioDe(String texto) {
-        String html = """
+        return precioDe(texto, "USD");
+    }
+
+    private static ContratoLector.Resultado precioDe(String texto, String codigoMoneda) {
+        return fichasDe("""
                 <html><body>
                   <div class="s-result-item">
                     <h2>Filtro</h2>
@@ -180,18 +230,29 @@ class AmazonAliExpressLectorTest {
                     <a class="s-no-outline" href="https://www.amazon.com/dp/B001">ver</a>
                   </div>
                 </body></html>
-                """.formatted(texto);
-        return LectorChromium.extraer(html, "https://www.amazon.com/s?k=oil", peticionAmazon(), true).get(0);
+                """.formatted(texto), codigoMoneda).get(0);
+    }
+
+    private static java.util.List<ContratoLector.Resultado> fichasDe(String html) {
+        return fichasDe(html, "USD");
+    }
+
+    private static java.util.List<ContratoLector.Resultado> fichasDe(String html, String codigoMoneda) {
+        return LectorChromium.extraer(html, "https://www.amazon.com/s?k=oil", peticionAmazon(codigoMoneda), true);
     }
 
     private static ContratoLector.Peticion peticionAmazon() {
+        return peticionAmazon("USD");
+    }
+
+    private static ContratoLector.Peticion peticionAmazon(String codigoMoneda) {
         return new ContratoLector.Peticion("AMAZON", "https://www.amazon.com/s?k=oil",
                 Map.of(
                         "contenedor", "div.s-result-item",
                         "nombre", Map.of("selector", "h2"),
                         "precio", Map.of("selector", ".a-price"),
                         "enlace", Map.of("selector", "a.s-no-outline", "atributo", "href"),
-                        "codigoMoneda", "USD",
+                        "codigoMoneda", codigoMoneda,
                         "separadorDecimal", ".",
                         "sinResultados", AmazonAliExpressLector.SIN_RESULTADOS_AMAZON),
                 null, null, 8);

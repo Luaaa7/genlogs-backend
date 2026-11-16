@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -33,6 +34,7 @@ import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 
 import com.genlogs.app.dto.CotizacionResponse;
 import com.genlogs.app.service.CotizacionService;
+import com.genlogs.app.service.RespuestaClienteService;
 
 @SpringJUnitConfig(CotizacionActualizarPermisosTest.SeguridadMinima.class)
 @WebAppConfiguration
@@ -45,6 +47,7 @@ class CotizacionActualizarPermisosTest {
 
     @Autowired private WebApplicationContext contexto;
     @Autowired private CotizacionService servicio;
+    @Autowired private RespuestaClienteService respuestas;
 
     private MockMvc mockMvc;
 
@@ -81,6 +84,33 @@ class CotizacionActualizarPermisosTest {
         verify(servicio, never()).actualizar(anyLong(), any());
     }
 
+    @org.junit.jupiter.api.Test
+    void soloElJefeRegistraLaRespuestaDelCliente() throws Exception {
+        when(respuestas.registrar(anyLong(), any())).thenReturn("APROBADA");
+        when(servicio.buscarPorId(anyLong())).thenReturn(CotizacionResponse.builder().idCotizacion(8L).build());
+        String cuerpo = """
+                {"codigoEstado":"APROBADA","comentario":"Llamó el 16/11 a las 9:00","idAdjunto":7}
+                """;
+
+        mockMvc.perform(post("/api/cotizaciones/8/respuesta-cliente")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpo)
+                        .with(user("jefe").roles("JEFE_ADMINISTRATIVO")))
+                .andExpect(status().isOk());
+        verify(respuestas).registrar(anyLong(), any());
+        verify(servicio).registrarOrdenSiAprobada(8L, "APROBADA");
+
+        for (String rol : new String[] {
+                "ASISTENTE_LOGISTICO", "ASISTENTE_ADMINISTRATIVO", "CLIENTE", "GERENTE_GENERAL" }) {
+            mockMvc.perform(post("/api/cotizaciones/8/respuesta-cliente")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(cuerpo)
+                            .with(user("otro").roles(rol)))
+                    .andExpect(status().isForbidden());
+        }
+        verify(respuestas, org.mockito.Mockito.times(1)).registrar(anyLong(), any());
+    }
+
     @Configuration
     @EnableWebSecurity
     @EnableMethodSecurity
@@ -105,8 +135,14 @@ class CotizacionActualizarPermisosTest {
         }
 
         @Bean
-        CotizacionController cotizacionController(CotizacionService cotizacionService) {
-            return new CotizacionController(cotizacionService);
+        RespuestaClienteService respuestaClienteService() {
+            return mock(RespuestaClienteService.class);
+        }
+
+        @Bean
+        CotizacionController cotizacionController(
+                CotizacionService cotizacionService, RespuestaClienteService respuestaClienteService) {
+            return new CotizacionController(cotizacionService, respuestaClienteService);
         }
     }
 }

@@ -20,13 +20,13 @@ class MargenRepuestoTest {
 
     @Test
     void precioEsCostoPorUnoMasMargen() {
-        assertThat(MargenRepuesto.precio(bd("1000"), bd("25"))).isEqualByComparingTo("1250.00");
-        assertThat(MargenRepuesto.precio(bd("455"), bd("25"))).isEqualByComparingTo("568.75");
+        assertThat(MargenRepuesto.precio(bd("1000"), bd("25"))).isEqualByComparingTo("1333.33");
+        assertThat(MargenRepuesto.precio(bd("455"), bd("25"))).isEqualByComparingTo("606.67");
     }
 
     @Test
     void margenDeUnPrecio() {
-        assertThat(MargenRepuesto.margenDe(bd("1000"), bd("1250"))).isEqualByComparingTo("25.00");
+        assertThat(MargenRepuesto.margenDe(bd("1000"), bd("1250"))).isEqualByComparingTo("20.00");
         assertThat(MargenRepuesto.margenDe(null, bd("1250"))).isNull();
     }
 
@@ -34,7 +34,7 @@ class MargenRepuestoTest {
     void costoOMargenInvalidosSonRechazados() {
         assertThatThrownBy(() -> MargenRepuesto.precio(bd("0"), bd("25"))).isInstanceOf(BusinessException.class);
         assertThatThrownBy(() -> MargenRepuesto.precio(bd("100"), bd("-1"))).isInstanceOf(BusinessException.class);
-        assertThatThrownBy(() -> MargenRepuesto.precio(bd("100"), bd("101"))).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> MargenRepuesto.precio(bd("100"), bd("100"))).isInstanceOf(BusinessException.class);
     }
 
     @Test

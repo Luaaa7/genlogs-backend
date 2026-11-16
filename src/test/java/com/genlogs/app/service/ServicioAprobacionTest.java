@@ -68,11 +68,11 @@ class ServicioAprobacionTest {
 
     @Test
     void elPrecioManualDefineElMargenAunqueSeEnvieOtro() {
-        // Se envía margen 30 (en rango), pero 150 sobre costo 100 es 50 %: queda pendiente.
-        Servicio guardado = servicio.registrar(datos("100", "30", true, "150"));
+        // Se envía margen 30 (en rango), pero 200 sobre costo 100 es 50 % del precio: queda pendiente.
+        Servicio guardado = servicio.registrar(datos("100", "30", true, "200"));
 
         assertEquals(0, guardado.getMargen().compareTo(new BigDecimal("50.00")));
-        assertEquals(0, guardado.getPrecioReferencial().compareTo(new BigDecimal("150")));
+        assertEquals(0, guardado.getPrecioReferencial().compareTo(new BigDecimal("200")));
         assertEquals(EstadoAprobacionServicio.PENDIENTE_APROBACION, guardado.getEstadoAprobacion());
     }
 
@@ -80,7 +80,7 @@ class ServicioAprobacionTest {
     void unPrecioManualDentroDelRangoQuedaAprobado() {
         Servicio guardado = servicio.registrar(datos("1000", "99", true, "1250"));
 
-        assertEquals(0, guardado.getMargen().compareTo(new BigDecimal("25.00")));
+        assertEquals(0, guardado.getMargen().compareTo(new BigDecimal("20.00")));
         assertEquals(EstadoAprobacionServicio.APROBADO, guardado.getEstadoAprobacion());
     }
 
@@ -88,7 +88,7 @@ class ServicioAprobacionTest {
     void elMargenDelPrecioManualSeRedondeaADosDecimales() {
         Servicio guardado = servicio.registrar(datos("300", null, true, "400"));
 
-        assertEquals(0, guardado.getMargen().compareTo(new BigDecimal("33.33")));
+        assertEquals(0, guardado.getMargen().compareTo(new BigDecimal("25.00")));
     }
 
     @Test
@@ -98,8 +98,17 @@ class ServicioAprobacionTest {
     }
 
     @Test
-    void unPrecioManualQueSuperaElCienPorCientoSeRechaza() {
-        assertThrows(BusinessException.class, () -> servicio.registrar(datos("100", null, true, "200.01")));
+    void unPrecioManualMuyAltoDejaMenosDeCienPorCientoYQuedaPendiente() {
+        // Con margen sobre el precio nunca llega a 100 %: 10 000 sobre costo 100 es 99 %.
+        Servicio guardado = servicio.registrar(datos("100", null, true, "10000"));
+
+        assertEquals(0, guardado.getMargen().compareTo(new BigDecimal("99.00")));
+        assertEquals(EstadoAprobacionServicio.PENDIENTE_APROBACION, guardado.getEstadoAprobacion());
+    }
+
+    @Test
+    void unMargenDeCienPorCientoSeRechaza() {
+        assertThrows(BusinessException.class, () -> servicio.registrar(datos("100", "100", false, null)));
         verify(servicios, never()).save(any());
     }
 
@@ -115,7 +124,7 @@ class ServicioAprobacionTest {
     void elPrecioCalculadoSigueLaFormula() {
         Servicio guardado = servicio.registrar(datos("1000", "25", false, null));
 
-        assertEquals(0, guardado.getPrecioReferencial().compareTo(new BigDecimal("1250.00")));
+        assertEquals(0, guardado.getPrecioReferencial().compareTo(new BigDecimal("1333.33")));
         assertEquals(EstadoAprobacionServicio.APROBADO, guardado.getEstadoAprobacion());
     }
 
@@ -153,7 +162,7 @@ class ServicioAprobacionTest {
         Servicio editado = servicio.actualizar(7L, datos("100", "20", false, null));
 
         assertEquals(EstadoAprobacionServicio.APROBADO, editado.getEstadoAprobacion());
-        assertEquals(0, editado.getPrecioReferencial().compareTo(new BigDecimal("120.00")));
+        assertEquals(0, editado.getPrecioReferencial().compareTo(new BigDecimal("125.00")));
     }
 
     // ---- Nadie aprueba ni rechaza lo suyo ----
