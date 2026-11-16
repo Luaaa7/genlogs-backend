@@ -2,7 +2,9 @@ package com.genlogs.app.fuentes.config;
 
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -114,6 +116,8 @@ public class FuentesConfigService {
         if (reglas == null || reglas.isEmpty()) {
             throw new BusinessException("Envía al menos una regla");
         }
+        // Todas se revisan antes de guardar: un lote con una regla inválida no deja nada a medias.
+        reglas.forEach(FuentesConfigService::exigirCampoDeLaPagina);
         String nombre = usuarioActual();
         Long idUsuario = idUsuario(nombre);
         List<FuenteSelector> actuales = selectorRepository.findByFuente_CodigoAndStatus(codigo, "A");
@@ -142,6 +146,25 @@ public class FuentesConfigService {
     }
 
     // ---------------------------------------------------------------- apoyo
+
+    /** Campos de la página LOGIN: dónde va el correo, la clave, el botón y la señal de que ya entró. */
+    private static final Set<CampoSelector> CAMPOS_LOGIN =
+            EnumSet.of(CampoSelector.USUARIO, CampoSelector.CLAVE, CampoSelector.ENVIAR, CampoSelector.EXITO);
+
+    /** LOGIN solo lleva sus 4 campos; BUSQUEDA y FICHA nunca los llevan. */
+    private static void exigirCampoDeLaPagina(SelectorFuenteDto r) {
+        if (r == null || r.pagina() == null || r.campo() == null) {
+            return; // la validación del DTO ya responde 400 por estos casos
+        }
+        boolean campoDeLogin = CAMPOS_LOGIN.contains(r.campo());
+        if (r.pagina() == PaginaSelector.LOGIN && !campoDeLogin) {
+            throw new BusinessException("La página LOGIN solo admite USUARIO, CLAVE, ENVIAR y EXITO; "
+                    + r.campo() + " va en BUSQUEDA o FICHA");
+        }
+        if (r.pagina() != PaginaSelector.LOGIN && campoDeLogin) {
+            throw new BusinessException(r.campo() + " solo va en la página LOGIN, no en " + r.pagina());
+        }
+    }
 
     FuenteConfigResponse aRespuesta(FuenteBusquedaConfig f) {
         return new FuenteConfigResponse(
