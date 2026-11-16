@@ -149,6 +149,9 @@ public class CotizacionService {
     private static final String MENSAJE_TIPO_CAMBIO =
             "El tipo de cambio cambió. Recalcula los importes y revísalos antes de solicitar aprobación.";
 
+    private static final String MENSAJE_MONEDA =
+            "La cotización solo admite soles o dólares.";
+
     @Transactional(readOnly = true)
     public CotizacionResponse buscarPorId(Long idCotizacion) {
         return toResponseDetalle(obtenerOLanzar(idCotizacion));
@@ -212,7 +215,6 @@ public class CotizacionService {
     @Transactional
     public CotizacionResponse crear(CotizacionRequest request) {
         Long idCliente = resolverIdCliente(request);
-        Long idContacto = request.getIdContacto();
         Integer idMoneda = resolverIdMoneda(request);
         Integer idCondicionPago = resolverIdCondicionPago(request);
         List<CotizacionDetalleRequest> lineas = resolverLineas(request);
@@ -223,23 +225,12 @@ public class CotizacionService {
                 .orElseThrow(() ->
                         new ResourceNotFoundException("Cliente no encontrado"));
 
-        ContactoTercero contacto = null;
-
-        if (idContacto != null) {
-            contacto = contactoTerceroRepository.findById(idContacto)
-                    .orElseThrow(() ->
-                            new ResourceNotFoundException("Contacto no encontrado"));
-
-            if (!contacto.getTercero().getIdTercero()
-                    .equals(cliente.getTercero().getIdTercero())) {
-                throw new BusinessException(
-                        "El contacto no pertenece a este cliente");
-            }
-        }
+        ContactoTercero contacto = resolverContacto(cliente, request.getIdContacto());
 
         Moneda moneda = monedaRepository.findById(idMoneda)
                 .orElseThrow(() ->
                         new ResourceNotFoundException("Moneda no encontrada"));
+        exigirMonedaCotizacion(moneda);
 
         CondicionPago condicionPago = condicionPagoRepository
                 .findById(idCondicionPago)
@@ -325,14 +316,11 @@ public class CotizacionService {
 
         Cliente cliente = clienteRepository.findById(idCliente)
                 .orElseThrow(() -> new ResourceNotFoundException("Cliente no encontrado"));
-        if (cotizacion.getContacto() != null
-                && !cotizacion.getContacto().getTercero().getIdTercero()
-                        .equals(cliente.getTercero().getIdTercero())) {
-            throw new BusinessException("El contacto no pertenece a este cliente");
-        }
+        ContactoTercero contacto = resolverContacto(cliente, request.getIdContacto());
 
         Moneda moneda = monedaRepository.findById(idMoneda)
                 .orElseThrow(() -> new ResourceNotFoundException("Moneda no encontrada"));
+        exigirMonedaCotizacion(moneda);
         CondicionPago condicionPago = condicionPagoRepository.findById(idCondicionPago)
                 .orElseThrow(() -> new ResourceNotFoundException("Condición de pago no encontrada"));
         SectorEconomico sector = request.getIdSectorEconomico() != null
@@ -343,6 +331,7 @@ public class CotizacionService {
         conservarTipoCambio(cotizacion, moneda, request);
         Usuario usuario = usuarioActual();
         cotizacion.setCliente(cliente);
+        cotizacion.setContacto(contacto);
         cotizacion.setMoneda(moneda);
         cotizacion.setCondicionPago(condicionPago);
         cotizacion.setSectorEconomico(sector);
@@ -702,6 +691,7 @@ public class CotizacionService {
     @Transactional
     public CotizacionResponse duplicar(Long idCotizacion) {
         Cotizacion original = obtenerOLanzar(idCotizacion);
+        exigirMonedaCotizacion(original.getMoneda());
 
         EstadoCotizacion estadoBorrador = estadoCotizacionRepository
                 .findByCodigoEstado("BORRADOR")
@@ -1257,8 +1247,9 @@ public class CotizacionService {
     }
 
     /**
-     * Propuesta C1, pendiente de confirmar. En USD valida el par propuesto contra
-     * tipo_cambio. En PEN (y el resto) ignora esos campos y sigue con el vigente.
+     * Propuesta C1, pendiente de confirmar. USD valida el par propuesto contra
+     * tipo_cambio. PEN ignora esos campos y usa el vigente. EUR no llega aquí:
+     * la cotización solo admite soles o dólares.
      * La cotización todavía no existe: no se reutiliza un tipoCambioUsado previo.
      */
     private BigDecimal tipoCambioAlCrear(Moneda moneda, CotizacionRequest request) {
@@ -1310,6 +1301,29 @@ public class CotizacionService {
             throw new BusinessException(MENSAJE_TIPO_CAMBIO);
         }
         return fila.getValor().setScale(4, RoundingMode.HALF_UP);
+    }
+
+    private ContactoTercero resolverContacto(Cliente cliente, Long idContacto) {
+        if (idContacto == null) {
+            return null;
+        }
+        ContactoTercero contacto = contactoTerceroRepository.findById(idContacto)
+                .orElseThrow(() -> new ResourceNotFoundException("Contacto no encontrado"));
+        if (!contacto.getTercero().getIdTercero()
+                .equals(cliente.getTercero().getIdTercero())) {
+            throw new BusinessException("El contacto no pertenece a este cliente");
+        }
+        return contacto;
+    }
+
+    private static void exigirMonedaCotizacion(Moneda moneda) {
+        String codigo = moneda == null || moneda.getCodigoMoneda() == null
+                ? ""
+                : moneda.getCodigoMoneda().trim();
+        if (!"PEN".equalsIgnoreCase(codigo)
+                && !TipoCambioService.MONEDA_USD.equalsIgnoreCase(codigo)) {
+            throw new BusinessException(MENSAJE_MONEDA);
+        }
     }
 
     private static boolean esUsd(Moneda moneda) {

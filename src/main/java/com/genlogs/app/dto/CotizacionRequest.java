@@ -25,7 +25,7 @@ public class CotizacionRequest {
     private Long idCliente;
     private Long clienteId;
 
-    /** Moneda por id. Alias aceptado: {@code moneda} con el código (PEN, USD, EUR). */
+    /** Moneda por id. Alias aceptado: {@code moneda}. La cotización solo admite PEN o USD. */
     private Integer idMoneda;
     private String moneda;
 

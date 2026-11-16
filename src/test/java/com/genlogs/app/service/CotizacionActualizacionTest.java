@@ -34,6 +34,7 @@ import com.genlogs.app.dto.CotizacionResponse;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.model.Cliente;
 import com.genlogs.app.model.CondicionPago;
+import com.genlogs.app.model.ContactoTercero;
 import com.genlogs.app.model.Cotizacion;
 import com.genlogs.app.model.CotizacionDetalle;
 import com.genlogs.app.model.EstadoCotizacion;
@@ -309,6 +310,94 @@ class CotizacionActualizacionTest {
         verify(cotizaciones, never()).save(any());
     }
 
+    @Test
+    void putConEurNoGuarda() {
+        Cotizacion cotizacion = cotizacion("BORRADOR", false);
+        when(cotizaciones.findById(15L)).thenReturn(Optional.of(cotizacion));
+        Cliente cliente = new Cliente();
+        cliente.setIdCliente(1L);
+        Tercero tercero = new Tercero();
+        tercero.setIdTercero(8L);
+        tercero.setRazonSocial("Minera Sur");
+        cliente.setTercero(tercero);
+        when(clientes.findById(1L)).thenReturn(Optional.of(cliente));
+        Moneda euro = new Moneda();
+        euro.setIdMoneda(3);
+        euro.setCodigoMoneda("EUR");
+        when(monedas.findById(3)).thenReturn(Optional.of(euro));
+        CotizacionRequest pedido = pedido();
+        pedido.setIdMoneda(3);
+
+        BusinessException error = assertThrows(BusinessException.class, () -> servicio.actualizar(15L, pedido));
+
+        assertEquals("La cotización solo admite soles o dólares.", error.getMessage());
+        assertEquals(0, TIPO_CAMBIO.compareTo(cotizacion.getTipoCambioUsado()));
+        verify(cotizaciones, never()).save(any());
+        verify(tipoCambioCotizacion, never()).vigente();
+    }
+
+    @Test
+    void putCambiaElContactoDelMismoCliente() {
+        Cotizacion cotizacion = cotizacion("BORRADOR", false);
+        cotizacion.setContacto(contacto(4L, 8L));
+        listo(cotizacion);
+        when(contactos.findById(5L)).thenReturn(Optional.of(contacto(5L, 8L)));
+        CotizacionRequest pedido = pedido();
+        pedido.setIdContacto(5L);
+
+        CotizacionResponse respuesta = servicio.actualizar(15L, pedido);
+
+        assertEquals(5L, cotizacion.getContacto().getIdContacto());
+        assertEquals(5L, respuesta.getIdContacto());
+        assertEquals(15L, respuesta.getIdCotizacion());
+        assertEquals("COT-15", respuesta.getCodigoCotizacion());
+    }
+
+    @Test
+    void putConContactoDeOtroClienteNoGuarda() {
+        Cotizacion cotizacion = cotizacion("BORRADOR", false);
+        ContactoTercero anterior = contacto(4L, 8L);
+        cotizacion.setContacto(anterior);
+        when(cotizaciones.findById(15L)).thenReturn(Optional.of(cotizacion));
+        Cliente cliente = new Cliente();
+        cliente.setIdCliente(1L);
+        Tercero tercero = new Tercero();
+        tercero.setIdTercero(8L);
+        tercero.setRazonSocial("Minera Sur");
+        cliente.setTercero(tercero);
+        when(clientes.findById(1L)).thenReturn(Optional.of(cliente));
+        when(contactos.findById(5L)).thenReturn(Optional.of(contacto(5L, 99L)));
+        CotizacionRequest pedido = pedido();
+        pedido.setIdContacto(5L);
+
+        BusinessException error = assertThrows(BusinessException.class, () -> servicio.actualizar(15L, pedido));
+
+        assertEquals("El contacto no pertenece a este cliente", error.getMessage());
+        assertEquals(anterior, cotizacion.getContacto());
+        verify(cotizaciones, never()).save(any());
+    }
+
+    @Test
+    void putSinIdContactoDejaElContactoEnNull() {
+        Cotizacion cotizacion = cotizacion("BORRADOR", false);
+        cotizacion.setContacto(contacto(4L, 8L));
+        listo(cotizacion);
+
+        CotizacionResponse respuesta = servicio.actualizar(15L, pedido());
+
+        assertEquals(null, cotizacion.getContacto());
+        assertEquals(null, respuesta.getIdContacto());
+    }
+
+    private static ContactoTercero contacto(Long idContacto, Long idTercero) {
+        Tercero tercero = new Tercero();
+        tercero.setIdTercero(idTercero);
+        ContactoTercero contacto = new ContactoTercero();
+        contacto.setIdContacto(idContacto);
+        contacto.setTercero(tercero);
+        return contacto;
+    }
+
     private void listo(Cotizacion cotizacion) {
         sesion();
         catalogo();
@@ -334,6 +423,7 @@ class CotizacionActualizacionTest {
         Cliente cliente = new Cliente();
         cliente.setIdCliente(1L);
         Tercero tercero = new Tercero();
+        tercero.setIdTercero(8L);
         tercero.setRazonSocial("Minera Sur");
         cliente.setTercero(tercero);
         SectorEconomico sector = new SectorEconomico();

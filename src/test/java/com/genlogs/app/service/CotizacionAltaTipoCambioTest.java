@@ -202,6 +202,47 @@ class CotizacionAltaTipoCambioTest {
     }
 
     @Test
+    void altaConEurNoGuardaNiUsaElVigente() {
+        Moneda euro = new Moneda();
+        euro.setIdMoneda(3);
+        euro.setCodigoMoneda("EUR");
+        when(monedas.findById(3)).thenReturn(Optional.of(euro));
+        when(monedas.findByCodigoMoneda("EUR")).thenReturn(Optional.of(euro));
+
+        for (String alias : List.of("EUR", "eur", " EUR ")) {
+            CotizacionRequest porAlias = pedido();
+            porAlias.setIdMoneda(null);
+            porAlias.setMoneda(alias);
+            BusinessException error = assertThrows(BusinessException.class, () -> servicio.crear(porAlias));
+            assertEquals("La cotización solo admite soles o dólares.", error.getMessage());
+        }
+
+        CotizacionRequest porId = pedido();
+        porId.setIdMoneda(3);
+        porId.setMoneda(null);
+        BusinessException porIdError = assertThrows(BusinessException.class, () -> servicio.crear(porId));
+        assertEquals("La cotización solo admite soles o dólares.", porIdError.getMessage());
+
+        verify(cotizaciones, never()).save(any());
+        verify(detalles, never()).save(any());
+        verify(tipoCambioCotizacion, never()).vigente();
+    }
+
+    @Test
+    void duplicarEurNoGuarda() {
+        Cotizacion original = original();
+        Moneda euro = new Moneda();
+        euro.setCodigoMoneda("EUR");
+        original.setMoneda(euro);
+        when(cotizaciones.findById(20L)).thenReturn(Optional.of(original));
+
+        BusinessException error = assertThrows(BusinessException.class, () -> servicio.duplicar(20L));
+
+        assertEquals("La cotización solo admite soles o dólares.", error.getMessage());
+        verify(cotizaciones, never()).save(any());
+    }
+
+    @Test
     void elAltaGuardaElTipoDeCambioVigenteYElDetalleLoDevuelve() {
         CotizacionResponse creada = servicio.crear(pedido());
 
