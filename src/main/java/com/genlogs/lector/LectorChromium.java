@@ -155,7 +155,8 @@ public final class LectorChromium implements ServicioLectura.Motor {
         int limit = req.maxResultados() == null ? 8 : req.maxResultados();
         for (Element root : roots.stream().limit(limit).toList()) {
             String nombre = valor(root, campo(rules, "nombre"));
-            BigDecimal precio = precio(valor(root, campo(rules, "precio")), texto(rules, "separadorDecimal"));
+            BigDecimal precio = precio(valor(root, campo(rules, "precio")), texto(rules, "separadorDecimal"),
+                    "menor".equals(texto(rules, "precioRango")));
             String moneda = valor(root, campo(rules, "moneda"));
             if (moneda == null) moneda = texto(rules, "codigoMoneda");
             String enlace = valor(root, campo(rules, "enlace"));
@@ -175,6 +176,22 @@ public final class LectorChromium implements ServicioLectura.Motor {
         String empty = texto(rules, "sinResultados");
         if (results.isEmpty() && (!roots.isEmpty() || empty == null || document.select(empty).isEmpty())) ValidacionLectura.fallar(Estado.REGLAS_INVALIDAS);
         return results;
+    }
+    /**
+     * KA (v3.3): con la regla precioRango="menor" (solo la manda el lector de Alibaba), un rango
+     * "US$12.50-15.00" vale el menor de los dos. Sin esa regla un rango sigue sin ser un precio.
+     */
+    private static BigDecimal precio(String value, String decimal, boolean rangoMenor) {
+        if (value == null) return null;
+        if (rangoMenor) {
+            String[] partes = value.split("\\s*[-–~]\\s*");
+            if (partes.length == 2) {
+                BigDecimal a = precio(partes[0], decimal);
+                BigDecimal b = precio(partes[1], decimal);
+                if (a != null && b != null) return a.min(b);
+            }
+        }
+        return precio(value, decimal);
     }
     private static BigDecimal precio(String value, String decimal) {
         if (value == null) return null;
