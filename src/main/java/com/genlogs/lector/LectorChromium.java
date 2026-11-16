@@ -37,7 +37,7 @@ public final class LectorChromium implements ServicioLectura.Motor {
                  Browser browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(true)
                          .setTimeout(restante(deadline)).setProxy(new Proxy(proxy.url()))
                          .setArgs(List.of("--proxy-bypass-list=<-loopback>", "--disable-quic",
-                                 "--force-webrtc-ip-handling-policy=disable_non_proxied_udp")))) {
+                                 "--force-webrtc-ip-handling-policy=disable_non_proxied_udp", "--disable-dev-shm-usage")))) {
                 Browser.NewContextOptions options = new Browser.NewContextOptions()
                         .setServiceWorkers(ServiceWorkerPolicy.BLOCK).setAcceptDownloads(false);
                 if (req.sesion() != null) options.setStorageState(req.sesion().storageState().toString());
