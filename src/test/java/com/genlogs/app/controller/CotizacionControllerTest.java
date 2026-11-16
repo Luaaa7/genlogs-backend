@@ -26,6 +26,7 @@ import com.genlogs.app.dto.CotizacionResponse;
 import com.genlogs.app.dto.PaginaResponse;
 import com.genlogs.app.exception.GlobalExceptionHandler;
 import com.genlogs.app.service.CotizacionService;
+import com.genlogs.app.service.RespuestaClienteService;
 
 /**
  * El listado de cotizaciones TOMABA el sortBy del frontend sin validarlo y lo
@@ -49,7 +50,8 @@ class CotizacionControllerTest {
         when(cotizacionService.listar(any(), any(), any(), any()))
                 .thenReturn(paginaVacia);
 
-        mockMvc = MockMvcBuilders.standaloneSetup(new CotizacionController(cotizacionService))
+        mockMvc = MockMvcBuilders.standaloneSetup(
+                        new CotizacionController(cotizacionService, mock(RespuestaClienteService.class)))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }
