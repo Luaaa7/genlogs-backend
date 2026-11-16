@@ -12,7 +12,7 @@ import java.math.BigDecimal;
  *
  * @param costoPuestoLima opcional: si no viene, se usa el de la referencia
  * @param margen          opcional: si no viene, se usa MARGEN_REP_SUGERIDO (D-17).
- *                        Es margen sobre el precio: precio = costo / (1 - margen/100), por eso va de 0 a menos de 100.
+ *                        Es margen sobre el precio (D-40): precio = costo / (1 - margen/100), por eso va de 0 a menos de 100.
  */
 public record ConvertirProductoRequest(
         @NotNull(message = "Indica la referencia que se convierte") Long idSourcing,
