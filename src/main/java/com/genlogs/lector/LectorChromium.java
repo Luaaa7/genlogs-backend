@@ -38,6 +38,7 @@ public final class LectorChromium implements ServicioLectura.Motor {
                          .setTimeout(restante(deadline)).setProxy(new Proxy(proxy.url()))
                          .setArgs(List.of("--proxy-bypass-list=<-loopback>", "--disable-quic",
                                  "--force-webrtc-ip-handling-policy=disable_non_proxied_udp", "--disable-dev-shm-usage")))) {
+                                 "--force-webrtc-ip-handling-policy=disable_non_proxied_udp")))) {
                 Browser.NewContextOptions options = new Browser.NewContextOptions()
                         .setServiceWorkers(ServiceWorkerPolicy.BLOCK).setAcceptDownloads(false);
                 if (req.sesion() != null) options.setStorageState(req.sesion().storageState().toString());
