@@ -157,7 +157,8 @@ public final class LectorChromium implements ServicioLectura.Motor {
             String nombre = valor(root, campo(rules, "nombre"));
             String textoPrecio = valor(root, campo(rules, "precio"));
             if (textoPrecio != null && (textoPrecio.indexOf('€') >= 0 || textoPrecio.indexOf('£') >= 0)) continue;
-            BigDecimal precio = precio(textoPrecio, texto(rules, "separadorDecimal"));
+            BigDecimal precio = precio(textoPrecio, texto(rules, "separadorDecimal"),
+                    "mayor".equals(texto(rules, "precioRango")));
             String moneda = moneda(valor(root, campo(rules, "moneda")), textoPrecio, texto(rules, "codigoMoneda"));
             String enlace = valor(root, campo(rules, "enlace"));
             if (enlace == null && !buscar) enlace = url;
@@ -193,6 +194,23 @@ public final class LectorChromium implements ServicioLectura.Motor {
             return "USD";
         }
         return respaldo;
+    }
+    /**
+     * KA (v3.3): con la regla precioRango="mayor" (solo la manda el lector de Alibaba), un rango
+     * "US$12.50-15.00" vale el mayor de los dos: el menor suele ser por cientos de unidades y se
+     * compran pocas. Sin esa regla un rango sigue sin ser un precio.
+     */
+    private static BigDecimal precio(String value, String decimal, boolean rangoMayor) {
+        if (value == null) return null;
+        if (rangoMayor) {
+            String[] partes = value.split("\\s*[-–~]\\s*");
+            if (partes.length == 2) {
+                BigDecimal a = precio(partes[0], decimal);
+                BigDecimal b = precio(partes[1], decimal);
+                if (a != null && b != null) return a.max(b);
+            }
+        }
+        return precio(value, decimal);
     }
     private static BigDecimal precio(String value, String decimal) {
         if (value == null) return null;
