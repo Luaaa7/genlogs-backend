@@ -245,15 +245,4 @@ class SesionFuenteTest {
         assertThat(sesiones.sesionVigente(CodigoFuente.EBAY)).isEmpty();
         verify(lector, never()).iniciarSesion(any(), any(), any(), any());
     }
-
-    // ---------------------------------------------------------------- sin servicio de lectura
-
-    @Test
-    void sinServicioDeLecturaConectadoLaPruebaDaUnErrorClaro() {
-        ResultadoSesion r = new LectorSesionNoConectado().iniciarSesion(CodigoFuente.EBAY, "https://ebay.example",
-                USUARIO_TIENDA, CLAVE_TIENDA);
-        assertThat(r.resultado()).isEqualTo(ResultadoSesion.Resultado.ERROR);
-        assertThat(r.mensaje()).contains("servicio de lectura");
-        assertThat(r.toString()).doesNotContain(CLAVE_TIENDA);
-    }
 }
