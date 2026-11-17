@@ -81,4 +81,35 @@ class NormalizadorFichaTest {
         // Un enlace que no es URL válida se compara tal cual.
         assertThat(NormalizadorFicha.claveEnlace("no es url")).isEqualTo("no es url");
     }
+
+    @Test
+    void elRastreoDentroDeUrl_noCuentaComoOtroProducto() {
+        List<ResultadoBusqueda> r = NormalizadorFicha.normalizar(List.of(
+                new FichaFuente("Filtro", null, "10", "USD", null,
+                        "https://www.amazon.com/sspa/click?pd_rd_i=B0AAAA1111&url=%2Fdp%2FB0AAAA1111%2Fref%3Dsspa_dk_detail_0%3Fpsc%3D1"),
+                new FichaFuente("Filtro patrocinado", null, "10", "USD", null,
+                        "https://www.amazon.com/sspa/click?pd_rd_i=B0AAAA1111&url=%2Fdp%2FB0AAAA1111%2Fref%3Dsspa_dk_detail_1%3Fpsc%3D1"),
+                new FichaFuente("Otro", null, "11", "USD", null,
+                        "https://www.amazon.com/sspa/click?pd_rd_i=B0BBBB2222&url=%2Fdp%2FB0BBBB2222%2Fref%3Dsspa_dk_detail_0")), consulta);
+
+        assertThat(r).extracting(ResultadoBusqueda::titulo).containsExactly("Filtro", "Otro");
+    }
+
+    @Test
+    void unParametroDeRastreoDeOtroSitio_noSeQuitaEnUnSitioDesconocido() {
+        // "tag" es rastreo en Amazon, pero en otro sitio puede identificar el producto.
+        assertThat(NormalizadorFicha.claveEnlace("https://www.tienda.com/p?id=1&tag=a"))
+                .isEqualTo("tienda.com/p?id=1&tag=a");
+        assertThat(NormalizadorFicha.claveEnlace("https://www.tienda.com/p?id=1&tag=b"))
+                .isNotEqualTo(NormalizadorFicha.claveEnlace("https://www.tienda.com/p?id=1&tag=a"));
+        assertThat(NormalizadorFicha.claveEnlace("https://www.tienda.com/p?id=1&utm_source=x&gclid=y"))
+                .isEqualTo("tienda.com/p?id=1");
+    }
+
+    @Test
+    void laBarraFinalYElRefDeLaRuta_noCambianLaClave() {
+        assertThat(NormalizadorFicha.claveEnlace("https://www.amazon.com/dp/B000123/"))
+                .isEqualTo(NormalizadorFicha.claveEnlace("https://www.amazon.com/dp/B000123/ref=sr_1_1"))
+                .isEqualTo("amazon.com/dp/B000123");
+    }
 }
