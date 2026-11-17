@@ -1,7 +1,9 @@
 package com.genlogs.app.sourcing;
 
 import java.math.BigDecimal;
+import java.net.URI;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -12,10 +14,24 @@ import com.genlogs.app.fuentes.config.FichaFuente;
 /**
  * Normaliza las fichas del lector (BPMN 9-B.1 tarea A): precio vacío se queda vacío (nunca 0),
  * moneda en ISO de 3 letras, sin duplicar el enlace, máximo 8.
+ *
+ * <p>La clave de enlace normaliza esquema y host a minúsculas, elimina www.,
+ * ignora el fragmento y descarta parámetros de rastreo. El camino (path) se
+ * conserva tal cual: las URLs pueden ser sensibles a mayúsculas y minúsculas.
  */
 final class NormalizadorFicha {
 
     static final int MAX_FICHAS = 8;
+
+    /** Parámetros de rastreo: cambian entre un resultado normal y uno patrocinado del mismo producto.
+     * No se eliminan parámetros que identifiquen vendedor (smid, merchant, seller...),
+     * variante (color, size, variant...) o la identidad del producto (pd_rd_i, url, id...). */
+    private static final Set<String> RASTREO = Set.of(
+            "ref", "ref_", "qid", "sr", "sprefix", "crid", "keywords", "dib", "dib_tag", "th", "psc",
+            "spla", "sp_csd", "spc", "content-id", "linkcode", "tag", "camp", "creative",
+            "_skw", "itmmeta", "hash", "itmprp", "_trksid", "_trkparms", "_from", "mkcid", "mkevt",
+            "spm", "scm", "algo_pvid", "algo_exp_id", "pvid", "utparam", "pdp_npi", "pdp_ext_f",
+            "gclid", "fbclid", "srsltid", "tracking_id", "searchvariation");
 
     private NormalizadorFicha() {
     }
@@ -35,7 +51,7 @@ final class NormalizadorFicha {
             if (nombre == null && enlace == null) {
                 continue;
             }
-            String clave = enlace != null ? enlace : nombre + "|" + texto(f.precio());
+            String clave = enlace != null ? claveEnlace(enlace) : nombre + "|" + texto(f.precio());
             if (!vistos.add(clave)) {
                 continue;
             }
@@ -53,6 +69,58 @@ final class NormalizadorFicha {
             }
         }
         return List.copyOf(out);
+    }
+
+    /**
+     * Qué producto es el enlace, para no repetirlo: sin "www.", sin "#..." y sin los parámetros
+     * de rastreo; los demás parámetros se ordenan. Si el enlace no se puede leer como URL,
+     * se compara tal cual.
+     */
+    static String claveEnlace(String enlace) {
+        try {
+            URI uri = new URI(enlace);
+            String esquema = uri.getScheme() == null ? "http" : uri.getScheme().toLowerCase(Locale.ROOT);
+            String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
+            if (host.startsWith("www.")) {
+                host = host.substring(4);
+            }
+            int puerto = uri.getPort();
+            String puertoStr = "";
+            if (puerto != -1 && !((esquema.equals("http") && puerto == 80)
+                    || (esquema.equals("https") && puerto == 443))) {
+                puertoStr = ":" + puerto;
+            }
+            String camino = uri.getRawPath() == null ? "" : uri.getRawPath();
+
+            List<String> parametros = new ArrayList<>();
+            String query = uri.getRawQuery();
+            if (query != null) {
+                for (String par : query.split("&")) {
+                    if (par.isEmpty()) {
+                        continue;
+                    }
+                    String nombre = par.split("=", 2)[0].toLowerCase(Locale.ROOT);
+                    if (!esRastreo(nombre)) {
+                        parametros.add(par);
+                    }
+                }
+            }
+            Collections.sort(parametros);
+
+            StringBuilder sb = new StringBuilder();
+            sb.append(esquema).append("://").append(host).append(puertoStr).append(camino);
+            if (!parametros.isEmpty()) {
+                sb.append('?').append(String.join("&", parametros));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return enlace;
+        }
+    }
+
+    private static boolean esRastreo(String nombre) {
+        return RASTREO.contains(nombre) || nombre.startsWith("utm_") || nombre.startsWith("pf_rd_")
+                || (nombre.startsWith("pd_rd_") && !nombre.equals("pd_rd_i"));
     }
 
     /** Vacío o no numérico → null. Nunca BigDecimal.ZERO. */

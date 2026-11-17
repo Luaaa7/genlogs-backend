@@ -25,5 +25,7 @@ public enum TipoAviso {
     MARGEN_FUERA_RANGO,
     /** BE-A: alguien pidió acceso al portal para una empresa que ya es cliente; lo activa el Jefe Adm. */
     ACCESO_PORTAL_PENDIENTE,
+    /** v3.3 (L4): una fuente de búsqueda pasó a CON_ERROR o REQUIERE_VERIFICACION; aviso al Jefe Adm. */
+    FUENTE_CON_ERROR,
     GENERAL
 }
