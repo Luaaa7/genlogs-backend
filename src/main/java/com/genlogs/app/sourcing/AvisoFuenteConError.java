@@ -23,8 +23,9 @@ import com.genlogs.app.service.NotificacionService;
  * Jefe Administrativo en la campanita, como máximo una vez al día por fuente.
  * Solo campanita, sin correo: D-21 deja el correo para alto valor y vencidos.
  *
- * Lo llama el servicio de sesión (L1) al cambiar el estado de la fuente. No guarda
- * nada propio: la marca de «ya avisado hoy» es la misma notificación.
+ * Lo llama {@link ConsultaFuenteService} cuando una lectura falla o pide verificación, y
+ * cuando la sesión no se puede renovar en plena búsqueda. No guarda nada propio: la marca
+ * de «ya avisado hoy» es la misma notificación.
  */
 @Service
 public class AvisoFuenteConError {

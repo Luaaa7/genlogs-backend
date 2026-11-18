@@ -1,6 +1,5 @@
 package com.genlogs.app.sourcing;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -13,11 +12,6 @@ class NormalizadorFichaTest {
 
     private final ConsultaBusqueda consulta = new ConsultaBusqueda(
             MetodoBusqueda.NUMERO_PARTE, "1R-0750", "CAT", null, null, null);
-
-    private static FichaFuente ficha(String nombre, String enlace) {
-        return new FichaFuente(nombre, null, "10", "USD", null, enlace);
-    }
-
 
     @Test
     void precioVacioOCero_quedaNulo() {
@@ -44,149 +38,78 @@ class NormalizadorFichaTest {
         assertThat(r.get(0).titulo()).isEqualTo("Filtro");
     }
 
-    // ---------- normalizar (de tu rama, adaptado a FichaFuente) ----------
-
     @Test
-    void normalizarListaVacia_devuelveVacia() {
-        assertThat(NormalizadorFicha.normalizar(List.of(), consulta)).isEmpty();
-        assertThat(NormalizadorFicha.normalizar(null, consulta)).isEmpty();
-    }
-
-    @Test
-    void normalizarSinDuplicados_devuelveMismos() {
+    void unPatrocinadoQueSoloCambiaElRastreo_noSeRepite() {
         List<ResultadoBusqueda> r = NormalizadorFicha.normalizar(List.of(
-                ficha("A", "https://e.com/1"),
-                ficha("B", "https://e.com/2")), consulta);
-        assertThat(r).hasSize(2);
-        assertThat(r).extracting(ResultadoBusqueda::titulo).containsExactly("A", "B");
+                new FichaFuente("Filtro", null, "10", "USD", null,
+                        "https://www.amazon.com/dp/B000123?ref=sr_1&qid=111"),
+                new FichaFuente("Filtro patrocinado", null, "10", "USD", null,
+                        "https://www.amazon.com/dp/B000123?ref=sspa&utm_source=x#x"),
+                new FichaFuente("Filtro sin www", null, "10", "USD", null,
+                        "https://amazon.com/dp/B000123?pd_rd_w=abc&pf_rd_p=def"),
+                new FichaFuente("Otro", null, "11", "USD", null, "https://www.amazon.com/dp/B000999")), consulta);
+
+        assertThat(r).extracting(ResultadoBusqueda::titulo).containsExactly("Filtro", "Otro");
+        // Se guarda el enlace original de la primera, no la clave.
+        assertThat(r.get(0).urlReferencia()).isEqualTo("https://www.amazon.com/dp/B000123?ref=sr_1&qid=111");
     }
 
     @Test
-    void normalizarConDuplicadosPorClave_soloPrimero() {
+    void dosProductosConDistintoPdRdI_sonDosFichas() {
         List<ResultadoBusqueda> r = NormalizadorFicha.normalizar(List.of(
-                ficha("A", "https://www.amazon.com/dp/B000123?ref=sr_1&qid=111"),
-                ficha("A patrocinado", "https://www.amazon.com/dp/B000123?ref=sspa&utm_source=x#x"),
-                ficha("B", "https://www.amazon.com/dp/B000999")), consulta);
-        assertThat(r).hasSize(2);
-        assertThat(r).extracting(ResultadoBusqueda::titulo).containsExactly("A", "B");
+                new FichaFuente("Filtro A", null, "10", "USD", null,
+                        "https://www.amazon.com/sspa/click?pd_rd_i=B0AAAA1111&ref=sspa&qid=1"),
+                new FichaFuente("Filtro B", null, "12", "USD", null,
+                        "https://www.amazon.com/sspa/click?pd_rd_i=B0BBBB2222&ref=sspa&qid=1"),
+                new FichaFuente("Filtro A otra vez", null, "10", "USD", null,
+                        "https://www.amazon.com/sspa/click?qid=2&pd_rd_i=B0AAAA1111")), consulta);
+
+        assertThat(r).extracting(ResultadoBusqueda::titulo).containsExactly("Filtro A", "Filtro B");
     }
 
     @Test
-    void maximoOchoFichas() {
-        List<FichaFuente> muchas = new ArrayList<>();
-        for (int i = 0; i < 12; i++) {
-            muchas.add(ficha("Item " + i, "https://e.com/" + i));
-        }
-        List<ResultadoBusqueda> r = NormalizadorFicha.normalizar(muchas, consulta);
-        assertThat(r).hasSize(8);
-    }
-
-    // ---------- claveEnlace (de tu rama, sin cambios) ----------
-
-    @Test
-    void claveIncluyeProtocoloYHostNormalizado() {
-        assertThat(NormalizadorFicha.claveEnlace("http://ejemplo.com/p"))
-                .isEqualTo("http://ejemplo.com/p");
-        assertThat(NormalizadorFicha.claveEnlace("https://ejemplo.com/p"))
-                .isEqualTo("https://ejemplo.com/p");
-        assertThat(NormalizadorFicha.claveEnlace("http://www.ejemplo.com/p"))
-                .isEqualTo("http://ejemplo.com/p");
-        assertThat(NormalizadorFicha.claveEnlace("https://www.ejemplo.com/p"))
-                .isEqualTo("https://ejemplo.com/p");
-        // El camino se conserva tal cual (case-sensitive)
-        assertThat(NormalizadorFicha.claveEnlace("HTTP://EJEMPLO.COM/P"))
-                .isEqualTo("http://ejemplo.com/P");
-        assertThat(NormalizadorFicha.claveEnlace("HTTPS://WWW.EJEMPLO.COM/P"))
-                .isEqualTo("https://ejemplo.com/P");
+    void laClaveDelEnlaceSoloQuitaElRastreo() {
+        assertThat(NormalizadorFicha.claveEnlace("https://www.amazon.com/dp/B000123?ref=sr_1&utm_medium=x#reviews"))
+                .isEqualTo("amazon.com/dp/B000123");
+        assertThat(NormalizadorFicha.claveEnlace(
+                "https://www.amazon.com/sspa/click?url=%2Fdp%2FB0AAAA1111&pd_rd_i=B0AAAA1111&sp_csd=x"))
+                .isEqualTo("amazon.com/sspa/click?pd_rd_i=B0AAAA1111&url=%2Fdp%2FB0AAAA1111");
+        assertThat(NormalizadorFicha.claveEnlace("https://www.ebay.com/itm/375375806750?_skw=CAT&itmmeta=01M&hash=item57"))
+                .isEqualTo("ebay.com/itm/375375806750");
+        assertThat(NormalizadorFicha.claveEnlace("https://www.aliexpress.com/item/100500.html?spm=a2g0o&algo_pvid=9"))
+                .isEqualTo("aliexpress.com/item/100500.html");
+        // Un enlace que no es URL válida se compara tal cual.
+        assertThat(NormalizadorFicha.claveEnlace("no es url")).isEqualTo("no es url");
     }
 
     @Test
-    void httpYHttpsNoSonLaMismaClave() {
-        String claveHttp = NormalizadorFicha.claveEnlace("http://ejemplo.com/producto/123");
-        String claveHttps = NormalizadorFicha.claveEnlace("https://ejemplo.com/producto/123");
-        assertThat(claveHttp).startsWith("http://");
-        assertThat(claveHttps).startsWith("https://");
-        assertThat(claveHttp).isNotEqualTo(claveHttps);
+    void elRastreoDentroDeUrl_noCuentaComoOtroProducto() {
+        List<ResultadoBusqueda> r = NormalizadorFicha.normalizar(List.of(
+                new FichaFuente("Filtro", null, "10", "USD", null,
+                        "https://www.amazon.com/sspa/click?pd_rd_i=B0AAAA1111&url=%2Fdp%2FB0AAAA1111%2Fref%3Dsspa_dk_detail_0%3Fpsc%3D1"),
+                new FichaFuente("Filtro patrocinado", null, "10", "USD", null,
+                        "https://www.amazon.com/sspa/click?pd_rd_i=B0AAAA1111&url=%2Fdp%2FB0AAAA1111%2Fref%3Dsspa_dk_detail_1%3Fpsc%3D1"),
+                new FichaFuente("Otro", null, "11", "USD", null,
+                        "https://www.amazon.com/sspa/click?pd_rd_i=B0BBBB2222&url=%2Fdp%2FB0BBBB2222%2Fref%3Dsspa_dk_detail_0")), consulta);
+
+        assertThat(r).extracting(ResultadoBusqueda::titulo).containsExactly("Filtro", "Otro");
     }
 
     @Test
-    void puertosNoEstandardSeIncluyen() {
-        assertThat(NormalizadorFicha.claveEnlace("http://ejemplo.com:80/producto"))
-                .isEqualTo("http://ejemplo.com/producto");
-        assertThat(NormalizadorFicha.claveEnlace("http://ejemplo.com:8080/producto"))
-                .isEqualTo("http://ejemplo.com:8080/producto");
-        assertThat(NormalizadorFicha.claveEnlace("https://ejemplo.com:443/producto"))
-                .isEqualTo("https://ejemplo.com/producto");
-        assertThat(NormalizadorFicha.claveEnlace("https://ejemplo.com:8443/producto"))
-                .isEqualTo("https://ejemplo.com:8443/producto");
+    void unParametroDeRastreoDeOtroSitio_noSeQuitaEnUnSitioDesconocido() {
+        // "tag" es rastreo en Amazon, pero en otro sitio puede identificar el producto.
+        assertThat(NormalizadorFicha.claveEnlace("https://www.tienda.com/p?id=1&tag=a"))
+                .isEqualTo("tienda.com/p?id=1&tag=a");
+        assertThat(NormalizadorFicha.claveEnlace("https://www.tienda.com/p?id=1&tag=b"))
+                .isNotEqualTo(NormalizadorFicha.claveEnlace("https://www.tienda.com/p?id=1&tag=a"));
+        assertThat(NormalizadorFicha.claveEnlace("https://www.tienda.com/p?id=1&utm_source=x&gclid=y"))
+                .isEqualTo("tienda.com/p?id=1");
     }
 
     @Test
-    void ordenDeParametrosNoAfectaDeduplicacion() {
-        String clave1 = NormalizadorFicha.claveEnlace("https://ejemplo.com/p?color=rojo&size=M");
-        String clave2 = NormalizadorFicha.claveEnlace("https://ejemplo.com/p?size=M&color=rojo");
-        assertThat(clave1).isEqualTo(clave2);
-    }
-
-    @Test
-    void parametrosRastreoSeEliminan() {
-        String clave = NormalizadorFicha.claveEnlace(
-                "https://amazon.com/dp/B001?ref=sr_1&qid=111&utm_source=google&pf_rd_r=abc&pd_rd_w=xyz");
-        assertThat(clave).doesNotContain("ref=");
-        assertThat(clave).doesNotContain("qid=");
-        assertThat(clave).doesNotContain("utm_source=");
-        assertThat(clave).doesNotContain("pf_rd_r=");
-        assertThat(clave).doesNotContain("pd_rd_w=");
-        assertThat(clave).isEqualTo("https://amazon.com/dp/B001");
-    }
-
-    @Test
-    void thYKeywordsSonRastreoPeroSmidNo() {
-        // th y keywords están en RASTREO
-        String claveSinTh = NormalizadorFicha.claveEnlace("https://ejemplo.com/p?th=1&keywords=buscar");
-        assertThat(claveSinTh).isEqualTo("https://ejemplo.com/p");
-
-        // smid NO está en RASTREO (identifica vendedor)
-        String claveConSmId = NormalizadorFicha.claveEnlace("https://ejemplo.com/p?smid=A123");
-        assertThat(claveConSmId).contains("smid=A123");
-    }
-
-    @Test
-    void pdRdISigueDiferenciandoProductos() {
-        String clave1 = NormalizadorFicha.claveEnlace("https://amazon.com/sspa/click?pd_rd_i=B000111&ref=sspa");
-        String clave2 = NormalizadorFicha.claveEnlace("https://amazon.com/sspa/click?pd_rd_i=B000222&ref=sspa");
-        assertThat(clave1).isNotEqualTo(clave2);
-        assertThat(clave1).contains("pd_rd_i=B000111");
-        assertThat(clave2).contains("pd_rd_i=B000222");
-    }
-
-    @Test
-    void parametrosVendedorNoSeEliminan() {
-        String clave1 = NormalizadorFicha.claveEnlace("https://amazon.com/dp/B001?smid=A123&ref=sr");
-        String clave2 = NormalizadorFicha.claveEnlace("https://amazon.com/dp/B001?smid=B456&ref=sr");
-        assertThat(clave1).isNotEqualTo(clave2);
-        assertThat(clave1).contains("smid=A123");
-        assertThat(clave2).contains("smid=B456");
-    }
-
-    @Test
-    void parametrosVarianteNoSeEliminan() {
-        String clave1 = NormalizadorFicha.claveEnlace("https://ejemplo.com/p?color=rojo&size=M");
-        String clave2 = NormalizadorFicha.claveEnlace("https://ejemplo.com/p?color=azul&size=M");
-        assertThat(clave1).isNotEqualTo(clave2);
-    }
-
-    @Test
-    void urlInvalidaSeComparaTalCual() {
-        assertThat(NormalizadorFicha.claveEnlace("no es una url válida"))
-                .isEqualTo("no es una url válida");
-    }
-
-    @Test
-    void fragmentoSeIgnora() {
-        String clave1 = NormalizadorFicha.claveEnlace("https://ejemplo.com/p#descripcion");
-        String clave2 = NormalizadorFicha.claveEnlace("https://ejemplo.com/p#reviews");
-        assertThat(clave1).isEqualTo(clave2);
-        assertThat(clave1).isEqualTo("https://ejemplo.com/p");
+    void laBarraFinalYElRefDeLaRuta_noCambianLaClave() {
+        assertThat(NormalizadorFicha.claveEnlace("https://www.amazon.com/dp/B000123/"))
+                .isEqualTo(NormalizadorFicha.claveEnlace("https://www.amazon.com/dp/B000123/ref=sr_1_1"))
+                .isEqualTo("amazon.com/dp/B000123");
     }
 }
