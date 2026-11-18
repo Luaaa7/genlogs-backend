@@ -22,12 +22,9 @@ import com.genlogs.app.fuentes.config.FuenteSelectorRepository;
 import com.genlogs.app.fuentes.config.LectorFuente;
 import com.genlogs.app.fuentes.config.ResultadoLectura;
 import com.genlogs.app.fuentes.config.SesionFuenteService;
-import com.genlogs.app.repository.NotificacionRepository;
-import com.genlogs.app.service.NotificacionService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -43,7 +40,7 @@ class ConsultaFuenteCuotaDinamicaTest {
 
     private SesionFuenteService sesiones;
     private LectorFuente lector;
-    private NotificacionService notificaciones;
+    private AvisoFuenteConError avisos;
     private FuenteBusquedaConfigRepository fuenteRepo;
     private ConsultaFuenteService servicio;
     private ConsultaBusqueda consulta;
@@ -54,13 +51,12 @@ class ConsultaFuenteCuotaDinamicaTest {
         sesiones = mock(SesionFuenteService.class);
         lector = mock(LectorFuente.class);
         fuenteRepo = mock(FuenteBusquedaConfigRepository.class);
-        notificaciones = mock(NotificacionService.class);
+        avisos = mock(AvisoFuenteConError.class);
         when(selectores.findByFuente_CodigoAndStatus(any(), eq("A"))).thenReturn(List.of());
         when(sesiones.sesionVigente(any())).thenReturn(Optional.of("sesion-opaca"));
         when(lector.buscar(any(), any(), any(), any(), any())).thenReturn(ResultadoLectura.sinResultados());
         servicio = new ConsultaFuenteService(fuenteRepo, selectores, sesiones, lector,
-                mock(com.genlogs.app.sourcing.PausaFuente.class), notificaciones,
-                mock(NotificacionRepository.class));
+                mock(com.genlogs.app.sourcing.PausaFuente.class), avisos);
         consulta = new ConsultaBusqueda(MetodoBusqueda.NUMERO_PARTE, "1R-0750", "Caterpillar",
                 null, null, null);
     }
@@ -216,7 +212,7 @@ class ConsultaFuenteCuotaDinamicaTest {
         assertThat(servicio.consultar(ebay, consulta).estado()).isEqualTo(EstadoConsultaFuente.NO_CONECTADO);
         assertThat(servicio.consultar(ebay, consulta).estado()).isEqualTo(EstadoConsultaFuente.NO_CONECTADO);
         verify(fuenteRepo, never()).save(any());
-        verify(notificaciones, never()).avisarRol(any(), any(), any(), any(), any(), anyBoolean());
+        verify(avisos, never()).avisarSiCorresponde(any(), any(), any());
 
         when(lector.buscar(any(), any(), any(), any(), any()))
                 .thenReturn(ResultadoLectura.error("tiempo agotado", true));

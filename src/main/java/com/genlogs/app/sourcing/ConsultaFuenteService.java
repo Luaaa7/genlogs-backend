@@ -1,9 +1,7 @@
 package com.genlogs.app.sourcing;
 
 import java.time.Clock;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -13,8 +11,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
-import com.genlogs.app.enums.RolSistema;
-import com.genlogs.app.enums.TipoAviso;
 import com.genlogs.app.fuentes.ControlCuota;
 import com.genlogs.app.fuentes.FuenteNoDisponibleException;
 import com.genlogs.app.fuentes.config.CodigoFuente;
@@ -28,8 +24,6 @@ import com.genlogs.app.fuentes.config.LectorFuenteNoConectado;
 import com.genlogs.app.fuentes.config.ResultadoLectura;
 import com.genlogs.app.fuentes.config.SelectorFuenteDto;
 import com.genlogs.app.fuentes.config.SesionFuenteService;
-import com.genlogs.app.repository.NotificacionRepository;
-import com.genlogs.app.service.NotificacionService;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -41,20 +35,15 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class ConsultaFuenteService {
 
-    static final ZoneId ZONA = ZoneId.of("America/Lima");
     private static final String PROCESO = "CONSULTA_FUENTE";
     private static final int LARGO_ERROR = 500;
-    /** Enlace único por fuente; tipo GENERAL para no chocar con los tipos del PR #89. */
-    private static final String ENLACE_ERROR = "/configuracion/fuentes/%s#lectura-error";
-    private static final String ENLACE_VERIFICACION = "/configuracion/fuentes/%s#lectura-verificacion";
 
     private final FuenteBusquedaConfigRepository fuenteRepository;
     private final FuenteSelectorRepository selectorRepository;
     private final SesionFuenteService sesiones;
     private final LectorFuente lector;
     private final PausaFuente pausa;
-    private final NotificacionService notificaciones;
-    private final NotificacionRepository notificacionRepository;
+    private final AvisoFuenteConError avisos;
     private final ConcurrentHashMap<CodigoFuente, ControlCuota> cuotas = new ConcurrentHashMap<>();
     private Clock clock = Clock.systemDefaultZone();
 
@@ -63,15 +52,13 @@ public class ConsultaFuenteService {
                                  SesionFuenteService sesiones,
                                  @Qualifier(LectorFuenteDespachador.BEAN) LectorFuente lector,
                                  PausaFuente pausa,
-                                 NotificacionService notificaciones,
-                                 NotificacionRepository notificacionRepository) {
+                                 AvisoFuenteConError avisos) {
         this.fuenteRepository = fuenteRepository;
         this.selectorRepository = selectorRepository;
         this.sesiones = sesiones;
         this.lector = lector;
         this.pausa = pausa;
-        this.notificaciones = notificaciones;
-        this.notificacionRepository = notificacionRepository;
+        this.avisos = avisos;
     }
 
     void setClock(Clock clock) {
@@ -92,6 +79,7 @@ public class ConsultaFuenteService {
 
         Optional<String> sesion = pedirSesion(codigo);
         if (sesion.isEmpty()) {
+            avisarSesionNoRenovada(codigo);
             return ConsultaFuente.de(nombre, EstadoConsultaFuente.OMITIDA_SESION,
                     fuente.getNombre() + " se omitió: sin sesión vigente.", List.of());
         }
@@ -124,6 +112,7 @@ public class ConsultaFuenteService {
         CodigoFuente codigo = fuente.getCodigo();
         Optional<String> sesion = pedirSesion(codigo);
         if (sesion.isEmpty()) {
+            avisarSesionNoRenovada(codigo);
             return ConsultaFuente.de(codigo.name(), EstadoConsultaFuente.OMITIDA_SESION,
                     fuente.getNombre() + " se omitió: sin sesión vigente.", List.of());
         }
@@ -179,20 +168,16 @@ public class ConsultaFuenteService {
             case BLOQUEADA -> ConsultaFuente.de(nombre, EstadoConsultaFuente.BLOQUEADA,
                     lectura.mensaje() != null ? lectura.mensaje() : "La tienda bloqueó la consulta.", List.of());
             case VERIFICACION -> {
-                sesiones.marcarVerificacion(fuente.getCodigo(),
-                        lectura.mensaje() != null ? lectura.mensaje()
-                                : "La tienda pidió un código o CAPTCHA al buscar.");
-                avisar(fuente, String.format(ENLACE_VERIFICACION, nombre),
-                        fuente.getNombre() + " pide verificación",
-                        fuente.getNombre() + " pidió un código o CAPTCHA al consultar. Hay que volver a probar la sesión.");
+                String motivo = lectura.mensaje() != null ? lectura.mensaje()
+                        : "La tienda pidió un código o CAPTCHA al buscar.";
+                sesiones.marcarVerificacion(fuente.getCodigo(), motivo);
+                avisos.avisarSiCorresponde(nombre, EstadoFuente.REQUIERE_VERIFICACION.name(), motivo);
                 yield ConsultaFuente.de(nombre, EstadoConsultaFuente.REQUIERE_VERIFICACION,
                         lectura.mensaje(), List.of());
             }
             case ERROR -> {
                 marcarError(fuente, lectura.mensaje());
-                avisar(fuente, String.format(ENLACE_ERROR, nombre),
-                        fuente.getNombre() + " con error",
-                        fuente.getNombre() + " falló al consultarse. La búsqueda sigue con las demás tiendas.");
+                avisos.avisarSiCorresponde(nombre, EstadoFuente.CON_ERROR.name(), fuente.getUltimoError());
                 yield ConsultaFuente.de(nombre, EstadoConsultaFuente.CON_ERROR,
                         lectura.mensaje() != null ? lectura.mensaje() : "La tienda no respondió.", List.of());
             }
@@ -218,18 +203,21 @@ public class ConsultaFuenteService {
         fuenteRepository.save(fuente);
     }
 
-    private void avisar(FuenteBusquedaConfig fuente, String enlace, String titulo, String mensaje) {
-        LocalDate hoy = LocalDate.now(clock.withZone(ZONA));
-        LocalDateTime desde = hoy.atStartOfDay();
-        LocalDateTime hasta = hoy.plusDays(1).atStartOfDay();
-        if (notificacionRepository.existsByTipoAndEnlaceAndFechaCreacionGreaterThanEqualAndFechaCreacionLessThan(
-                TipoAviso.GENERAL.name(), enlace, desde, hasta)) {
-            return;
-        }
+    /**
+     * 9-B (evento de error): la sesión no se pudo renovar en plena búsqueda. {@link SesionFuenteService}
+     * ya dejó la fuente en CON_ERROR o REQUIERE_VERIFICACION; se lee ese estado y se avisa al Jefe.
+     * Si la fuente sigue ACTIVA (p. ej. falló la lectura de la sesión) no hay nada que avisar, y el
+     * aviso no se repite más de una vez al día por fuente. Nunca corta la búsqueda.
+     */
+    private void avisarSesionNoRenovada(CodigoFuente codigo) {
         try {
-            notificaciones.avisarRol(RolSistema.JEFE_ADMINISTRATIVO, TipoAviso.GENERAL, titulo, mensaje, enlace, false);
+            fuenteRepository.findByCodigo(codigo).ifPresent(actual -> {
+                if (actual.getEstado() != null) {
+                    avisos.avisarSiCorresponde(codigo.name(), actual.getEstado().name(), actual.getUltimoError());
+                }
+            });
         } catch (RuntimeException e) {
-            log.warn("No se pudo avisar al Jefe por {}: {}", fuente.getCodigo(), recortar(e.getMessage()));
+            log.warn("No se pudo avisar la sesión no renovada de {}: {}", codigo, recortar(e.getMessage()));
         }
     }
 

@@ -8,7 +8,6 @@ import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import com.genlogs.app.enums.TipoAviso;
 import com.genlogs.app.fuentes.config.CodigoFuente;
 import com.genlogs.app.fuentes.config.EstadoFuente;
 import com.genlogs.app.fuentes.config.FichaFuente;
@@ -19,8 +18,6 @@ import com.genlogs.app.fuentes.config.LectorFuente;
 import com.genlogs.app.fuentes.config.LectorFuenteNoConectado;
 import com.genlogs.app.fuentes.config.ResultadoLectura;
 import com.genlogs.app.fuentes.config.SesionFuenteService;
-import com.genlogs.app.repository.NotificacionRepository;
-import com.genlogs.app.service.NotificacionService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
@@ -37,8 +34,7 @@ class ConsultaFuenteServiceTest {
     private SesionFuenteService sesiones;
     private LectorFuente lector;
     private PausaFuente pausa;
-    private NotificacionService notificaciones;
-    private NotificacionRepository notificacionRepo;
+    private AvisoFuenteConError avisos;
     private ConsultaFuenteService servicio;
     private FuenteBusquedaConfig ebay;
     private ConsultaBusqueda consulta;
@@ -50,14 +46,10 @@ class ConsultaFuenteServiceTest {
         sesiones = mock(SesionFuenteService.class);
         lector = mock(LectorFuente.class);
         pausa = mock(PausaFuente.class);
-        notificaciones = mock(NotificacionService.class);
-        notificacionRepo = mock(NotificacionRepository.class);
+        avisos = mock(AvisoFuenteConError.class);
         when(selectorRepo.findByFuente_CodigoAndStatus(any(), eq("A"))).thenReturn(List.of());
         when(sesiones.sesionVigente(CodigoFuente.EBAY)).thenReturn(Optional.of("sesion-opaca"));
-        when(notificacionRepo.existsByTipoAndEnlaceAndFechaCreacionGreaterThanEqualAndFechaCreacionLessThan(
-                any(), any(), any(), any())).thenReturn(false);
-        servicio = new ConsultaFuenteService(fuenteRepo, selectorRepo, sesiones, lector, pausa,
-                notificaciones, notificacionRepo);
+        servicio = new ConsultaFuenteService(fuenteRepo, selectorRepo, sesiones, lector, pausa, avisos);
         ebay = fuente(CodigoFuente.EBAY, 50, 3);
         consulta = new ConsultaBusqueda(MetodoBusqueda.NUMERO_PARTE, "1R-0750", "Caterpillar",
                 null, null, null);
@@ -114,6 +106,7 @@ class ConsultaFuenteServiceTest {
         verify(lector, never()).buscar(any(), any(), any(), any(), any());
         verify(sesiones, never()).marcarVerificacion(any(), any());
         verify(fuenteRepo, never()).save(any());
+        verify(avisos, never()).avisarSiCorresponde(any(), any(), any());
         assertThat(ebay.getEstado()).isEqualTo(EstadoFuente.ACTIVA);
     }
 
@@ -135,8 +128,7 @@ class ConsultaFuenteServiceTest {
 
         assertThat(r.estado()).isEqualTo(EstadoConsultaFuente.REQUIERE_VERIFICACION);
         verify(sesiones).marcarVerificacion(CodigoFuente.EBAY, "La tienda pidió un CAPTCHA al buscar.");
-        verify(notificaciones).avisarRol(any(), eq(TipoAviso.GENERAL), any(), any(),
-                eq("/configuracion/fuentes/EBAY#lectura-verificacion"), eq(false));
+        verify(avisos).avisarSiCorresponde("EBAY", "REQUIERE_VERIFICACION", "La tienda pidió un CAPTCHA al buscar.");
     }
 
     @Test
@@ -163,20 +155,60 @@ class ConsultaFuenteServiceTest {
         assertThat(ebay.getEstado()).isEqualTo(EstadoFuente.CON_ERROR);
         verify(lector, times(2)).buscar(any(), any(), any(), any(), any());
         verify(fuenteRepo).save(ebay);
-        verify(notificaciones).avisarRol(any(), eq(TipoAviso.GENERAL), any(), any(),
-                eq("/configuracion/fuentes/EBAY#lectura-error"), eq(false));
+        verify(avisos).avisarSiCorresponde("EBAY", "CON_ERROR", "tiempo agotado");
     }
 
     @Test
-    void avisoAlJefe_unaSolaVezAlDia() {
-        when(notificacionRepo.existsByTipoAndEnlaceAndFechaCreacionGreaterThanEqualAndFechaCreacionLessThan(
-                any(), any(), any(), any())).thenReturn(true);
-        when(lector.buscar(any(), any(), any(), any(), any()))
-                .thenReturn(ResultadoLectura.error("caída", false));
+    void sesionQueNoSeRenueva_avisaConElEstadoQueDejoLaSesion() {
+        when(sesiones.sesionVigente(CodigoFuente.EBAY)).thenReturn(Optional.empty());
+        FuenteBusquedaConfig enBD = fuente(CodigoFuente.EBAY, 50, 3);
+        enBD.setEstado(EstadoFuente.CON_ERROR);
+        enBD.setUltimoError("La tienda rechazó el usuario o la clave.");
+        when(fuenteRepo.findByCodigo(CodigoFuente.EBAY)).thenReturn(Optional.of(enBD));
+
+        ConsultaFuente r = servicio.consultar(ebay, consulta);
+
+        assertThat(r.estado()).isEqualTo(EstadoConsultaFuente.OMITIDA_SESION);
+        verify(avisos).avisarSiCorresponde("EBAY", "CON_ERROR", "La tienda rechazó el usuario o la clave.");
+        verify(lector, never()).buscar(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void sesionQueNoSeRenueva_porVerificacion_avisaRequiereVerificacion() {
+        when(sesiones.sesionVigente(CodigoFuente.EBAY)).thenReturn(Optional.empty());
+        FuenteBusquedaConfig enBD = fuente(CodigoFuente.EBAY, 50, 3);
+        enBD.setEstado(EstadoFuente.REQUIERE_VERIFICACION);
+        enBD.setUltimoError("La tienda pidió un código.");
+        when(fuenteRepo.findByCodigo(CodigoFuente.EBAY)).thenReturn(Optional.of(enBD));
 
         servicio.consultar(ebay, consulta);
 
-        verify(notificaciones, never()).avisarRol(any(), any(), any(), any(), any(), anyBoolean());
+        verify(avisos).avisarSiCorresponde("EBAY", "REQUIERE_VERIFICACION", "La tienda pidió un código.");
+    }
+
+    @Test
+    void sesionQueNoSeRenueva_tambienAvisaAlLeerUnaUrl() {
+        when(sesiones.sesionVigente(CodigoFuente.EBAY)).thenReturn(Optional.empty());
+        FuenteBusquedaConfig enBD = fuente(CodigoFuente.EBAY, 50, 3);
+        enBD.setEstado(EstadoFuente.CON_ERROR);
+        enBD.setUltimoError("sin respuesta");
+        when(fuenteRepo.findByCodigo(CodigoFuente.EBAY)).thenReturn(Optional.of(enBD));
+
+        ConsultaFuente r = servicio.consultarUrl(ebay, "https://www.ebay.com/itm/1", consulta);
+
+        assertThat(r.estado()).isEqualTo(EstadoConsultaFuente.OMITIDA_SESION);
+        verify(avisos).avisarSiCorresponde("EBAY", "CON_ERROR", "sin respuesta");
+    }
+
+    @Test
+    void fallaAlLeerLaFuenteParaAvisar_laBusquedaSigueSinCortarse() {
+        when(sesiones.sesionVigente(CodigoFuente.EBAY)).thenReturn(Optional.empty());
+        when(fuenteRepo.findByCodigo(CodigoFuente.EBAY)).thenThrow(new RuntimeException("BD caída"));
+
+        ConsultaFuente r = servicio.consultar(ebay, consulta);
+
+        assertThat(r.estado()).isEqualTo(EstadoConsultaFuente.OMITIDA_SESION);
+        verify(avisos, never()).avisarSiCorresponde(any(), any(), any());
     }
 
     @Test
@@ -209,7 +241,7 @@ class ConsultaFuenteServiceTest {
         assertThat(r.estado()).isEqualTo(EstadoConsultaFuente.NO_CONECTADO);
         assertThat(ebay.getEstado()).isEqualTo(EstadoFuente.ACTIVA);
         verify(fuenteRepo, never()).save(any());
-        verify(notificaciones, never()).avisarRol(any(), any(), any(), any(), any(), anyBoolean());
+        verify(avisos, never()).avisarSiCorresponde(any(), any(), any());
     }
 
     @Test
@@ -223,7 +255,7 @@ class ConsultaFuenteServiceTest {
         assertThat(ebay.getEstado()).isEqualTo(EstadoFuente.ACTIVA);
         assertThat(ebay.getUltimoError()).isNull();
         verify(fuenteRepo, never()).save(any());
-        verify(notificaciones, never()).avisarRol(any(), any(), any(), any(), any(), anyBoolean());
+        verify(avisos, never()).avisarSiCorresponde(any(), any(), any());
         verify(lector, times(1)).buscar(any(), any(), any(), any(), any());
     }
 

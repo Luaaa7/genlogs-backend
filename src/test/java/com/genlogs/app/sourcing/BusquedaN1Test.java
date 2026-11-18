@@ -18,11 +18,9 @@ import com.genlogs.app.fuentes.config.LectorFuente;
 import com.genlogs.app.fuentes.config.ResultadoLectura;
 import com.genlogs.app.fuentes.config.SesionFuenteService;
 import com.genlogs.app.repository.MonedaRepository;
-import com.genlogs.app.repository.NotificacionRepository;
 import com.genlogs.app.repository.SolicitudItemRepository;
 import com.genlogs.app.repository.UsuarioRepository;
 import com.genlogs.app.service.ClavesParametro;
-import com.genlogs.app.service.NotificacionService;
 import com.genlogs.app.service.ParametrosService;
 import com.genlogs.app.sourcing.dto.BuscarReferenciasRequest;
 import com.genlogs.app.sourcing.dto.ResultadoBusquedaResponse;
@@ -60,8 +58,7 @@ class BusquedaN1Test {
         lector = mock(LectorFuente.class);
         pausa = mock(PausaFuente.class);
         historialRepo = mock(HistorialSourcingRepository.class);
-        NotificacionService avisos = mock(NotificacionService.class);
-        NotificacionRepository avisosRepo = mock(NotificacionRepository.class);
+        AvisoFuenteConError avisos = mock(AvisoFuenteConError.class);
         ParametrosService parametros = mock(ParametrosService.class);
 
         when(selectorRepo.findByFuente_CodigoAndStatus(any(), eq("A"))).thenReturn(List.of());
@@ -69,8 +66,6 @@ class BusquedaN1Test {
         when(historialRepo.findByNumeroParteIgnoreCaseAndMetodoNotAndCreadoEnAfterOrderByCreadoEnDesc(
                 any(), any(), any())).thenReturn(List.of());
         when(parametros.buscar(ClavesParametro.BUSQUEDA_REUSO_DIAS)).thenReturn(Optional.empty());
-        when(avisosRepo.existsByTipoAndEnlaceAndFechaCreacionGreaterThanEqualAndFechaCreacionLessThan(
-                any(), any(), any(), any())).thenReturn(false);
 
         a = fuente(CodigoFuente.EBAY, true, EstadoFuente.ACTIVA, 50);
         b = fuente(CodigoFuente.AMAZON, false, EstadoFuente.ACTIVA, 50);
@@ -89,7 +84,7 @@ class BusquedaN1Test {
                 .thenThrow(new AssertionError("La fuente inactiva no debe consultarse"));
 
         ConsultaFuenteService consulta = new ConsultaFuenteService(fuenteRepo, selectorRepo, sesiones, lector,
-                pausa, avisos, avisosRepo);
+                pausa, avisos);
         sourcing = new SourcingService(historialRepo, mock(SolicitudItemRepository.class),
                 mock(MonedaRepository.class), mock(UsuarioRepository.class), fuenteRepo, consulta, parametros,
                 new DefaultListableBeanFactory().getBeanProvider(FuenteBusqueda.class));

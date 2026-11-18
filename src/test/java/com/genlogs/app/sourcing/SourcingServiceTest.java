@@ -161,6 +161,52 @@ class SourcingServiceTest {
     }
 
     @Test
+    void consultarLanzaExcepcion_seRegistraComoErrorYSigue() {
+        FuenteBusquedaConfig ml = fuente(CodigoFuente.MERCADO_LIBRE, true);
+        when(fuenteRepo.findByActivaTrueAndStatusOrderByIdFuente("A")).thenReturn(List.of(ml, ebay));
+        when(consultaFuente.consultar(eq(ml), any())).thenThrow(new RuntimeException("boom"));
+        when(consultaFuente.consultar(eq(ebay), any()))
+                .thenReturn(ConsultaFuente.de("EBAY", EstadoConsultaFuente.SIN_RESULTADOS, null, List.of()));
+
+        ResultadoBusquedaResponse r = servicio().buscar(pedido("1R-0750", false));
+
+        assertThat(r.fuentesConError()).containsExactly("MERCADO_LIBRE");
+        assertThat(r.fuentesSinResultados()).containsExactly("EBAY");
+        assertThat(r.fuentesConsultadas()).containsExactly("EBAY");
+    }
+
+    @Test
+    void estadosDeOmision_sePartenPorTipo() {
+        FuenteBusquedaConfig ml = fuente(CodigoFuente.MERCADO_LIBRE, true);
+        when(fuenteRepo.findByActivaTrueAndStatusOrderByIdFuente("A")).thenReturn(List.of(ml, ebay));
+        when(consultaFuente.consultar(eq(ml), any()))
+                .thenReturn(ConsultaFuente.de("MERCADO_LIBRE", EstadoConsultaFuente.OMITIDA_SESION, "sin sesión", List.of()));
+        when(consultaFuente.consultar(eq(ebay), any()))
+                .thenReturn(ConsultaFuente.de("EBAY", EstadoConsultaFuente.BLOQUEADA, "403", List.of()));
+
+        ResultadoBusquedaResponse r = servicio().buscar(pedido("1R-0750", false));
+
+        assertThat(r.fuentesOmitidas()).containsExactly("MERCADO_LIBRE");
+        assertThat(r.fuentesBloqueadas()).containsExactly("EBAY");
+        assertThat(r.fuentesConError()).isEmpty();
+    }
+
+    @Test
+    void fuenteApiQueFalla_seRegistraComoErrorYNoDetieneLaBusqueda() {
+        when(consultaFuente.consultar(eq(ebay), any()))
+                .thenReturn(ConsultaFuente.de("EBAY", EstadoConsultaFuente.NO_CONECTADO, "P2", List.of()));
+        FuenteBusqueda api = mock(FuenteBusqueda.class);
+        when(api.codigo()).thenReturn("EBAY");
+        when(api.buscar(any())).thenThrow(new RuntimeException("cuota diaria agotada"));
+
+        ResultadoBusquedaResponse r = servicio(api).buscar(pedido("1R-0750", true));
+
+        assertThat(r.fuentesConError()).containsExactly("EBAY");
+        assertThat(r.referencias()).isEmpty();
+        assertThat(r.sugerirUrl()).isTrue();
+    }
+
+    @Test
     void numeroParteVacio_esRechazado() {
         assertThatThrownBy(() -> servicio().buscar(pedido("   ", false)))
                 .isInstanceOf(BusinessException.class);

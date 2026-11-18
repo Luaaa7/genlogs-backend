@@ -9,10 +9,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import com.genlogs.app.repository.NotificacionRepository;
-import com.genlogs.app.service.NotificacionService;
 import com.genlogs.app.sourcing.ConsultaBusqueda;
 import com.genlogs.app.sourcing.ConsultaFuenteService;
+import com.genlogs.app.sourcing.AvisoFuenteConError;
 import com.genlogs.app.sourcing.PausaFuente;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -136,8 +135,7 @@ class LectorFuenteDespachadorContextoTest {
                     mock(SesionFuenteService.class),
                     lector,
                     mock(PausaFuente.class),
-                    mock(NotificacionService.class),
-                    mock(NotificacionRepository.class));
+                    mock(AvisoFuenteConError.class));
         }
     }
 
