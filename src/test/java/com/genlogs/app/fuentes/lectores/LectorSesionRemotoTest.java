@@ -158,6 +158,18 @@ class LectorSesionRemotoTest {
     }
 
     @Test
+    void unErrorInesperadoDelClienteQuedaComoErrorSinDetalle() {
+        conLasCuatroReglasLogin();
+        when(cliente.iniciarSesion(any())).thenThrow(new IllegalStateException("detalle interno " + CLAVE));
+
+        ResultadoSesion r = lector.iniciarSesion(CodigoFuente.EBAY, "https://www.ebay.com", USUARIO, CLAVE);
+
+        assertThat(r.resultado()).isEqualTo(ResultadoSesion.Resultado.ERROR);
+        assertThat(r.mensaje()).isEqualTo("eBay: no se pudo iniciar sesión con el servicio de lectura.");
+        assertThat(r.sesion()).isNull();
+    }
+
+    @Test
     void unaSesionSinVencimientoValidoNoSeGuarda() throws Exception {
         conLasCuatroReglasLogin();
         when(cliente.iniciarSesion(any())).thenReturn(conSesion("mañana"));
