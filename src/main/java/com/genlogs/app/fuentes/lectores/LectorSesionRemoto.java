@@ -106,6 +106,9 @@ public class LectorSesionRemoto implements LectorSesion {
             return e.getEstado() == ContratoLector.Estado.VERIFICACION
                     ? ResultadoSesion.verificacion(mensaje)
                     : ResultadoSesion.error(mensaje);
+        } catch (RuntimeException e) {
+            // Sin el detalle: podría traer datos de la petición. «Probar sesión» no debe terminar en 500.
+            return ResultadoSesion.error(tienda + ": no se pudo iniciar sesión con el servicio de lectura.");
         }
         return aResultado(tienda, respuesta);
     }
