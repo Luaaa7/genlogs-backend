@@ -12,6 +12,8 @@ import static org.hamcrest.Matchers.hasItem;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -266,6 +268,7 @@ class PortalClienteTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value(containsString("ya tiene una cuenta")));
         assertEquals(antes, usuarioRepository.count());
+        verify(factilizaService, never()).consultarPorNumero(anyString());
     }
 
     @Test
@@ -302,16 +305,81 @@ class PortalClienteTest {
     }
 
     @Test
+    void registroDeDniNuevoUsaElNombreCompletoYNoExigeRuc() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        String dni = String.format("%08d", 40_000_000 + n);
+        Distrito distrito = ubigeo("Lima", "Lima", "San Isidro", n);
+        rolCliente();
+        tipoDocumentoRepository.save(auditar(new TipoDocumento(), e -> {
+            e.setCodigoTipo("DNI");
+            e.setNombreTipo("DNI");
+            e.setLongitudDocumento((short) 8);
+            e.setSoloNumerico(true);
+        }));
+        when(factilizaService.consultarPorNumero(dni)).thenReturn(ConsultaDocumentoResponse.builder()
+                .numeroDocumento(dni)
+                .tipoDocumento("DNI")
+                .nombres("Carla")
+                .apellidoPaterno("Soto")
+                .apellidoMaterno("Diaz")
+                .direccion("Calle Los Pinos 10")
+                .idDistrito(distrito.getIdDistrito())
+                .origen("FACTILIZA")
+                .simulado(false)
+                .build());
+        String cuerpo = """
+                {"razonSocial":"Nombre del formulario","documento":"%s","nombreContacto":"Carla Soto",
+                 "correo":"carla%s@dni.pe","telefono":"999111222","password":"clave1234"}
+                """.formatted(dni, n);
+
+        mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").isNotEmpty());
+
+        Cliente nuevo = clienteRepository.findByNumeroDocumento(dni).orElseThrow();
+        assertEquals("DNI", nuevo.getTercero().getTipoDocumento().getCodigoTipo());
+        assertEquals("Carla Soto Diaz", nuevo.getTercero().getRazonSocial());
+        assertEquals("999111222", nuevo.getTercero().getTelefono());
+        assertEquals("carla" + n + "@dni.pe", nuevo.getTercero().getCorreo());
+    }
+
+    @Test
+    void registroSinDistritoDeFactilizaResponde400() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        String dni = String.format("%08d", 50_000_000 + n);
+        rolCliente();
+        when(factilizaService.consultarPorNumero(dni)).thenReturn(ConsultaDocumentoResponse.builder()
+                .numeroDocumento(dni)
+                .tipoDocumento("DNI")
+                .nombres("Sin")
+                .apellidoPaterno("Distrito")
+                .origen("FACTILIZA")
+                .simulado(false)
+                .build());
+        String cuerpo = """
+                {"razonSocial":"Nadie","documento":"%s","nombreContacto":"Nadie",
+                 "correo":"sindistrito%s@portal.pe","password":"clave1234"}
+                """.formatted(dni, n);
+        mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(containsString("domicilio fiscal")));
+        assertTrue(clienteRepository.findByNumeroDocumento(dni).isEmpty());
+    }
+
+    @Test
     void registroRechazaRucInvalidoONoValidadoSinCrearNada() throws Exception {
         int n = SECUENCIA.incrementAndGet();
         rolCliente();
         String rucMalo = """
-                {"razonSocial":"Nadie","documento":"12345678","nombreContacto":"Nadie",
+                {"razonSocial":"Nadie","documento":"1234567","nombreContacto":"Nadie",
                  "correo":"nadie%s@portal.pe","password":"clave1234"}
                 """.formatted(n);
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(rucMalo))
                 .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(
+                        "Ingresa un RUC de 11 dígitos (empieza con 10 o 20) o un DNI de 8 dígitos."))
                 .andExpect(jsonPath("$.token").doesNotExist());
+        verify(factilizaService, never()).consultarPorNumero(anyString());
 
         String ruc = "2099" + String.format("%07d", n);
         when(factilizaService.consultarPorNumero(ruc)).thenThrow(new BusinessException("Factiliza no encontró datos"));

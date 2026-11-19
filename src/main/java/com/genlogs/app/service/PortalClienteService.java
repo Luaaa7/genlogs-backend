@@ -78,6 +78,11 @@ public class PortalClienteService {
     private static final int MAX_NOMBRE_USUARIO = 50;
     /** RUC de empresa (20) o de persona con negocio (10), igual que FactilizaService. */
     private static final Pattern RUC_VALIDO = Pattern.compile("^(10|20)\\d{9}$");
+    private static final Pattern DNI_VALIDO = Pattern.compile("^\\d{8}$");
+    private static final String DOCUMENTO_INVALIDO =
+            "Ingresa un RUC de 11 dígitos (empieza con 10 o 20) o un DNI de 8 dígitos.";
+    private static final String SIN_DOMICILIO =
+            "No pudimos ubicar el domicilio fiscal de tu RUC. Escríbenos y te damos acceso.";
     private static final String SECTOR_CAPTACION = "MINERIA";
     /** Marca del usuario que pidió acceso a una empresa que ya es cliente (lo usa UsuarioService.activar). */
     public static final String PROCESO_PENDIENTE = "REGISTRO_PORTAL_PENDIENTE";
@@ -151,24 +156,25 @@ public class PortalClienteService {
     /**
      * Registro del portal (D-10). El acceso inmediato es solo para la empresa nueva:
      * <ul>
-     *   <li>Si el RUC no es cliente, se valida en Factiliza, se da de alta la empresa
-     *       (captación de mineras, proceso 3) y el usuario nace activo con su token,
-     *       así sigue sin esperar (y la landing envía su pedido guardado, D-30).</li>
-     *   <li>Si el RUC ya es cliente, el usuario nuevo queda PENDIENTE (status 'I', sin
-     *       token) hasta que lo active el Jefe Administrativo. El RUC es público y el
+     *   <li>Si el RUC o el DNI no es cliente, se valida en Factiliza, se da de alta la
+     *       persona o empresa (captación de mineras, proceso 3) y el usuario nace activo
+     *       con su token, así sigue sin esperar (y la landing envía su pedido guardado, D-30).</li>
+     *   <li>Si el documento ya es cliente, el usuario nuevo queda PENDIENTE (status 'I', sin
+     *       token) hasta que lo active el Jefe Administrativo. El documento es público y el
      *       portal muestra los pedidos, precios y despachos de la empresa y deja aprobar
-     *       cotizaciones: nadie debe entrar a eso solo por conocer el RUC. Se avisa al
-     *       Jefe Administrativo y, por correo, a los usuarios activos de la empresa.</li>
+     *       cotizaciones: nadie debe entrar a eso solo por conocer el número. Se avisa al
+     *       Jefe Administrativo y, por correo, a los usuarios activos de la empresa.
+     *       Ese caso no consulta Factiliza ni consume el límite de intentos.</li>
      * </ul>
      */
     @Transactional
     public RegistroClienteResponse registrar(RegistroClienteRequest request) {
-        String ruc = soloDigitos(request.getDocumento());
+        String documento = soloDigitos(request.getDocumento());
         String correo = request.getCorreo().trim();
-        limitadorRegistro.verificar(ruc, correo);
-
-        if (!RUC_VALIDO.matcher(ruc).matches()) {
-            throw new BusinessException("Ingresa un RUC válido de 11 dígitos (empieza con 10 o 20).");
+        boolean ruc = RUC_VALIDO.matcher(documento).matches();
+        boolean dni = DNI_VALIDO.matcher(documento).matches();
+        if (!ruc && !dni) {
+            throw new BusinessException(DOCUMENTO_INVALIDO);
         }
         if (usuarioRepository.existsByCorreoIgnoreCase(correo)) {
             throw new BusinessException("Ese correo ya tiene una cuenta. Ingresa al portal con tu correo y contraseña.");
@@ -178,9 +184,9 @@ public class PortalClienteService {
             return new BusinessException("El registro no está disponible en este momento. Inténtalo más tarde.");
         });
 
-        Cliente existente = clienteRepository.findByNumeroDocumento(ruc).orElse(null);
+        Cliente existente = clienteRepository.findByNumeroDocumento(documento).orElse(null);
         boolean empresaNueva = existente == null;
-        Cliente cliente = empresaNueva ? altaClienteDesdeRuc(ruc, request) : existente;
+        Cliente cliente = empresaNueva ? altaClienteNuevo(documento, dni, correo, request) : existente;
         if (!"ACTIVO".equals(cliente.getSituacion())) {
             throw new BusinessException("Tu empresa no tiene el acceso al portal habilitado. Escríbenos para ayudarte.");
         }
@@ -216,17 +222,17 @@ public class PortalClienteService {
     /**
      * Aviso de un acceso pendiente: en la campanita del Jefe Administrativo (que lo
      * activa desde Usuarios) y por correo a los usuarios activos de la empresa, para
-     * que sepan si alguien que no conocen pidió entrar con su RUC. Si el aviso falla,
+     * que sepan si alguien que no conocen pidió entrar con su documento. Si el aviso falla,
      * el registro sigue: el usuario ya quedó pendiente y no ve nada.
      */
     private void avisarAccesoPendiente(Cliente cliente, Usuario nuevo) {
         String empresa = cliente.getTercero().getRazonSocial();
-        String ruc = cliente.getTercero().getNumeroDocumento();
+        String numero = cliente.getTercero().getNumeroDocumento();
         try {
             notificacionService.avisarRol(RolSistema.JEFE_ADMINISTRATIVO, TipoAviso.ACCESO_PORTAL_PENDIENTE,
                     "Acceso al portal pendiente",
                     nuevo.getNombres() + " (" + nuevo.getCorreo() + ") pidió acceso al portal para "
-                            + empresa + " (RUC " + ruc + "). Revísalo y actívalo en Usuarios si corresponde.",
+                            + empresa + " (documento " + numero + "). Revísalo y actívalo en Usuarios si corresponde.",
                     "/usuarios", false);
             for (Usuario colega : usuarioRepository.findByCliente_IdClienteAndStatus(cliente.getIdCliente(), "A")) {
                 notificacionService.enviarCorreoCliente(colega.getCorreo(), colega.getNombres(),
@@ -241,40 +247,39 @@ public class PortalClienteService {
     }
 
     /**
-     * Empresa nueva: el RUC se valida en Factiliza y con esos datos se crea el
-     * tercero y el cliente. Sin domicilio fiscal ubicable en el catálogo no se
-     * puede crear el tercero (tercero.id_distrito), así que se pide contacto.
+     * Documento que no está en la base: primero el límite de intentos, después Factiliza.
+     * Sin distrito del catálogo no se inserta el tercero: id_distrito puede rechazar null
+     * y eso no debe terminar en un 500.
      */
-    private Cliente altaClienteDesdeRuc(String ruc, RegistroClienteRequest request) {
+    private Cliente altaClienteNuevo(String documento, boolean dni, String correo, RegistroClienteRequest request) {
+        limitadorRegistro.verificar(documento, correo);
         ConsultaDocumentoResponse datos;
         try {
-            datos = factilizaService.consultarPorNumero(ruc);
+            datos = factilizaService.consultarPorNumero(documento);
         } catch (BusinessException ex) {
-            log.info("Registro de portal rechazado: no se pudo validar el RUC {} ({})", ruc, ex.getMessage());
-            throw new BusinessException("No pudimos validar tu RUC en SUNAT. Revisa el número o escríbenos para ayudarte.");
+            log.info("Registro de portal rechazado: no se pudo validar el documento {} ({})", documento, ex.getMessage());
+            throw new BusinessException(dni
+                    ? "No pudimos validar tu DNI. Revisa el número o escríbenos para ayudarte."
+                    : "No pudimos validar tu RUC en SUNAT. Revisa el número o escríbenos para ayudarte.");
         }
-        if (datos.getIdDistrito() == null) {
-            log.info("Registro de portal rechazado: el RUC {} no tiene un distrito del catálogo", ruc);
-            throw new BusinessException("No pudimos ubicar el domicilio fiscal de tu RUC. Escríbenos y te damos acceso.");
+        if (datos == null || datos.getIdDistrito() == null) {
+            log.info("Registro de portal rechazado: el documento {} no tiene un distrito del catálogo", documento);
+            throw new BusinessException(SIN_DOMICILIO);
         }
-        TipoDocumento tipoRuc = tipoDocumentoRepository.findByCodigoTipo("RUC")
+        String codigoTipo = dni ? "DNI" : "RUC";
+        TipoDocumento tipo = tipoDocumentoRepository.findByCodigoTipo(codigoTipo)
                 .orElseThrow(() -> new BusinessException("El registro no está disponible en este momento. Inténtalo más tarde."));
         Distrito distrito = distritoRepository.findById(datos.getIdDistrito())
-                .orElseThrow(() -> new BusinessException("No pudimos ubicar el domicilio fiscal de tu RUC. Escríbenos y te damos acceso."));
-
-        // En modo simulado (sin llave de Factiliza) la razón social de prueba no sirve: se usa la escrita.
-        String razonSocial = datos.isSimulado() || datos.getRazonSocial() == null || datos.getRazonSocial().isBlank()
-                ? request.getRazonSocial().trim()
-                : datos.getRazonSocial().trim();
+                .orElseThrow(() -> new BusinessException(SIN_DOMICILIO));
 
         Tercero tercero = new Tercero();
-        tercero.setTipoDocumento(tipoRuc);
-        tercero.setNumeroDocumento(ruc);
-        tercero.setRazonSocial(recortar(razonSocial, 200));
+        tercero.setTipoDocumento(tipo);
+        tercero.setNumeroDocumento(documento);
+        tercero.setRazonSocial(recortar(razonSocialDe(datos, dni, request), 200));
         tercero.setDistrito(distrito);
         tercero.setDireccion(recortar(datos.getDireccion(), 255));
         tercero.setTelefono(vacioComoNull(request.getTelefono()));
-        tercero.setCorreo(request.getCorreo().trim());
+        tercero.setCorreo(correo);
         auditarAlta(tercero);
         tercero = terceroRepository.save(tercero);
 
@@ -283,8 +288,37 @@ public class PortalClienteService {
         cliente.setSectorEconomico(sectorDeCaptacion());
         cliente.setSituacion("ACTIVO");
         auditarAlta(cliente);
-        log.info("Cliente nuevo desde el registro del portal: RUC {}", ruc);
+        log.info("Cliente nuevo desde el registro del portal: {} {}", codigoTipo, documento);
         return clienteRepository.save(cliente);
+    }
+
+    /** RUC: razón social de Factiliza. DNI: nombres y apellidos. En simulado, el RUC usa lo escrito. */
+    private static String razonSocialDe(ConsultaDocumentoResponse datos, boolean dni, RegistroClienteRequest request) {
+        if (dni) {
+            String completo = unir(datos.getNombres(), datos.getApellidoPaterno(), datos.getApellidoMaterno());
+            if (completo.isBlank()) {
+                completo = datos.getRazonSocial() == null ? "" : datos.getRazonSocial().trim();
+            }
+            return completo.isBlank() ? request.getRazonSocial().trim() : completo;
+        }
+        if (datos.isSimulado() || datos.getRazonSocial() == null || datos.getRazonSocial().isBlank()) {
+            return request.getRazonSocial().trim();
+        }
+        return datos.getRazonSocial().trim();
+    }
+
+    private static String unir(String... partes) {
+        StringBuilder texto = new StringBuilder();
+        for (String parte : partes) {
+            if (parte == null || parte.isBlank()) {
+                continue;
+            }
+            if (!texto.isEmpty()) {
+                texto.append(' ');
+            }
+            texto.append(parte.trim());
+        }
+        return texto.toString();
     }
 
     /** Las empresas que se registran solas entran al sector "Minería"; el Jefe Administrativo lo corrige si hace falta. */
