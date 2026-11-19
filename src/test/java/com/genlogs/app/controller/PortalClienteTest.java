@@ -12,6 +12,9 @@ import static org.hamcrest.Matchers.hasItem;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -266,6 +269,7 @@ class PortalClienteTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value(containsString("ya tiene una cuenta")));
         assertEquals(antes, usuarioRepository.count());
+        verify(factilizaService, never()).consultarPorNumero(anyString());
     }
 
     @Test
@@ -311,7 +315,10 @@ class PortalClienteTest {
                 """.formatted(n);
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(rucMalo))
                 .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(
+                        "Para registrarte necesitamos tu RUC. Si eres persona natural, usa el RUC que empieza con 10."))
                 .andExpect(jsonPath("$.token").doesNotExist());
+        verify(factilizaService, never()).consultarPorNumero(anyString());
 
         String ruc = "2099" + String.format("%07d", n);
         when(factilizaService.consultarPorNumero(ruc)).thenThrow(new BusinessException("Factiliza no encontró datos"));
@@ -325,6 +332,28 @@ class PortalClienteTest {
 
         assertFalse(usuarioRepository.existsByCorreoIgnoreCase("nadie" + n + "@portal.pe"));
         assertTrue(clienteRepository.findByNumeroDocumento(ruc).isEmpty());
+    }
+
+    @Test
+    void registroAlQuintoIntentoAvisaElLimiteYNoElMensajeGenerico() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        rolCliente();
+        String ruc = "1098" + String.format("%07d", n);
+        when(factilizaService.consultarPorNumero(ruc)).thenThrow(new BusinessException("Factiliza no encontró datos"));
+        String cuerpo = """
+                {"razonSocial":"Nadie","documento":"%s","nombreContacto":"Nadie",
+                 "correo":"limite%s@portal.pe","password":"clave1234"}
+                """.formatted(ruc, n);
+        for (int i = 0; i < 5; i++) {
+            mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value(containsString("RUC")));
+        }
+        mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.message").value(
+                        "Demasiados intentos con este RUC o correo. Espera 15 minutos o prueba con otro RUC y otro correo."));
+        verify(factilizaService, times(5)).consultarPorNumero(ruc);
     }
 
     @Test

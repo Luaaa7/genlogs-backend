@@ -158,17 +158,17 @@ public class PortalClienteService {
      *       token) hasta que lo active el Jefe Administrativo. El RUC es público y el
      *       portal muestra los pedidos, precios y despachos de la empresa y deja aprobar
      *       cotizaciones: nadie debe entrar a eso solo por conocer el RUC. Se avisa al
-     *       Jefe Administrativo y, por correo, a los usuarios activos de la empresa.</li>
+     *       Jefe Administrativo y, por correo, a los usuarios activos de la empresa.
+     *       Ese caso no consulta Factiliza ni consume el límite de intentos.</li>
      * </ul>
      */
     @Transactional
     public RegistroClienteResponse registrar(RegistroClienteRequest request) {
         String ruc = soloDigitos(request.getDocumento());
         String correo = request.getCorreo().trim();
-        limitadorRegistro.verificar(ruc, correo);
-
         if (!RUC_VALIDO.matcher(ruc).matches()) {
-            throw new BusinessException("Ingresa un RUC válido de 11 dígitos (empieza con 10 o 20).");
+            throw new BusinessException(
+                    "Para registrarte necesitamos tu RUC. Si eres persona natural, usa el RUC que empieza con 10.");
         }
         if (usuarioRepository.existsByCorreoIgnoreCase(correo)) {
             throw new BusinessException("Ese correo ya tiene una cuenta. Ingresa al portal con tu correo y contraseña.");
@@ -180,7 +180,7 @@ public class PortalClienteService {
 
         Cliente existente = clienteRepository.findByNumeroDocumento(ruc).orElse(null);
         boolean empresaNueva = existente == null;
-        Cliente cliente = empresaNueva ? altaClienteDesdeRuc(ruc, request) : existente;
+        Cliente cliente = empresaNueva ? altaNueva(ruc, correo, request) : existente;
         if (!"ACTIVO".equals(cliente.getSituacion())) {
             throw new BusinessException("Tu empresa no tiene el acceso al portal habilitado. Escríbenos para ayudarte.");
         }
@@ -238,6 +238,12 @@ public class PortalClienteService {
         } catch (RuntimeException ex) {
             log.warn("No se pudo avisar el acceso pendiente del usuario {}: {}", nuevo.getIdUsuario(), ex.getMessage());
         }
+    }
+
+    /** RUC que no está en la base: el límite de intentos y, después, Factiliza. */
+    private Cliente altaNueva(String ruc, String correo, RegistroClienteRequest request) {
+        limitadorRegistro.verificar(ruc, correo);
+        return altaClienteDesdeRuc(ruc, request);
     }
 
     /**
