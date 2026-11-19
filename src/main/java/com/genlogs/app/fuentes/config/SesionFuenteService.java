@@ -17,8 +17,8 @@ import lombok.RequiredArgsConstructor;
 /**
  * L1 (v3.3, BPMN 9-A) · Sesión de cada tienda con su cuenta de búsqueda (D-38).
  * «Probar sesión» deja la fuente ACTIVA (sesión cifrada hasta sesion_valida_hasta),
- * REQUIERE_VERIFICACION (la tienda pidió código o CAPTCHA) o CON_ERROR. Si faltan la
- * cuenta de búsqueda o las reglas de ingreso, queda SIN_PROBAR. Antes de buscar,
+ * REQUIERE_VERIFICACION (la tienda pidió código o CAPTCHA) o CON_ERROR. Si al probar faltan
+ * las reglas de ingreso, queda SIN_PROBAR; al renovar (D-41) queda CON_ERROR. Antes de buscar,
  * {@link #sesionVigente} renueva sola la sesión vencida; si no puede, la tienda queda fuera
  * de la búsqueda sin romperla.
  */
@@ -45,7 +45,7 @@ public class SesionFuenteService {
         if (!credenciales.tiene(codigo, TipoCredencial.USUARIO) || !credenciales.tiene(codigo, TipoCredencial.CLAVE)) {
             throw new BusinessException("Primero guarda la cuenta de búsqueda (usuario y clave) de " + fuente.getNombre());
         }
-        iniciar(fuente);
+        iniciar(fuente, true);
         return config.aRespuesta(fuente);
     }
 
@@ -63,7 +63,7 @@ public class SesionFuenteService {
                 return guardada;
             }
         }
-        return iniciar(fuente) ? credenciales.leer(codigo, TipoCredencial.SESION) : Optional.empty();
+        return iniciar(fuente, false) ? credenciales.leer(codigo, TipoCredencial.SESION) : Optional.empty();
     }
 
     /**
@@ -72,26 +72,29 @@ public class SesionFuenteService {
      */
     @Transactional
     public void marcarVerificacion(CodigoFuente codigo, String motivo) {
-        aplicar(fuente(codigo), ResultadoSesion.verificacion(
+        aplicar(fuente(codigo), false, ResultadoSesion.verificacion(
                 motivo != null && !motivo.isBlank() ? motivo : "La tienda pidió un código o CAPTCHA."));
     }
 
-    /** Pide al lector iniciar sesión y deja la fuente en el estado que corresponde. true si quedó ACTIVA. */
-    private boolean iniciar(FuenteBusquedaConfig fuente) {
+    /**
+     * Pide al lector iniciar sesión y deja la fuente en el estado que corresponde. true si quedó ACTIVA.
+     * manual: «Probar sesión» del Jefe (9-A). false: renovación antes de buscar (D-41).
+     */
+    private boolean iniciar(FuenteBusquedaConfig fuente, boolean manual) {
         CodigoFuente codigo = fuente.getCodigo();
         String usuarioTienda = credenciales.leer(codigo, TipoCredencial.USUARIO).orElse(null);
         String claveTienda = credenciales.leer(codigo, TipoCredencial.CLAVE).orElse(null);
         ResultadoSesion r = (usuarioTienda == null || claveTienda == null)
-                ? ResultadoSesion.error("Falta la cuenta de búsqueda de " + fuente.getNombre())
+                ? ResultadoSesion.sinConfigurar("Falta la cuenta de búsqueda de " + fuente.getNombre())
                 : lector.iniciarSesion(codigo, fuente.getUrlBase(), usuarioTienda, claveTienda);
         if (r == null) {
             r = ResultadoSesion.error("El servicio de lectura no respondió.");
         }
-        return aplicar(fuente, r);
+        return aplicar(fuente, manual, r);
     }
 
     /** Deja la fuente en el estado que corresponde al resultado. true si quedó ACTIVA. */
-    private boolean aplicar(FuenteBusquedaConfig fuente, ResultadoSesion r) {
+    private boolean aplicar(FuenteBusquedaConfig fuente, boolean manual, ResultadoSesion r) {
         CodigoFuente codigo = fuente.getCodigo();
         String nombre = usuarioActual();
         Long idUsuario = idUsuario(nombre);
@@ -104,7 +107,7 @@ public class SesionFuenteService {
         } else {
             credencialRepository.findByFuente_CodigoAndTipo(codigo, TipoCredencial.SESION)
                     .ifPresent(credencialRepository::delete);
-            fuente.setEstado(estadoSiNoOk(r));
+            fuente.setEstado(estadoSiNoOk(r, manual));
             fuente.setSesionValidaHasta(null);
             fuente.setUltimoError(recortar(r.mensaje() != null ? r.mensaje() : "No se pudo iniciar sesión en la tienda."));
         }
@@ -119,18 +122,16 @@ public class SesionFuenteService {
 
     /**
      * Un fallo de conexión, un tiempo agotado o un bloqueo quedan en CON_ERROR.
-     * Faltar la cuenta o las reglas de ingreso no es un fallo de la tienda: SIN_PROBAR.
+     * En «Probar sesión», faltar la cuenta o las reglas de ingreso no es un fallo de la tienda:
+     * SIN_PROBAR. En la renovación antes de buscar (D-41) cualquier fallo queda CON_ERROR,
+     * para que se avise al Jefe.
      */
-    private static EstadoFuente estadoSiNoOk(ResultadoSesion r) {
-        if (r.resultado() == ResultadoSesion.Resultado.VERIFICACION) {
-            return EstadoFuente.REQUIERE_VERIFICACION;
-        }
-        String mensaje = r.mensaje();
-        if (mensaje != null && (mensaje.contains("faltan reglas de la página de inicio de sesión")
-                || mensaje.contains("Falta la cuenta de búsqueda"))) {
-            return EstadoFuente.SIN_PROBAR;
-        }
-        return EstadoFuente.CON_ERROR;
+    private static EstadoFuente estadoSiNoOk(ResultadoSesion r, boolean manual) {
+        return switch (r.resultado()) {
+            case VERIFICACION -> EstadoFuente.REQUIERE_VERIFICACION;
+            case SIN_CONFIGURAR -> manual ? EstadoFuente.SIN_PROBAR : EstadoFuente.CON_ERROR;
+            default -> EstadoFuente.CON_ERROR;
+        };
     }
 
     private FuenteBusquedaConfig fuente(CodigoFuente codigo) {

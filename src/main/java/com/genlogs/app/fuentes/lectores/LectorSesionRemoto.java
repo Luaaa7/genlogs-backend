@@ -93,7 +93,7 @@ public class LectorSesionRemoto implements LectorSesion {
         }
         Map<String, String> login = reglasLogin(codigo);
         if (login.size() != CAMPOS_LOGIN.size()) {
-            return ResultadoSesion.error(tienda + ": faltan reglas de la página de inicio de sesión (casilla del"
+            return ResultadoSesion.sinConfigurar(tienda + ": faltan reglas de la página de inicio de sesión (casilla del"
                     + " usuario, casilla de la clave, botón para ingresar y señal de sesión iniciada) en"
                     + " Configuración > Fuentes > Reglas de extracción.");
         }

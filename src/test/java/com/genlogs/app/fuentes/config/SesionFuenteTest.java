@@ -164,7 +164,7 @@ class SesionFuenteTest {
         cargarCuenta(CodigoFuente.EBAY);
         credenciales.guardar(CodigoFuente.EBAY, TipoCredencial.SESION, SESION, null, "PRUEBA");
         when(lector.iniciarSesion(any(), any(), any(), any()))
-                .thenReturn(ResultadoSesion.error("eBay: faltan reglas de la página de inicio de sesión (casilla del"
+                .thenReturn(ResultadoSesion.sinConfigurar("eBay: faltan reglas de la página de inicio de sesión (casilla del"
                         + " usuario, casilla de la clave, botón para ingresar y señal de sesión iniciada) en"
                         + " Configuración > Fuentes > Reglas de extracción."));
 
@@ -247,6 +247,19 @@ class SesionFuenteTest {
         f.setSesionValidaHasta(LocalDateTime.now().minusMinutes(1));
         when(lector.iniciarSesion(any(), any(), any(), any()))
                 .thenReturn(ResultadoSesion.error("El servicio de lectura no responde."));
+
+        assertThat(sesiones.sesionVigente(CodigoFuente.EBAY)).isEmpty();
+        assertThat(fuente(CodigoFuente.EBAY).getEstado()).isEqualTo(EstadoFuente.CON_ERROR);
+    }
+
+    @Test
+    void sesionVigente_siAlRenovarFaltanLasReglasQuedaConError() {
+        cargarCuenta(CodigoFuente.EBAY);
+        FuenteBusquedaConfig f = fuentes.findByCodigo(CodigoFuente.EBAY).orElseThrow();
+        f.setEstado(EstadoFuente.ACTIVA);
+        f.setSesionValidaHasta(LocalDateTime.now().minusMinutes(1));
+        when(lector.iniciarSesion(any(), any(), any(), any()))
+                .thenReturn(ResultadoSesion.sinConfigurar("eBay: faltan reglas de la página de inicio de sesión."));
 
         assertThat(sesiones.sesionVigente(CodigoFuente.EBAY)).isEmpty();
         assertThat(fuente(CodigoFuente.EBAY).getEstado()).isEqualTo(EstadoFuente.CON_ERROR);

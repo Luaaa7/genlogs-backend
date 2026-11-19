@@ -8,7 +8,11 @@ import java.time.LocalDateTime;
  */
 public record ResultadoSesion(Resultado resultado, String sesion, LocalDateTime validaHasta, String mensaje) {
 
-    public enum Resultado { OK, VERIFICACION, ERROR }
+    /**
+     * SIN_CONFIGURAR: faltan la cuenta de búsqueda o las reglas de ingreso. No es un fallo
+     * de la tienda y no se llama al servicio de lectura.
+     */
+    public enum Resultado { OK, VERIFICACION, ERROR, SIN_CONFIGURAR }
 
     public static ResultadoSesion ok(String sesion, LocalDateTime validaHasta) {
         return new ResultadoSesion(Resultado.OK, sesion, validaHasta, null);
@@ -21,6 +25,11 @@ public record ResultadoSesion(Resultado resultado, String sesion, LocalDateTime 
 
     public static ResultadoSesion error(String mensaje) {
         return new ResultadoSesion(Resultado.ERROR, null, null, mensaje);
+    }
+
+    /** Faltan la cuenta de búsqueda o las reglas de ingreso de la tienda. */
+    public static ResultadoSesion sinConfigurar(String mensaje) {
+        return new ResultadoSesion(Resultado.SIN_CONFIGURAR, null, null, mensaje);
     }
 
     @Override
