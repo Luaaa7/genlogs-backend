@@ -17,7 +17,8 @@ import lombok.RequiredArgsConstructor;
 /**
  * L1 (v3.3, BPMN 9-A) · Sesión de cada tienda con su cuenta de búsqueda (D-38).
  * «Probar sesión» deja la fuente ACTIVA (sesión cifrada hasta sesion_valida_hasta),
- * REQUIERE_VERIFICACION (la tienda pidió código o CAPTCHA) o CON_ERROR. Antes de buscar,
+ * REQUIERE_VERIFICACION (la tienda pidió código o CAPTCHA) o CON_ERROR. Si faltan la
+ * cuenta de búsqueda o las reglas de ingreso, queda SIN_PROBAR. Antes de buscar,
  * {@link #sesionVigente} renueva sola la sesión vencida; si no puede, la tienda queda fuera
  * de la búsqueda sin romperla.
  */
@@ -103,8 +104,7 @@ public class SesionFuenteService {
         } else {
             credencialRepository.findByFuente_CodigoAndTipo(codigo, TipoCredencial.SESION)
                     .ifPresent(credencialRepository::delete);
-            fuente.setEstado(r.resultado() == ResultadoSesion.Resultado.VERIFICACION
-                    ? EstadoFuente.REQUIERE_VERIFICACION : EstadoFuente.CON_ERROR);
+            fuente.setEstado(estadoSiNoOk(r));
             fuente.setSesionValidaHasta(null);
             fuente.setUltimoError(recortar(r.mensaje() != null ? r.mensaje() : "No se pudo iniciar sesión en la tienda."));
         }
@@ -115,6 +115,22 @@ public class SesionFuenteService {
         fuente.setDateUpdate(LocalDateTime.now());
         fuenteRepository.save(fuente);
         return ok;
+    }
+
+    /**
+     * Un fallo de conexión, un tiempo agotado o un bloqueo quedan en CON_ERROR.
+     * Faltar la cuenta o las reglas de ingreso no es un fallo de la tienda: SIN_PROBAR.
+     */
+    private static EstadoFuente estadoSiNoOk(ResultadoSesion r) {
+        if (r.resultado() == ResultadoSesion.Resultado.VERIFICACION) {
+            return EstadoFuente.REQUIERE_VERIFICACION;
+        }
+        String mensaje = r.mensaje();
+        if (mensaje != null && (mensaje.contains("faltan reglas de la página de inicio de sesión")
+                || mensaje.contains("Falta la cuenta de búsqueda"))) {
+            return EstadoFuente.SIN_PROBAR;
+        }
+        return EstadoFuente.CON_ERROR;
     }
 
     private FuenteBusquedaConfig fuente(CodigoFuente codigo) {
