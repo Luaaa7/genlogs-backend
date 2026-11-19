@@ -1,6 +1,7 @@
 # Servicio lector (v3.3, Persona 6 / P1): proceso aparte del backend con Chromium.
 # En Render: servicio Docker nuevo, "Dockerfile Path" = ./Dockerfile.lector
 # Variables: GENLOGS_LECTOR_TOKEN (32+ caracteres). PORT lo pone Render.
+# La prueba de Daniel llegó al tope con 512 MiB. El lector queda para v3.4.
 
 # ---- Etapa 1: compilar y juntar dependencias (incluye Playwright, que es "provided") ----
 FROM eclipse-temurin:17-jdk-jammy AS build
