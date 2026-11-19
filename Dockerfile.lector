@@ -1,0 +1,31 @@
+# Servicio lector (v3.3, Persona 6 / P1): proceso aparte del backend con Chromium.
+# En Render: servicio Docker nuevo, "Dockerfile Path" = ./Dockerfile.lector
+# Variables: GENLOGS_LECTOR_TOKEN (32+ caracteres). PORT lo pone Render.
+# 512 MiB: una sola lectura a la vez (con dos llega al tope, prueba de Daniel).
+
+# ---- Etapa 1: compilar y juntar dependencias (incluye Playwright, que es "provided") ----
+FROM eclipse-temurin:17-jdk-jammy AS build
+WORKDIR /app
+COPY .mvn/ .mvn/
+COPY mvnw pom.xml ./
+RUN chmod +x mvnw && ./mvnw dependency:go-offline -B
+COPY src ./src
+# includeScope=compile trae compile + provided (Playwright), sin las de test.
+RUN ./mvnw -B -DskipTests compile \
+    dependency:copy-dependencies -DincludeScope=compile -DoutputDirectory=target/lib
+
+# ---- Etapa 2: runtime con Chromium ----
+FROM eclipse-temurin:17-jre-jammy
+WORKDIR /app
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+COPY --from=build /app/target/classes ./classes
+COPY --from=build /app/target/lib ./lib
+# libatomic1 va antes de Chromium (sin ella falla la instalacion; prueba de Daniel).
+RUN apt-get update && apt-get install -y --no-install-recommends libatomic1 \
+    && rm -rf /var/lib/apt/lists/*
+# Instala Chromium y sus librerias del sistema al construir (el lector no descarga en tiempo de ejecucion).
+RUN java -cp "classes:lib/*" com.microsoft.playwright.CLI install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
+EXPOSE 3001
+ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=50.0", \
+            "-cp", "classes:lib/*", "com.genlogs.lector.ServicioLectura"]
