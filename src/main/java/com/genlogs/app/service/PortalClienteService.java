@@ -263,6 +263,12 @@ public class PortalClienteService {
             log.warn("Registro de portal rechazado: la validación del RUC no devolvió datos");
             throw new BusinessException(SIN_VALIDACION_RUC);
         }
+        // Sin FACTILIZA_API_KEY, Factiliza devuelve datos simulados: no validan el RUC.
+        // Si se aceptaran, un descuido en Render dejaría registrar cualquier RUC.
+        if (datos.isSimulado()) {
+            log.warn("Registro de portal rechazado: Factiliza en modo simulado (falta FACTILIZA_API_KEY)");
+            throw new BusinessException(SIN_VALIDACION_RUC);
+        }
         if (datos.getIdDistrito() == null) {
             log.info("Registro de portal rechazado: el RUC {} no tiene un distrito del catálogo", ruc);
             throw new BusinessException("No pudimos ubicar el domicilio fiscal de tu RUC. Escríbenos y te damos acceso.");
@@ -272,8 +278,8 @@ public class PortalClienteService {
         Distrito distrito = distritoRepository.findById(datos.getIdDistrito())
                 .orElseThrow(() -> new BusinessException("No pudimos ubicar el domicilio fiscal de tu RUC. Escríbenos y te damos acceso."));
 
-        // En modo simulado (sin llave de Factiliza) la razón social de prueba no sirve: se usa la escrita.
-        String razonSocial = datos.isSimulado() || datos.getRazonSocial() == null || datos.getRazonSocial().isBlank()
+        // Si Factiliza no trae razón social, se usa la que escribió el visitante.
+        String razonSocial = datos.getRazonSocial() == null || datos.getRazonSocial().isBlank()
                 ? request.getRazonSocial().trim()
                 : datos.getRazonSocial().trim();
 

@@ -362,6 +362,36 @@ class PortalClienteTest {
     }
 
     @Test
+    void registroConFactilizaSimuladoNoDaDeAltaLaEmpresa() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        String ruc = "2096" + String.format("%07d", n);
+        Distrito distrito = ubigeo("Ica", "Ica", "Ica", n);
+        rolCliente();
+        tipoRuc();
+        when(factilizaService.consultarPorNumero(ruc)).thenReturn(ConsultaDocumentoResponse.builder()
+                .numeroDocumento(ruc)
+                .tipoDocumento("RUC")
+                .razonSocial("Empresa de Prueba S.A.C. (simulado)")
+                .idDistrito(distrito.getIdDistrito())
+                .origen("SIMULADO")
+                .simulado(true)
+                .build());
+        String cuerpo = """
+                {"razonSocial":"Empresa Falsa","documento":"%s","nombreContacto":"Falso",
+                 "correo":"simulado%s@portal.pe","password":"Clave1234"}
+                """.formatted(ruc, n);
+        long antes = usuarioRepository.count();
+
+        mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("No pudimos validar tu RUC. Inténtalo de nuevo en unos minutos."))
+                .andExpect(jsonPath("$.token").doesNotExist());
+
+        assertEquals(antes, usuarioRepository.count());
+        assertTrue(clienteRepository.findByNumeroDocumento(ruc).isEmpty());
+    }
+
+    @Test
     void registroAlQuintoIntentoAvisaElLimiteYNoElMensajeGenerico() throws Exception {
         int n = SECUENCIA.incrementAndGet();
         rolCliente();
