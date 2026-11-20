@@ -134,7 +134,9 @@ public class FactilizaService {
         Optional<ConsultaDocumento> guardado = consultaDocumentoRepository.findByNumeroDocumento(ruc);
         if (guardado.isPresent()) {
             String razon = desdeGuardado(guardado.get()).getRazonSocial();
-            return enBlanco(razon) ? null : razon.trim();
+            if (!enBlanco(razon)) {
+                return razon.trim();
+            }
         }
         if (apiKey == null || apiKey.isBlank()) {
             log.warn("FACTILIZA_API_KEY no configurada. La consulta pública de RUC queda sin dato.");
