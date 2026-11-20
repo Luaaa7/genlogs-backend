@@ -222,7 +222,7 @@ class PortalClienteTest {
 
         // Aviso solo al Jefe Administrativo. Los colegas de la empresa no reciben correo.
         verify(notificacionService).avisarRol(eq(RolSistema.JEFE_ADMINISTRATIVO), eq(TipoAviso.ACCESO_PORTAL_PENDIENTE),
-                anyString(), contains("ana" + n + "@portal.pe"), eq("/usuarios"), eq(false));
+                anyString(), contains("ana" + n + "@portal.pe"), eq("/usuarios"), eq(true));
         verify(notificacionService, never()).enviarCorreoCliente(anyString(), anyString(), anyString(), anyString());
 
         // Pendiente: no puede entrar al portal.

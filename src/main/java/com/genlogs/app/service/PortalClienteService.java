@@ -158,7 +158,7 @@ public class PortalClienteService {
      *       token) hasta que lo active el Jefe Administrativo. El RUC es público y el
      *       portal muestra los pedidos, precios y despachos de la empresa y deja aprobar
      *       cotizaciones: nadie debe entrar a eso solo por conocer el RUC. Se avisa al
-     *       Jefe Administrativo y, por correo, a los usuarios activos de la empresa.
+     *       Jefe Administrativo, en la campanita y por correo (BR4).
      *       Ese caso no consulta Factiliza ni consume el límite de intentos.</li>
      * </ul>
      */
@@ -214,7 +214,7 @@ public class PortalClienteService {
     }
 
     /**
-     * Aviso de un acceso pendiente solo en la campanita del Jefe Administrativo,
+     * Aviso de un acceso pendiente al Jefe Administrativo en la campanita y por correo (BR4),
      * que lo activa desde Usuarios. No se avisa a los colegas de la empresa.
      * Si el aviso falla, el registro sigue: el usuario ya quedó pendiente.
      */
@@ -226,7 +226,7 @@ public class PortalClienteService {
                     "Acceso al portal pendiente",
                     nuevo.getNombres() + " (" + nuevo.getCorreo() + ") pidió acceso al portal para "
                             + empresa + " (RUC " + ruc + "). Revísalo y actívalo en Usuarios si corresponde.",
-                    "/usuarios", false);
+                    "/usuarios", true);
         } catch (RuntimeException ex) {
             log.warn("No se pudo avisar el acceso pendiente del usuario {}: {}", nuevo.getIdUsuario(), ex.getMessage());
         }
