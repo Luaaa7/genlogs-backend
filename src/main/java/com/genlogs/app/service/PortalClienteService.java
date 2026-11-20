@@ -158,7 +158,7 @@ public class PortalClienteService {
      *       token) hasta que lo active el Jefe Administrativo. El RUC es público y el
      *       portal muestra los pedidos, precios y despachos de la empresa y deja aprobar
      *       cotizaciones: nadie debe entrar a eso solo por conocer el RUC. Se avisa al
-     *       Jefe Administrativo y, por correo, a los usuarios activos de la empresa.
+     *       Jefe Administrativo, en la campanita y por correo (BR4).
      *       Ese caso no consulta Factiliza ni consume el límite de intentos.</li>
      * </ul>
      */
@@ -214,10 +214,9 @@ public class PortalClienteService {
     }
 
     /**
-     * Aviso de un acceso pendiente: en la campanita del Jefe Administrativo (que lo
-     * activa desde Usuarios) y por correo a los usuarios activos de la empresa, para
-     * que sepan si alguien que no conocen pidió entrar con su RUC. Si el aviso falla,
-     * el registro sigue: el usuario ya quedó pendiente y no ve nada.
+     * Aviso de un acceso pendiente al Jefe Administrativo en la campanita y por correo (BR4),
+     * que lo activa desde Usuarios. No se avisa a los colegas de la empresa.
+     * Si el aviso falla, el registro sigue: el usuario ya quedó pendiente.
      */
     private void avisarAccesoPendiente(Cliente cliente, Usuario nuevo) {
         String empresa = cliente.getTercero().getRazonSocial();
@@ -227,14 +226,7 @@ public class PortalClienteService {
                     "Acceso al portal pendiente",
                     nuevo.getNombres() + " (" + nuevo.getCorreo() + ") pidió acceso al portal para "
                             + empresa + " (RUC " + ruc + "). Revísalo y actívalo en Usuarios si corresponde.",
-                    "/usuarios", false);
-            for (Usuario colega : usuarioRepository.findByCliente_IdClienteAndStatus(cliente.getIdCliente(), "A")) {
-                notificacionService.enviarCorreoCliente(colega.getCorreo(), colega.getNombres(),
-                        "Pidieron acceso al portal de GENLOGS para " + empresa,
-                        nuevo.getNombres() + " (" + nuevo.getCorreo() + ") pidió acceso al portal de GENLOGS para "
-                                + empresa + ". No tendrá acceso hasta que GENLOGS lo revise. "
-                                + "Si no reconoces a esta persona, respóndenos para bloquear la solicitud.");
-            }
+                    "/usuarios", true);
         } catch (RuntimeException ex) {
             log.warn("No se pudo avisar el acceso pendiente del usuario {}: {}", nuevo.getIdUsuario(), ex.getMessage());
         }
@@ -245,6 +237,8 @@ public class PortalClienteService {
         limitadorRegistro.verificar(ruc, correo);
         return altaClienteDesdeRuc(ruc, request);
     }
+
+    private static final String SIN_VALIDACION_RUC = "No pudimos validar tu RUC. Inténtalo de nuevo en unos minutos.";
 
     /**
      * Empresa nueva: el RUC se valida en Factiliza y con esos datos se crea el
@@ -258,6 +252,22 @@ public class PortalClienteService {
         } catch (BusinessException ex) {
             log.info("Registro de portal rechazado: no se pudo validar el RUC {} ({})", ruc, ex.getMessage());
             throw new BusinessException("No pudimos validar tu RUC en SUNAT. Revisa el número o escríbenos para ayudarte.");
+        } catch (RuntimeException ex) {
+            // Un error inesperado al validar (base o Factiliza) no debe terminar en 500.
+            log.warn("Registro de portal rechazado: error inesperado al validar el RUC ({})", ex.getClass().getSimpleName());
+            throw new BusinessException(SIN_VALIDACION_RUC);
+        }
+        // Hoy FactilizaService no devuelve null (sin clave simula, y timeout o HTTP lanzan BusinessException),
+        // pero si llega null no se sigue: sería un NPE y un 500.
+        if (datos == null) {
+            log.warn("Registro de portal rechazado: la validación del RUC no devolvió datos");
+            throw new BusinessException(SIN_VALIDACION_RUC);
+        }
+        // Sin FACTILIZA_API_KEY, Factiliza devuelve datos simulados: no validan el RUC.
+        // Si se aceptaran, un descuido en Render dejaría registrar cualquier RUC.
+        if (datos.isSimulado()) {
+            log.warn("Registro de portal rechazado: Factiliza en modo simulado (falta FACTILIZA_API_KEY)");
+            throw new BusinessException(SIN_VALIDACION_RUC);
         }
         if (datos.getIdDistrito() == null) {
             log.info("Registro de portal rechazado: el RUC {} no tiene un distrito del catálogo", ruc);
@@ -268,8 +278,8 @@ public class PortalClienteService {
         Distrito distrito = distritoRepository.findById(datos.getIdDistrito())
                 .orElseThrow(() -> new BusinessException("No pudimos ubicar el domicilio fiscal de tu RUC. Escríbenos y te damos acceso."));
 
-        // En modo simulado (sin llave de Factiliza) la razón social de prueba no sirve: se usa la escrita.
-        String razonSocial = datos.isSimulado() || datos.getRazonSocial() == null || datos.getRazonSocial().isBlank()
+        // Si Factiliza no trae razón social, se usa la que escribió el visitante.
+        String razonSocial = datos.getRazonSocial() == null || datos.getRazonSocial().isBlank()
                 ? request.getRazonSocial().trim()
                 : datos.getRazonSocial().trim();
 

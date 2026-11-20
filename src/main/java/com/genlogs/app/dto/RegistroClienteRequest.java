@@ -1,5 +1,7 @@
 package com.genlogs.app.dto;
 
+import com.genlogs.app.validation.ContrasenaDeRegistro;
+
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -9,6 +11,7 @@ import lombok.Setter;
 /** Alta del portal. El rol y el cliente los resuelve el servidor; el body no los trae. */
 @Getter
 @Setter
+@ContrasenaDeRegistro
 public class RegistroClienteRequest {
 
     @NotBlank(message = "La razón social es obligatoria")
@@ -32,6 +35,5 @@ public class RegistroClienteRequest {
     private String telefono;
 
     @NotBlank(message = "La contraseña es obligatoria")
-    @Size(min = 8, max = 72, message = "La contraseña debe tener entre 8 y 72 caracteres")
     private String password;
 }
