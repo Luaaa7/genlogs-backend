@@ -160,6 +160,14 @@ public class FactilizaService {
         return valor == null || valor.isBlank();
     }
 
+    /** Deja solo los 3 últimos dígitos de un RUC (10 o 20 y 9 dígitos) si cae en un log. */
+    static String enmascararDocumento(String texto) {
+        if (texto == null) {
+            return "";
+        }
+        return texto.replaceAll("(10|20)\\d{6}(\\d{3})", "***$2");
+    }
+
     /** Datos de un cliente o proveedor ya registrado con ese documento. */
     private Optional<ConsultaDocumentoResponse> desdeTercero(String tipo, String numero) {
         return terceroRepository.buscarRegistrado(tipo, numero).map((Tercero t) -> {
@@ -293,7 +301,7 @@ public class FactilizaService {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() >= 300) {
-                log.error("Factiliza respondió {}: {}", response.statusCode(), response.body());
+                log.error("Factiliza respondió {}: {}", response.statusCode(), enmascararDocumento(response.body()));
                 throw new BusinessException("No se pudo consultar el documento en Factiliza");
             }
 
@@ -310,7 +318,7 @@ public class FactilizaService {
             Thread.currentThread().interrupt();
             throw new BusinessException("La consulta a Factiliza fue interrumpida");
         } catch (Exception e) {
-            log.error("Error consultando Factiliza", e);
+            log.error("Error consultando Factiliza: {}", enmascararDocumento(e.getMessage()));
             throw new BusinessException("No se pudo consultar el documento en Factiliza");
         }
     }

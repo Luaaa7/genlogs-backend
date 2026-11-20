@@ -77,6 +77,15 @@ class ConsultaRucPublicaTest {
     }
 
     @Test
+    void elLogDeFactilizaDejaSoloLosTresUltimosDigitosDelRuc() {
+        assertThat(FactilizaService.enmascararDocumento("http://127.0.0.1/ruc/info/20123456789 body 20999888777"))
+                .doesNotContain("20123456789")
+                .doesNotContain("20999888777")
+                .contains("***789")
+                .contains("***777");
+    }
+
+    @Test
     void elLimitePorIpEsDiezConsultas() {
         LimitadorConsultaRuc limitador = new LimitadorConsultaRuc();
         for (int i = 0; i < LimitadorConsultaRuc.MAXIMO; i++) {
