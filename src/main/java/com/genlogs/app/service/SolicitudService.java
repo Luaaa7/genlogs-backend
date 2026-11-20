@@ -6,6 +6,8 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -49,6 +51,8 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class SolicitudService {
 
+    private static final Logger log = LoggerFactory.getLogger(SolicitudService.class);
+
     static final long TAMANO_MAXIMO_FOTO = 10L * 1024L * 1024L;
     private static final String CARPETA_FOTOS = "genlogs/solicitudes";
     private static final Set<String> TIPOS_IMAGEN = Set.of("image/jpeg", "image/png", "image/webp");
@@ -63,6 +67,7 @@ public class SolicitudService {
     private final PlazoSolicitud plazo;
     private final LimitadorSolicitudes limitador;
     private final CloudinaryService cloudinaryService;
+    private final AcuseSolicitudCorreo acuse;
 
     @Transactional
     public SolicitudCreadaResponse crear(SolicitudRequest request) {
@@ -111,6 +116,14 @@ public class SolicitudService {
         bitacora.registrar(guardada.getIdSolicitud(), usuario.getIdUsuario(), TipoEventoSolicitud.CREADA,
                 "Canal " + request.getCanal().name() + ", plazo " + tipoPlazo.name()
                         + ", " + request.getItems().size() + " repuesto(s)");
+
+        if (request.getCanal() == CanalSolicitud.LANDING || request.getCanal() == CanalSolicitud.VITRINA) {
+            try {
+                acuse.enviar(usuario.getCorreo(), usuario.getNombres(), guardada.getCodigoSolicitud());
+            } catch (RuntimeException e) {
+                log.warn("El acuse de la solicitud no se envió");
+            }
+        }
 
         return new SolicitudCreadaResponse(guardada.getIdSolicitud(), guardada.getCodigoSolicitud(),
                 EstadoSolicitud.PENDIENTE);

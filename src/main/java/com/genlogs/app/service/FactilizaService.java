@@ -119,6 +119,45 @@ public class FactilizaService {
         return respuesta;
     }
 
+    /**
+     * Razón social para el formulario público (RU3, RU5). Orden: tabla tercero,
+     * luego {@code consulta_documento}, luego Factiliza. Solo RUC: no consulta DNI.
+     * Sin llave, si Factiliza falla o si no hay nombre, devuelve null («sin dato»)
+     * para que el visitante escriba la razón social a mano. Nunca inventa datos
+     * ni lanza error. No escribe el RUC completo en el log.
+     */
+    public String consultarRazonSocialPublica(String ruc) {
+        Optional<ConsultaDocumentoResponse> registrado = desdeTercero("RUC", ruc);
+        if (registrado.isPresent() && !enBlanco(registrado.get().getRazonSocial())) {
+            return registrado.get().getRazonSocial().trim();
+        }
+        Optional<ConsultaDocumento> guardado = consultaDocumentoRepository.findByNumeroDocumento(ruc);
+        if (guardado.isPresent()) {
+            String razon = desdeGuardado(guardado.get()).getRazonSocial();
+            return enBlanco(razon) ? null : razon.trim();
+        }
+        if (apiKey == null || apiKey.isBlank()) {
+            log.warn("FACTILIZA_API_KEY no configurada. La consulta pública de RUC queda sin dato.");
+            return null;
+        }
+        try {
+            ConsultaDocumentoResponse respuesta = consultarRuc(ruc);
+            if (respuesta == null || enBlanco(respuesta.getRazonSocial())) {
+                log.warn("La consulta pública de RUC no trajo razón social.");
+                return null;
+            }
+            guardar(respuesta);
+            return respuesta.getRazonSocial().trim();
+        } catch (RuntimeException e) {
+            log.warn("La consulta pública de RUC no obtuvo razón social.");
+            return null;
+        }
+    }
+
+    private static boolean enBlanco(String valor) {
+        return valor == null || valor.isBlank();
+    }
+
     /** Datos de un cliente o proveedor ya registrado con ese documento. */
     private Optional<ConsultaDocumentoResponse> desdeTercero(String tipo, String numero) {
         return terceroRepository.buscarRegistrado(tipo, numero).map((Tercero t) -> {
@@ -176,9 +215,9 @@ public class FactilizaService {
                     .build());
         } catch (DataIntegrityViolationException e) {
             // Otra persona consultó el mismo número al mismo tiempo: ya quedó guardado.
-            log.info("La consulta de {} ya estaba guardada", r.getNumeroDocumento());
+            log.info("La consulta de documento ya estaba guardada");
         } catch (RuntimeException e) {
-            log.warn("No se pudo guardar la consulta de {}: {}", r.getNumeroDocumento(), e.getMessage());
+            log.warn("No se pudo guardar la consulta de documento");
         }
     }
 

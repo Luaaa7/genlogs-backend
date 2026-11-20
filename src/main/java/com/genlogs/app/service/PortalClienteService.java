@@ -214,10 +214,9 @@ public class PortalClienteService {
     }
 
     /**
-     * Aviso de un acceso pendiente: en la campanita del Jefe Administrativo (que lo
-     * activa desde Usuarios) y por correo a los usuarios activos de la empresa, para
-     * que sepan si alguien que no conocen pidió entrar con su RUC. Si el aviso falla,
-     * el registro sigue: el usuario ya quedó pendiente y no ve nada.
+     * Aviso de un acceso pendiente solo en la campanita del Jefe Administrativo,
+     * que lo activa desde Usuarios. No se avisa a los colegas de la empresa.
+     * Si el aviso falla, el registro sigue: el usuario ya quedó pendiente.
      */
     private void avisarAccesoPendiente(Cliente cliente, Usuario nuevo) {
         String empresa = cliente.getTercero().getRazonSocial();
@@ -228,13 +227,6 @@ public class PortalClienteService {
                     nuevo.getNombres() + " (" + nuevo.getCorreo() + ") pidió acceso al portal para "
                             + empresa + " (RUC " + ruc + "). Revísalo y actívalo en Usuarios si corresponde.",
                     "/usuarios", false);
-            for (Usuario colega : usuarioRepository.findByCliente_IdClienteAndStatus(cliente.getIdCliente(), "A")) {
-                notificacionService.enviarCorreoCliente(colega.getCorreo(), colega.getNombres(),
-                        "Pidieron acceso al portal de GENLOGS para " + empresa,
-                        nuevo.getNombres() + " (" + nuevo.getCorreo() + ") pidió acceso al portal de GENLOGS para "
-                                + empresa + ". No tendrá acceso hasta que GENLOGS lo revise. "
-                                + "Si no reconoces a esta persona, respóndenos para bloquear la solicitud.");
-            }
         } catch (RuntimeException ex) {
             log.warn("No se pudo avisar el acceso pendiente del usuario {}: {}", nuevo.getIdUsuario(), ex.getMessage());
         }

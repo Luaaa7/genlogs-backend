@@ -193,7 +193,7 @@ class PortalClienteTest {
     /**
      * Revisión de seguridad (Nicole): con solo el RUC, que es público, nadie entra a los pedidos,
      * precios y aprobaciones de una empresa que ya es cliente. El usuario nuevo queda pendiente,
-     * se avisa al Jefe Administrativo y a los usuarios de la empresa, y entra solo cuando el Jefe lo activa.
+     * se avisa solo al Jefe Administrativo, y entra solo cuando el Jefe lo activa.
      */
     @Test
     void registroEnEmpresaQueYaEsClienteQuedaPendienteHastaQueElJefeLoActive() throws Exception {
@@ -205,7 +205,7 @@ class PortalClienteTest {
         usuarioPortal("titular." + n, "titular" + n + "@portal.pe", cliente, rol);
         String cuerpo = """
                 {"razonSocial":"Otra razon","documento":"%s","nombreContacto":"Ana Ruiz",
-                 "correo":"ana%s@portal.pe","telefono":"999","password":"clave1234"}
+                 "correo":"ana%s@portal.pe","telefono":"999","password":"Clave1234"}
                 """.formatted(documento, n);
 
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
@@ -217,25 +217,24 @@ class PortalClienteTest {
         Usuario creado = usuarioRepository.findByCorreoIgnoreCaseAndStatus("ana" + n + "@portal.pe", "I").orElseThrow();
         assertEquals("CLIENTE", creado.getRol().getNombreRol());
         assertEquals(cliente.getIdCliente(), creado.getCliente().getIdCliente());
-        assertTrue(passwordEncoder.matches("clave1234", creado.getPasswordHash()));
-        assertNotEquals("clave1234", creado.getPasswordHash());
+        assertTrue(passwordEncoder.matches("Clave1234", creado.getPasswordHash()));
+        assertNotEquals("Clave1234", creado.getPasswordHash());
 
-        // Aviso al Jefe Administrativo (campanita) y correo al usuario que ya tenía la empresa.
+        // Aviso solo al Jefe Administrativo. Los colegas de la empresa no reciben correo.
         verify(notificacionService).avisarRol(eq(RolSistema.JEFE_ADMINISTRATIVO), eq(TipoAviso.ACCESO_PORTAL_PENDIENTE),
                 anyString(), contains("ana" + n + "@portal.pe"), eq("/usuarios"), eq(false));
-        verify(notificacionService).enviarCorreoCliente(eq("titular" + n + "@portal.pe"), anyString(), anyString(),
-                contains("ana" + n + "@portal.pe"));
+        verify(notificacionService, never()).enviarCorreoCliente(anyString(), anyString(), anyString(), anyString());
 
         // Pendiente: no puede entrar al portal.
         mockMvc.perform(post("/api/portal/login").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"correo\":\"ana" + n + "@portal.pe\",\"password\":\"clave1234\"}"))
+                        .content("{\"correo\":\"ana" + n + "@portal.pe\",\"password\":\"Clave1234\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.token").doesNotExist());
 
         // Un segundo usuario de la misma empresa también queda pendiente (varios usuarios por empresa).
         String segundo = """
                 {"razonSocial":"Otra razon","documento":"%s","nombreContacto":"Beto Paz",
-                 "correo":"beto%s@portal.pe","password":"clave1234"}
+                 "correo":"beto%s@portal.pe","password":"Clave1234"}
                 """.formatted(documento, n);
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(segundo))
                 .andExpect(status().isOk())
@@ -255,7 +254,7 @@ class PortalClienteTest {
 
         // Ya activo, entra con su correo.
         mockMvc.perform(post("/api/portal/login").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"correo\":\"ana" + n + "@portal.pe\",\"password\":\"clave1234\"}"))
+                        .content("{\"correo\":\"ana" + n + "@portal.pe\",\"password\":\"Clave1234\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token").isNotEmpty());
 
@@ -290,7 +289,7 @@ class PortalClienteTest {
                 .build());
         String cuerpo = """
                 {"razonSocial":"Minera Nueva","documento":"%s","nombreContacto":"Carla Soto",
-                 "correo":"carla%s@nueva.pe","password":"clave1234"}
+                 "correo":"carla%s@nueva.pe","password":"Clave1234"}
                 """.formatted(ruc, n);
 
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
@@ -311,7 +310,7 @@ class PortalClienteTest {
         rolCliente();
         String rucMalo = """
                 {"razonSocial":"Nadie","documento":"12345678","nombreContacto":"Nadie",
-                 "correo":"nadie%s@portal.pe","password":"clave1234"}
+                 "correo":"nadie%s@portal.pe","password":"Clave1234"}
                 """.formatted(n);
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(rucMalo))
                 .andExpect(status().isBadRequest())
@@ -324,7 +323,7 @@ class PortalClienteTest {
         when(factilizaService.consultarPorNumero(ruc)).thenThrow(new BusinessException("Factiliza no encontró datos"));
         String sinSunat = """
                 {"razonSocial":"Nadie","documento":"%s","nombreContacto":"Nadie",
-                 "correo":"nadie%s@portal.pe","password":"clave1234"}
+                 "correo":"nadie%s@portal.pe","password":"Clave1234"}
                 """.formatted(ruc, n);
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(sinSunat))
                 .andExpect(status().isBadRequest())
@@ -342,7 +341,7 @@ class PortalClienteTest {
         when(factilizaService.consultarPorNumero(ruc)).thenThrow(new BusinessException("Factiliza no encontró datos"));
         String cuerpo = """
                 {"razonSocial":"Nadie","documento":"%s","nombreContacto":"Nadie",
-                 "correo":"limite%s@portal.pe","password":"clave1234"}
+                 "correo":"limite%s@portal.pe","password":"Clave1234"}
                 """.formatted(ruc, n);
         for (int i = 0; i < 5; i++) {
             mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
@@ -364,7 +363,7 @@ class PortalClienteTest {
         usuarioPortal("ingreso." + n, "Ingreso" + n + "@Portal.pe", cliente, rolCliente());
 
         String respuesta = mockMvc.perform(post("/api/portal/login").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"correo\":\"ingreso" + n + "@portal.pe\",\"password\":\"clave1234\"}"))
+                        .content("{\"correo\":\"ingreso" + n + "@portal.pe\",\"password\":\"Clave1234\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.nombreRol").value("CLIENTE"))
                 .andExpect(jsonPath("$.nombreUsuario").value("ingreso." + n))
@@ -394,14 +393,14 @@ class PortalClienteTest {
             e.setNombreUsuario("jefe." + n);
             e.setNombres("Jefe Interno");
             e.setCorreo("jefe" + n + "@genlogs.pe");
-            e.setPasswordHash(passwordEncoder.encode("clave1234"));
+            e.setPasswordHash(passwordEncoder.encode("Clave1234"));
             e.setIniciales("JI");
             e.setBloqueado(false);
             e.setIntentosFallidos((short) 0);
         }));
 
         mockMvc.perform(post("/api/portal/login").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"correo\":\"jefe" + n + "@genlogs.pe\",\"password\":\"clave1234\"}"))
+                        .content("{\"correo\":\"jefe" + n + "@genlogs.pe\",\"password\":\"Clave1234\"}"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.token").doesNotExist());
     }
@@ -424,7 +423,7 @@ class PortalClienteTest {
 
         String cuerpo = """
                 {"razonSocial":"Minera Sur","documento":"%s","nombreContacto":"Ana",
-                 "correo":"%s@portal.pe","password":"clave1234"}
+                 "correo":"%s@portal.pe","password":"Clave1234"}
                 """.formatted(documento, local);
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
                 .andExpect(status().isOk())
@@ -438,7 +437,7 @@ class PortalClienteTest {
         assertEquals("portal", creado.getUserCreate());
         assertEquals("REGISTRO_PORTAL_PENDIENTE", creado.getProcessCreate());
         assertEquals("I", creado.getStatus().trim());
-        assertNotEquals("clave1234", creado.getPasswordHash());
+        assertNotEquals("Clave1234", creado.getPasswordHash());
 
         long antes = usuarioRepository.count();
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
@@ -458,7 +457,7 @@ class PortalClienteTest {
 
         String cuerpo = """
                 {"razonSocial":"3M Perú","documento":"%s","nombreContacto":"3M Perú",
-                 "correo":"tresm%s@portal.pe","password":"clave1234"}
+                 "correo":"tresm%s@portal.pe","password":"Clave1234"}
                 """.formatted(documento, n);
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
                 .andExpect(status().isOk());
@@ -471,7 +470,7 @@ class PortalClienteTest {
         cliente(distrito, documentoSinLetras, "9", "Sin letras " + n);
         String sinLetras = """
                 {"razonSocial":"9","documento":"%s","nombreContacto":"1",
-                 "correo":"sinletras%s@portal.pe","password":"clave1234"}
+                 "correo":"sinletras%s@portal.pe","password":"Clave1234"}
                 """.formatted(documentoSinLetras, n);
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(sinLetras))
                 .andExpect(status().isOk());
@@ -492,7 +491,7 @@ class PortalClienteTest {
 
         String cuerpo = """
                 {"razonSocial":"Largo","documento":"%s","nombreContacto":"Ana Ruiz",
-                 "correo":"%s@portal.pe","password":"clave1234"}
+                 "correo":"%s@portal.pe","password":"Clave1234"}
                 """.formatted(documento, "a".repeat(60));
         mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
                 .andExpect(status().isOk());
@@ -516,7 +515,7 @@ class PortalClienteTest {
             e.setNombreUsuario("inactivo." + n);
             e.setNombres("Cliente Inactivo");
             e.setCorreo("inactivo" + n + "@portal.pe");
-            e.setPasswordHash(passwordEncoder.encode("clave1234"));
+            e.setPasswordHash(passwordEncoder.encode("Clave1234"));
             e.setIniciales("CI");
             e.setBloqueado(false);
             e.setIntentosFallidos((short) 0);
@@ -525,7 +524,7 @@ class PortalClienteTest {
 
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"nombreUsuario\":\"inactivo." + n + "\",\"password\":\"clave1234\"}"))
+                        .content("{\"nombreUsuario\":\"inactivo." + n + "\",\"password\":\"Clave1234\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.token").doesNotExist())
                 .andExpect(jsonPath("$.message").value(containsString("inactivo")));
@@ -540,7 +539,7 @@ class PortalClienteTest {
             e.setNombreUsuario("suelto." + n);
             e.setNombres("Sin Cliente");
             e.setCorreo("suelto" + n + "@portal.pe");
-            e.setPasswordHash(passwordEncoder.encode("clave1234"));
+            e.setPasswordHash(passwordEncoder.encode("Clave1234"));
             e.setIniciales("SC");
             e.setBloqueado(false);
             e.setIntentosFallidos((short) 0);
@@ -614,6 +613,34 @@ class PortalClienteTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void registroRechazaContrasenaDebilSinGuardarNiDevolverla() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        rolCliente();
+        String debil = "debil" + n + "zz";
+        long antes = usuarioRepository.count();
+        String cuerpo = """
+                {"razonSocial":"Nadie","documento":"20111111111","nombreContacto":"Nadie",
+                 "correo":"debil%s@portal.pe","password":"%s"}
+                """.formatted(n, debil);
+        String respuesta = mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("La contraseña debe incluir una mayúscula"))
+                .andReturn().getResponse().getContentAsString();
+        assertFalse(respuesta.contains(debil));
+        assertEquals(antes, usuarioRepository.count());
+
+        String correo = "Ana" + n + "a@portal.pe";
+        String igual = """
+                {"razonSocial":"Nadie","documento":"20111111111","nombreContacto":"Nadie",
+                 "correo":"%s","password":"%s"}
+                """.formatted(correo, correo);
+        mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(igual))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("La contraseña debe ser distinta del correo"));
+        assertEquals(antes, usuarioRepository.count());
+    }
+
     private void asegurarCheck(String nombre, String sql) {
         Integer existe = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE UPPER(CONSTRAINT_NAME) = ?",
@@ -643,7 +670,7 @@ class PortalClienteTest {
             e.setNombreUsuario(nombreUsuario);
             e.setNombres("Contacto " + nombreUsuario);
             e.setCorreo(correo);
-            e.setPasswordHash(passwordEncoder.encode("clave1234"));
+            e.setPasswordHash(passwordEncoder.encode("Clave1234"));
             e.setIniciales("CP");
             e.setBloqueado(false);
             e.setIntentosFallidos((short) 0);

@@ -44,6 +44,14 @@ class SeguridadRolesTest {
         mockMvc.perform(get("/api/public/catalogo"))
                 .andExpect(status().isOk());
 
+        // Sin llave de Factiliza la consulta pública responde 200 y razón social null (RU5).
+        mockMvc.perform(get("/api/public/ruc/20123456789"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.razonSocial").value(org.hamcrest.Matchers.nullValue()));
+        mockMvc.perform(get("/api/public/ruc/12345678"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Ingresa un RUC válido"));
+
         mockMvc.perform(post("/api/portal/registro")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
