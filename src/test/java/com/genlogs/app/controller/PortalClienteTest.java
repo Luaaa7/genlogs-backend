@@ -641,6 +641,28 @@ class PortalClienteTest {
         assertEquals(antes, usuarioRepository.count());
     }
 
+    @Test
+    void registroRechazaCuarentaEnesPorLosBytesDeBcryptSinDevolverLaClave() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        rolCliente();
+        String password = "ñ".repeat(40) + "Aa1";
+        long antes = usuarioRepository.count();
+        String cuerpo = new ObjectMapper().writeValueAsString(java.util.Map.of(
+                "razonSocial", "Nadie",
+                "documento", "20111111111",
+                "nombreContacto", "Nadie",
+                "correo", "enes" + n + "@portal.pe",
+                "password", password));
+
+        String respuesta = mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("La contraseña no puede tener más de 72 caracteres"))
+                .andReturn().getResponse().getContentAsString();
+
+        assertFalse(respuesta.contains(password));
+        assertEquals(antes, usuarioRepository.count());
+    }
+
     private void asegurarCheck(String nombre, String sql) {
         Integer existe = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE UPPER(CONSTRAINT_NAME) = ?",

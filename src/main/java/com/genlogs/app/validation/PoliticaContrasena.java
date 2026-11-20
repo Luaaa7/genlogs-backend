@@ -1,5 +1,6 @@
 package com.genlogs.app.validation;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
 /**
@@ -23,7 +24,9 @@ public final class PoliticaContrasena {
         if (password.length() < MINIMO) {
             return Optional.of("La contraseña debe tener al menos " + MINIMO + " caracteres");
         }
-        if (password.length() > MAXIMO) {
+        // String.length() cuenta caracteres (unidades UTF-16). BCrypt rechaza más de 72 bytes UTF-8
+        // y, sin esta segunda medida, 40 "ñ" (80 bytes) más las otras reglas pasaban y el alta terminaba en 500.
+        if (password.length() > MAXIMO || password.getBytes(StandardCharsets.UTF_8).length > MAXIMO) {
             return Optional.of("La contraseña no puede tener más de " + MAXIMO + " caracteres");
         }
         if (password.chars().noneMatch(Character::isUpperCase)) {
