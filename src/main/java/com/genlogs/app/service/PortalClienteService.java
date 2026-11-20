@@ -238,6 +238,8 @@ public class PortalClienteService {
         return altaClienteDesdeRuc(ruc, request);
     }
 
+    private static final String SIN_VALIDACION_RUC = "No pudimos validar tu RUC. Inténtalo de nuevo en unos minutos.";
+
     /**
      * Empresa nueva: el RUC se valida en Factiliza y con esos datos se crea el
      * tercero y el cliente. Sin domicilio fiscal ubicable en el catálogo no se
@@ -250,6 +252,16 @@ public class PortalClienteService {
         } catch (BusinessException ex) {
             log.info("Registro de portal rechazado: no se pudo validar el RUC {} ({})", ruc, ex.getMessage());
             throw new BusinessException("No pudimos validar tu RUC en SUNAT. Revisa el número o escríbenos para ayudarte.");
+        } catch (RuntimeException ex) {
+            // Un error inesperado al validar (base o Factiliza) no debe terminar en 500.
+            log.warn("Registro de portal rechazado: error inesperado al validar el RUC ({})", ex.getClass().getSimpleName());
+            throw new BusinessException(SIN_VALIDACION_RUC);
+        }
+        // Hoy FactilizaService no devuelve null (sin clave simula, y timeout o HTTP lanzan BusinessException),
+        // pero si llega null no se sigue: sería un NPE y un 500.
+        if (datos == null) {
+            log.warn("Registro de portal rechazado: la validación del RUC no devolvió datos");
+            throw new BusinessException(SIN_VALIDACION_RUC);
         }
         if (datos.getIdDistrito() == null) {
             log.info("Registro de portal rechazado: el RUC {} no tiene un distrito del catálogo", ruc);

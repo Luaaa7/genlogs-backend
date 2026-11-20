@@ -334,6 +334,34 @@ class PortalClienteTest {
     }
 
     @Test
+    void registroConEmpresaNuevaYFactilizaSinDatoResponde400SinCrearUsuarioYSumaAlLimite() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        rolCliente();
+        String ruc = "2097" + String.format("%07d", n);
+        when(factilizaService.consultarPorNumero(ruc)).thenReturn(null);
+        String cuerpo = """
+                {"razonSocial":"Sin Dato","documento":"%s","nombreContacto":"Sin Dato",
+                 "correo":"sindato%s@portal.pe","password":"Clave1234"}
+                """.formatted(ruc, n);
+        long antes = usuarioRepository.count();
+
+        for (int i = 0; i < 5; i++) {
+            mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("No pudimos validar tu RUC. Inténtalo de nuevo en unos minutos."))
+                    .andExpect(jsonPath("$.token").doesNotExist());
+        }
+        // El limitador cuenta antes de consultar Factiliza: el sexto intento ya es 429.
+        mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+                .andExpect(status().isTooManyRequests());
+
+        assertEquals(antes, usuarioRepository.count());
+        assertFalse(usuarioRepository.existsByCorreoIgnoreCase("sindato" + n + "@portal.pe"));
+        assertTrue(clienteRepository.findByNumeroDocumento(ruc).isEmpty());
+        verify(factilizaService, times(5)).consultarPorNumero(ruc);
+    }
+
+    @Test
     void registroAlQuintoIntentoAvisaElLimiteYNoElMensajeGenerico() throws Exception {
         int n = SECUENCIA.incrementAndGet();
         rolCliente();
