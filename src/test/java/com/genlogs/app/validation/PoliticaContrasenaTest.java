@@ -38,6 +38,17 @@ class PoliticaContrasenaTest {
         assertThat(String.join(" ", mensajes)).doesNotContain("Ab1def");
     }
 
+    @Test
+    void elTopeSeMideEnBytesYElMensajeLoExplica() {
+        String mensaje = "La contraseña es demasiado larga (máximo 72 bytes; las tildes y la ñ cuentan doble)";
+        // 73 caracteres ASCII: pasa el tope por caracteres.
+        assertThat(PoliticaContrasena.incumplimiento("Aa1" + "x".repeat(70), "ana@portal.pe")).contains(mensaje);
+        // 43 caracteres, pero 83 bytes: 40 «ñ» cuentan doble.
+        assertThat(PoliticaContrasena.incumplimiento("ñ".repeat(40) + "Aa1", "ana@portal.pe")).contains(mensaje);
+        // Justo 72 bytes: se acepta.
+        assertThat(PoliticaContrasena.incumplimiento("Aa1" + "x".repeat(69), "ana@portal.pe")).isEmpty();
+    }
+
     private static RegistroClienteRequest request(String password) {
         RegistroClienteRequest request = new RegistroClienteRequest();
         request.setRazonSocial("Empresa");

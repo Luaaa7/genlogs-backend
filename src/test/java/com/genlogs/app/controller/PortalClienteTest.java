@@ -656,7 +656,7 @@ class PortalClienteTest {
 
         String respuesta = mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("La contraseña no puede tener más de 72 caracteres"))
+                .andExpect(jsonPath("$.message").value("La contraseña es demasiado larga (máximo 72 bytes; las tildes y la ñ cuentan doble)"))
                 .andReturn().getResponse().getContentAsString();
 
         assertFalse(respuesta.contains(password));

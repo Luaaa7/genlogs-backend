@@ -12,6 +12,9 @@ public final class PoliticaContrasena {
 
     public static final int MINIMO = 8;
     public static final int MAXIMO = 72;
+    /** El tope es de BCrypt y se mide en bytes UTF-8: las tildes y la ñ ocupan 2. */
+    public static final String MENSAJE_DEMASIADO_LARGA =
+            "La contraseña es demasiado larga (máximo 72 bytes; las tildes y la ñ cuentan doble)";
 
     private PoliticaContrasena() {
     }
@@ -27,7 +30,7 @@ public final class PoliticaContrasena {
         // String.length() cuenta caracteres (unidades UTF-16). BCrypt rechaza más de 72 bytes UTF-8
         // y, sin esta segunda medida, 40 "ñ" (80 bytes) más las otras reglas pasaban y el alta terminaba en 500.
         if (password.length() > MAXIMO || password.getBytes(StandardCharsets.UTF_8).length > MAXIMO) {
-            return Optional.of("La contraseña no puede tener más de " + MAXIMO + " caracteres");
+            return Optional.of(MENSAJE_DEMASIADO_LARGA);
         }
         if (password.chars().noneMatch(Character::isUpperCase)) {
             return Optional.of("La contraseña debe incluir una mayúscula");
