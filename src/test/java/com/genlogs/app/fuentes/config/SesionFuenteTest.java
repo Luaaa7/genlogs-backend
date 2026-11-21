@@ -283,19 +283,18 @@ class SesionFuenteTest {
         assertThat(sesiones.sesionVigente(CodigoFuente.EBAY)).isEmpty();
         assertThat(fuente(CodigoFuente.EBAY).getEstado()).isEqualTo(EstadoFuente.CON_ERROR);
     }
+@Test
+void sesionVigente_siAlRenovarFaltanLasReglasQuedaSinProbar() {
+    cargarCuenta(CodigoFuente.EBAY);
+    FuenteBusquedaConfig f = fuentes.findByCodigo(CodigoFuente.EBAY).orElseThrow();
+    f.setEstado(EstadoFuente.ACTIVA);
+    f.setSesionValidaHasta(LocalDateTime.now().minusMinutes(1));
 
-    @Test
-    void sesionVigente_siAlRenovarFaltanLasReglasQuedaSinProbar() {
-        cargarCuenta(CodigoFuente.EBAY);
-        FuenteBusquedaConfig f = fuentes.findByCodigo(CodigoFuente.EBAY).orElseThrow();
-        f.setEstado(EstadoFuente.ACTIVA);
-        f.setSesionValidaHasta(LocalDateTime.now().minusMinutes(1));
-        when(lector.iniciarSesion(any(), any(), any(), any()))
-                .thenReturn(ResultadoSesion.sinConfigurar("eBay: faltan reglas de la página de inicio de sesión."));
+    assertThat(sesiones.sesionVigente(CodigoFuente.EBAY)).isEmpty();
+    assertThat(fuente(CodigoFuente.EBAY).getEstado()).isEqualTo(EstadoFuente.SIN_PROBAR);
 
-        assertThat(sesiones.sesionVigente(CodigoFuente.EBAY)).isEmpty();
-        assertThat(fuente(CodigoFuente.EBAY).getEstado()).isEqualTo(EstadoFuente.SIN_PROBAR);
-    }
+    verify(lector, never()).iniciarSesion(any(), any(), any(), any());
+}
 
     @Test
     void sesionVigente_fuenteNoProbadaNoEntraNiLlamaAlLector() {
