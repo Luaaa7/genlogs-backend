@@ -2,6 +2,7 @@ package com.genlogs.app.service;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -20,15 +21,20 @@ import com.genlogs.app.dto.CambiarEstadoOrdenCompraRequest;
 import com.genlogs.app.dto.ConfirmarOcRequest;
 import com.genlogs.app.dto.OrdenCompraRequest;
 import com.genlogs.app.dto.PaginaResponse;
+import com.genlogs.app.dto.PrecargaOrdenCompraResponse;
 import com.genlogs.app.dto.OrdenCompraResponse;
+import com.genlogs.app.enums.CodigoEstadoCotizacion;
 import com.genlogs.app.exception.BusinessException;
+import com.genlogs.app.exception.EstadoNoPermitidoException;
 import com.genlogs.app.exception.ResourceNotFoundException;
 import com.genlogs.app.model.CondicionPago;
 import com.genlogs.app.model.Cotizacion;
+import com.genlogs.app.model.CotizacionDetalle;
 import com.genlogs.app.model.EstadoOrdenCompra;
 import com.genlogs.app.model.OrdenCompra;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.CondicionPagoRepository;
+import com.genlogs.app.repository.CotizacionDetalleRepository;
 import com.genlogs.app.repository.CotizacionRepository;
 import com.genlogs.app.repository.FacturacionRepository;
 import com.genlogs.app.repository.EstadoOrdenCompraRepository;
@@ -50,6 +56,7 @@ public class OrdenCompraService {
     private final CloudinaryService cloudinaryService;
     private final FacturacionRepository facturacionRepository;
     private final LectorOcPdf lectorOcPdf;
+    private final CotizacionDetalleRepository cotizacionDetalleRepository;
 
     @Transactional(readOnly = true)
     public PaginaResponse<OrdenCompraResponse> listar(String estadoCodigo, Long idCotizacion, int page, int size) {
@@ -89,8 +96,10 @@ public class OrdenCompraService {
         Cotizacion cotizacion = cotizacionRepository.findById(request.getIdCotizacion())
                 .orElseThrow(() -> new ResourceNotFoundException("Cotización no encontrada"));
 
-        if (!"APROBADA".equals(cotizacion.getEstadoCotizacion().getCodigoEstado())) {
-            throw new BusinessException("Solo se puede generar una orden de compra sobre una cotización APROBADA");
+        if (!CodigoEstadoCotizacion.esAceptacionCliente(
+                cotizacion.getEstadoCotizacion() == null ? null : cotizacion.getEstadoCotizacion().getCodigoEstado())) {
+            throw new EstadoNoPermitidoException(
+                    "Solo se puede generar una orden de compra cuando el cliente ya aceptó la cotización");
         }
 
         if (ordenCompraRepository.existsByCotizacion_IdCotizacionAndStatus(cotizacion.getIdCotizacion(), "A")) {
@@ -124,6 +133,111 @@ public class OrdenCompraService {
     }
 
     /**
+     * Cliente, ítems y montos en soles para precargar el alta de la orden.
+     * La orden queda vinculada al volver a enviar {@code idCotizacion}.
+     */
+    @Transactional(readOnly = true)
+    public PrecargaOrdenCompraResponse precargarDesdeCotizacion(Long idCotizacion) {
+        Cotizacion cotizacion = cotizacionRepository.findById(idCotizacion)
+                .orElseThrow(() -> new ResourceNotFoundException("Cotización no encontrada"));
+        String codigo = cotizacion.getEstadoCotizacion() == null
+                ? null
+                : cotizacion.getEstadoCotizacion().getCodigoEstado();
+        if (!CodigoEstadoCotizacion.esAceptacionCliente(codigo)) {
+            throw new EstadoNoPermitidoException(
+                    "Solo se puede precargar la orden cuando el cliente ya aceptó la cotización");
+        }
+        String moneda = codigoMoneda(cotizacion);
+        BigDecimal tipoCambio = cotizacion.getTipoCambioUsado();
+        CotizacionRepository.TotalesCotizacionProjection totales = cotizacionRepository
+                .findTotalesByCotizacion(idCotizacion)
+                .orElse(null);
+        BigDecimal subtotal = totales == null ? BigDecimal.ZERO : nuloCero(totales.getSubtotal());
+        BigDecimal igv = totales == null ? BigDecimal.ZERO : nuloCero(totales.getIgv());
+        BigDecimal total = totales == null ? BigDecimal.ZERO : nuloCero(totales.getTotal());
+        String cliente = cotizacion.getCliente() != null && cotizacion.getCliente().getTercero() != null
+                ? cotizacion.getCliente().getTercero().getRazonSocial()
+                : null;
+        return PrecargaOrdenCompraResponse.builder()
+                .idCotizacion(cotizacion.getIdCotizacion())
+                .codigoCotizacion(cotizacion.getCodigoCotizacion())
+                .idCliente(cotizacion.getCliente() == null ? null : cotizacion.getCliente().getIdCliente())
+                .cliente(cliente)
+                .moneda("PEN")
+                .monedaCotizacion(moneda)
+                .tipoCambio("USD".equals(moneda) ? tipoCambio : null)
+                .idCondicionPago(cotizacion.getCondicionPago() == null
+                        ? null
+                        : cotizacion.getCondicionPago().getIdCondicionPago())
+                .subtotal(aSoles(subtotal, moneda, tipoCambio))
+                .igv(aSoles(igv, moneda, tipoCambio))
+                .total(aSoles(total, moneda, tipoCambio))
+                .items(cotizacionDetalleRepository.findByCotizacion(idCotizacion).stream()
+                        .map(linea -> itemEnSoles(linea, moneda, tipoCambio))
+                        .toList())
+                .build();
+    }
+
+    private static PrecargaOrdenCompraResponse.Item itemEnSoles(
+            CotizacionDetalle linea, String moneda, BigDecimal tipoCambio) {
+        BigDecimal importe = linea.getImporteLinea() != null
+                ? linea.getImporteLinea()
+                : importeDe(linea);
+        String descripcion = linea.getDescripcionPersonalizada();
+        if (descripcion == null || descripcion.isBlank()) {
+            if (linea.getProducto() != null) {
+                descripcion = linea.getProducto().getNombreProducto();
+            } else if (linea.getServicio() != null) {
+                descripcion = linea.getServicio().getNombreServicio();
+            }
+        }
+        return PrecargaOrdenCompraResponse.Item.builder()
+                .idCotizacionDetalle(linea.getIdCotizacionDetalle())
+                .descripcion(descripcion)
+                .cantidad(linea.getCantidad())
+                .unidad(linea.getUnidadMedida() == null ? null : linea.getUnidadMedida().getNombreUnidad())
+                .precioUnitario(aSoles(linea.getPrecioUnitario(), moneda, tipoCambio))
+                .importe(aSoles(importe, moneda, tipoCambio))
+                .build();
+    }
+
+    private static BigDecimal importeDe(CotizacionDetalle linea) {
+        BigDecimal cantidad = linea.getCantidad() == null ? BigDecimal.ZERO : linea.getCantidad();
+        BigDecimal precio = linea.getPrecioUnitario() == null ? BigDecimal.ZERO : linea.getPrecioUnitario();
+        BigDecimal descuento = linea.getDescuentoUnitario() == null ? BigDecimal.ZERO : linea.getDescuentoUnitario();
+        return cantidad.multiply(precio.subtract(descuento));
+    }
+
+    private static String codigoMoneda(Cotizacion cotizacion) {
+        if (cotizacion.getMoneda() == null || cotizacion.getMoneda().getCodigoMoneda() == null) {
+            throw new BusinessException("La cotización no tiene moneda");
+        }
+        return cotizacion.getMoneda().getCodigoMoneda().trim().toUpperCase(Locale.ROOT);
+    }
+
+    /** PEN se deja igual. USD se pasa a soles con el tipo de cambio de la cotización. */
+    static BigDecimal aSoles(BigDecimal monto, String moneda, BigDecimal tipoCambio) {
+        if (monto == null) {
+            return null;
+        }
+        if ("PEN".equals(moneda)) {
+            return monto;
+        }
+        if ("USD".equals(moneda)) {
+            if (tipoCambio == null || tipoCambio.signum() <= 0) {
+                throw new BusinessException(
+                        "La cotización está en dólares y no tiene tipo de cambio para pasarla a soles");
+            }
+            return monto.multiply(tipoCambio).setScale(2, RoundingMode.HALF_UP);
+        }
+        throw new BusinessException("Solo se precarga una orden en soles desde una cotización en PEN o USD");
+    }
+
+    private static BigDecimal nuloCero(BigDecimal valor) {
+        return valor == null ? BigDecimal.ZERO : valor;
+    }
+
+    /**
      * Al aprobar una cotización se registra sola su orden de compra (estado RECIBIDA),
      * con el siguiente número correlativo (0031-10). Si ya tiene una, no hace nada.
      */
@@ -131,7 +245,7 @@ public class OrdenCompraService {
     public OrdenCompraResponse crearAutomatica(Long idCotizacion) {
         Cotizacion cotizacion = cotizacionRepository.findById(idCotizacion)
                 .orElseThrow(() -> new ResourceNotFoundException("Cotización no encontrada"));
-        if (!"APROBADA".equals(cotizacion.getEstadoCotizacion().getCodigoEstado())
+        if (!CodigoEstadoCotizacion.esAceptacionCliente(cotizacion.getEstadoCotizacion().getCodigoEstado())
                 || ordenCompraRepository.existsByCotizacion_IdCotizacionAndStatus(idCotizacion, "A")) {
             return null;
         }

@@ -24,6 +24,16 @@ public final class PermisosCotizacion {
     public static final String APROBAR =
             "hasRole(T(com.genlogs.app.enums.RolSistema).JEFE_ADMINISTRATIVO.name())";
 
+    /**
+     * Marcar enviada y registrar la respuesta del cliente.
+     * Vendedor = ASISTENTE_LOGISTICO (v3_0_roles renombró VENDEDOR).
+     * Jefe = JEFE_ADMINISTRATIVO. VENDEDOR queda por si la migración de roles no corrió.
+     */
+    public static final String REGISTRAR_RESPUESTA = "hasAnyRole("
+            + "T(com.genlogs.app.enums.RolSistema).ASISTENTE_LOGISTICO.name(),"
+            + "T(com.genlogs.app.enums.RolSistema).JEFE_ADMINISTRATIVO.name(),"
+            + "'VENDEDOR')";
+
     /** Portal: el cliente solo ve y decide las cotizaciones de su empresa. */
     public static final String PORTAL =
             "hasRole(T(com.genlogs.app.enums.RolSistema).CLIENTE.name())";

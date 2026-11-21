@@ -85,11 +85,11 @@ class CotizacionActualizarPermisosTest {
     }
 
     @org.junit.jupiter.api.Test
-    void soloElJefeRegistraLaRespuestaDelCliente() throws Exception {
-        when(respuestas.registrar(anyLong(), any())).thenReturn("APROBADA");
+    void vendedorYJefeRegistranLaRespuestaYElRestoRecibe403() throws Exception {
+        when(respuestas.registrar(anyLong(), any())).thenReturn("ACEPTADA_CLIENTE");
         when(servicio.buscarPorId(anyLong())).thenReturn(CotizacionResponse.builder().idCotizacion(8L).build());
         String cuerpo = """
-                {"codigoEstado":"APROBADA","comentario":"Llamó el 16/11 a las 9:00","idAdjunto":7}
+                {"codigoEstado":"ACEPTADA_CLIENTE","comentario":"Llamó el 16/11 a las 9:00","idAdjunto":7}
                 """;
 
         mockMvc.perform(post("/api/cotizaciones/8/respuesta-cliente")
@@ -97,18 +97,25 @@ class CotizacionActualizarPermisosTest {
                         .content(cuerpo)
                         .with(user("jefe").roles("JEFE_ADMINISTRATIVO")))
                 .andExpect(status().isOk());
-        verify(respuestas).registrar(anyLong(), any());
-        verify(servicio).registrarOrdenSiAprobada(8L, "APROBADA");
+
+        mockMvc.perform(post("/api/cotizaciones/8/respuesta-cliente")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpo)
+                        .with(user("vendedor").roles("ASISTENTE_LOGISTICO")))
+                .andExpect(status().isOk());
+        verify(respuestas, org.mockito.Mockito.times(2)).registrar(anyLong(), any());
+        // v3.4: la respuesta del cliente ya no crea la orden; se registra después en el alta de la OC.
+        verify(servicio, never()).registrarOrdenSiAprobada(anyLong(), any());
 
         for (String rol : new String[] {
-                "ASISTENTE_LOGISTICO", "ASISTENTE_ADMINISTRATIVO", "CLIENTE", "GERENTE_GENERAL" }) {
+                "ASISTENTE_ADMINISTRATIVO", "CLIENTE", "GERENTE_GENERAL" }) {
             mockMvc.perform(post("/api/cotizaciones/8/respuesta-cliente")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(cuerpo)
                             .with(user("otro").roles(rol)))
                     .andExpect(status().isForbidden());
         }
-        verify(respuestas, org.mockito.Mockito.times(1)).registrar(anyLong(), any());
+        verify(respuestas, org.mockito.Mockito.times(2)).registrar(anyLong(), any());
     }
 
     @Configuration

@@ -33,8 +33,8 @@ import com.genlogs.app.dto.CotizacionRequest;
 import com.genlogs.app.dto.CotizacionResponse;
 import com.genlogs.app.dto.EnviarCotizacionRequest;
 import com.genlogs.app.dto.EnviarCotizacionResponse;
+import com.genlogs.app.dto.RespuestaClienteRegistradaResponse;
 import com.genlogs.app.dto.RespuestaClienteRequest;
-import com.genlogs.app.enums.CodigoEstadoCotizacion;
 import com.genlogs.app.dto.EstadisticasCotizacionResponse;
 import com.genlogs.app.dto.PaginaResponse;
 import com.genlogs.app.dto.SeguimientoCotizacionResponse;
@@ -239,18 +239,52 @@ public class CotizacionController {
     }
 
     /**
-     * El Jefe registra la respuesta que llegó por correo o por teléfono.
-     * APROBADA sigue el camino del portal: la decisión y después la orden, una sola vez.
+     * Envía el correo de la cotización y, si sale, la deja en ENVIADA.
+     * Solo desde "Aprobada por el Jefe".
      */
-    @PreAuthorize(PermisosCotizacion.APROBAR)
-    @PostMapping("/{id}/respuesta-cliente")
-    public ResponseEntity<CotizacionResponse> registrarRespuestaCliente(
-            @PathVariable Long id, @RequestBody RespuestaClienteRequest request) {
-        String codigo = respuestaClienteService.registrar(id, request);
-        if (CodigoEstadoCotizacion.APROBADA.name().equals(codigo)) {
-            cotizacionService.registrarOrdenSiAprobada(id, codigo);
-        }
+    @PreAuthorize(PermisosCotizacion.REGISTRAR_RESPUESTA)
+    @PostMapping("/{id}/marcar-enviada")
+    public ResponseEntity<CotizacionResponse> marcarEnviada(@PathVariable Long id) {
+        respuestaClienteService.marcarEnviada(id);
         return ResponseEntity.ok(cotizacionService.buscarPorId(id));
+    }
+
+    /**
+     * Respuesta del cliente que registra el vendedor o el jefe.
+     * codigoEstado (ACEPTADA_CLIENTE, EN_NEGOCIACION, RECHAZADA) no crea la orden.
+     * La orden la registra después el alta de orden de compra.
+     */
+    @PreAuthorize(PermisosCotizacion.REGISTRAR_RESPUESTA)
+    @PostMapping(value = "/{id}/respuesta-cliente", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> registrarRespuestaCliente(
+            @PathVariable Long id, @RequestBody RespuestaClienteRequest request) {
+        if (request != null && request.getAccion() != null && !request.getAccion().isBlank()) {
+            SeguimientoCotizacionResponse seguimiento = respuestaClienteService.registrarRespuesta(
+                    id, request.getAccion(), request.getFechaRespuesta(), request.getMedio(), request.getNota(), null);
+            return ResponseEntity.ok(RespuestaClienteRegistradaResponse.builder()
+                    .cotizacion(cotizacionService.buscarPorId(id))
+                    .seguimiento(seguimiento)
+                    .build());
+        }
+        respuestaClienteService.registrar(id, request);
+        return ResponseEntity.ok(cotizacionService.buscarPorId(id));
+    }
+
+    @PreAuthorize(PermisosCotizacion.REGISTRAR_RESPUESTA)
+    @PostMapping(value = "/{id}/respuesta-cliente", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<RespuestaClienteRegistradaResponse> registrarRespuestaClienteConAdjunto(
+            @PathVariable Long id,
+            @RequestParam String accion,
+            @RequestParam("fecha_respuesta") String fechaRespuesta,
+            @RequestParam String medio,
+            @RequestParam(required = false) String nota,
+            @RequestParam(required = false) MultipartFile adjunto) {
+        SeguimientoCotizacionResponse seguimiento = respuestaClienteService.registrarRespuesta(
+                id, accion, fechaRespuesta, medio, nota, adjunto);
+        return ResponseEntity.ok(RespuestaClienteRegistradaResponse.builder()
+                .cotizacion(cotizacionService.buscarPorId(id))
+                .seguimiento(seguimiento)
+                .build());
     }
 
     @PreAuthorize(PermisosCotizacion.CREAR)

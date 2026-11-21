@@ -140,7 +140,7 @@ public interface CotizacionRepository extends JpaRepository<Cotizacion, Long> {
             "          JOIN estado_cotizacion e2 ON e2.id_estado_cotizacion = s2.id_estado_cotizacion " +
             "          WHERE s2.id_cotizacion = env.id_cotizacion " +
             "            AND s2.fecha_evento >= env.fecha_envio " +
-            "            AND e2.codigo_estado IN ('EN_NEGOCIACION', 'APROBADA', 'ACEPTADA', 'CONVERTIDA_OC', 'RECHAZADA') " +
+            "            AND e2.codigo_estado IN ('EN_NEGOCIACION', 'ACEPTADA_CLIENTE', 'APROBADA', 'ACEPTADA', 'CONVERTIDA_OC', 'RECHAZADA') " +
             "         ) AS fecha_respuesta " +
             "  FROM ( " +
             "    SELECT s.id_cotizacion, MIN(s.fecha_evento) AS fecha_envio " +
@@ -164,7 +164,7 @@ public interface CotizacionRepository extends JpaRepository<Cotizacion, Long> {
     @Query("SELECT COUNT(c) FROM Cotizacion c WHERE c.status = 'A'")
     long countActivas();
 
-    @Query("SELECT COUNT(c) FROM Cotizacion c WHERE c.status = 'A' AND c.estadoCotizacion.codigoEstado = 'APROBADA'")
+    @Query("SELECT COUNT(c) FROM Cotizacion c WHERE c.status = 'A' AND c.estadoCotizacion.codigoEstado IN ('ACEPTADA_CLIENTE', 'APROBADA')")
     long countAprobadas();
 
     /**

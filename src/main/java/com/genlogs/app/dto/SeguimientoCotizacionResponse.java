@@ -2,6 +2,7 @@
 package com.genlogs.app.dto;
 
 import java.time.Instant;
+import java.time.LocalDate;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -61,5 +62,16 @@ public class SeguimientoCotizacionResponse {
 
     /** Alias de comentario. */
     private String observaciones;
-}
 
+    /** Día en que respondió el cliente. Nulo si el evento no es una respuesta. */
+    private LocalDate fechaRespuesta;
+
+    /** correo, whatsapp, llamada u otro. */
+    private String medio;
+
+    /** Ruta o URL del adjunto de evidencia. */
+    private String rutaAdjunto;
+
+    /** id del adjunto de evidencia (adjunto_cotizacion), si lo hay. */
+    private Long idAdjunto;
+}

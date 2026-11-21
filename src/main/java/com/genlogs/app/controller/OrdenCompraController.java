@@ -20,6 +20,7 @@ import com.genlogs.app.dto.ConfirmarOcRequest;
 import com.genlogs.app.dto.OrdenCompraRequest;
 import com.genlogs.app.dto.OrdenCompraResponse;
 import com.genlogs.app.dto.PaginaResponse;
+import com.genlogs.app.dto.PrecargaOrdenCompraResponse;
 import com.genlogs.app.service.OrdenCompraService;
 import com.genlogs.app.service.PermisosOrdenCompra;
 import com.genlogs.app.service.FacturacionService;
@@ -49,6 +50,12 @@ public class OrdenCompraController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "100") int size) {
         return ResponseEntity.ok(ordenCompraService.listar(estadoCodigo, idCotizacion, page, size));
+    }
+
+    @PreAuthorize(PermisosOrdenCompra.VER)
+    @GetMapping("/desde-cotizacion/{idCotizacion}")
+    public ResponseEntity<PrecargaOrdenCompraResponse> precargar(@PathVariable Long idCotizacion) {
+        return ResponseEntity.ok(ordenCompraService.precargarDesdeCotizacion(idCotizacion));
     }
 
     @PreAuthorize(PermisosOrdenCompra.VER)

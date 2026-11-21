@@ -79,7 +79,7 @@ public class PortalCotizacionService {
 
     @Transactional
     public PortalCotizacionResponse aprobar(Long id, DecisionPortalRequest request) {
-        return decidir(id, CodigoEstadoCotizacion.APROBADA, "APROBACION_PORTAL", texto(request, "Aprobada por el cliente"));
+        return decidir(id, CodigoEstadoCotizacion.ACEPTADA_CLIENTE, "APROBACION_PORTAL", texto(request, "Aceptada por el cliente"));
     }
 
     @Transactional
