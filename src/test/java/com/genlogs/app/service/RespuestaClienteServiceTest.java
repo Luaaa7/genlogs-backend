@@ -59,7 +59,8 @@ class RespuestaClienteServiceTest {
     void setUp() {
         PortalCotizacionService portal = new PortalCotizacionService(
                 usuarios, cotizaciones, detalles, estados, seguimientos, ordenes);
-        servicio = new RespuestaClienteService(cotizaciones, adjuntos, seguimientos, usuarios, portal);
+        servicio = new RespuestaClienteService(
+                cotizaciones, adjuntos, seguimientos, usuarios, portal, estados, null);
         jefe = new Usuario();
         jefe.setNombreUsuario("jefe");
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
@@ -77,15 +78,15 @@ class RespuestaClienteServiceTest {
         Cotizacion enviada = cotizacion(15L, "ENVIADA");
         when(cotizaciones.findById(15L)).thenReturn(Optional.of(enviada));
         when(adjuntos.findById(7L)).thenReturn(Optional.of(adjunto(7L, enviada, "llamada.pdf")));
-        when(estados.findByCodigoEstado("APROBADA")).thenReturn(Optional.of(estado("APROBADA")));
+        when(estados.findByCodigoEstado("ACEPTADA_CLIENTE")).thenReturn(Optional.of(estado("ACEPTADA_CLIENTE")));
         SeguimientoCotizacion reenvio = envio(ENVIADO.plusDays(3));
         when(seguimientos.findByCotizacion(15L)).thenReturn(List.of(reenvio, envio(ENVIADO)));
 
-        assertEquals("APROBADA", servicio.registrar(15L, pedido("APROBADA", "Llamó el 16/11 a las 9:00", 7L)));
-        assertEquals("APROBADA", enviada.getEstadoCotizacion().getCodigoEstado());
+        assertEquals("ACEPTADA_CLIENTE", servicio.registrar(15L, pedido("ACEPTADA_CLIENTE", "Llamó el 16/11 a las 9:00", 7L)));
+        assertEquals("ACEPTADA_CLIENTE", enviada.getEstadoCotizacion().getCodigoEstado());
 
         BusinessException segunda = assertThrows(BusinessException.class,
-                () -> servicio.registrar(15L, pedido("APROBADA", "Llamó el 16/11 a las 9:00", 7L)));
+                () -> servicio.registrar(15L, pedido("ACEPTADA_CLIENTE", "Llamó el 16/11 a las 9:00", 7L)));
         assertEquals("Esta cotización ya no se puede aprobar ni rechazar", segunda.getMessage());
         verify(cotizaciones, times(1)).save(any());
 
@@ -94,8 +95,8 @@ class RespuestaClienteServiceTest {
         when(adjuntos.findById(8L)).thenReturn(Optional.of(adjunto(8L, negociacion, "correo-minera.pdf")));
         when(seguimientos.findByCotizacion(16L)).thenReturn(List.of(envio(ENVIADO)));
 
-        assertEquals("APROBADA", servicio.registrar(16L, pedido("APROBADA", "Correo del 16/11 10:15", 8L)));
-        assertEquals("APROBADA", negociacion.getEstadoCotizacion().getCodigoEstado());
+        assertEquals("ACEPTADA_CLIENTE", servicio.registrar(16L, pedido("ACEPTADA_CLIENTE", "Correo del 16/11 10:15", 8L)));
+        assertEquals("ACEPTADA_CLIENTE", negociacion.getEstadoCotizacion().getCodigoEstado());
         verify(cotizaciones, times(2)).save(any());
 
         ArgumentCaptor<SeguimientoCotizacion> guardados = ArgumentCaptor.forClass(SeguimientoCotizacion.class);
@@ -130,7 +131,7 @@ class RespuestaClienteServiceTest {
         when(seguimientos.findByCotizacion(15L)).thenReturn(List.of(envio(ENVIADO)));
 
         BusinessException error = assertThrows(BusinessException.class,
-                () -> servicio.registrar(15L, pedido("APROBADA", "Llamó el 16/11 a las 9:00", 7L)));
+                () -> servicio.registrar(15L, pedido("ACEPTADA_CLIENTE", "Llamó el 16/11 a las 9:00", 7L)));
 
         assertEquals(RespuestaClienteService.ADJUNTO_OBLIGATORIO, error.getMessage());
         assertEquals("ENVIADA", enviada.getEstadoCotizacion().getCodigoEstado());
@@ -144,11 +145,11 @@ class RespuestaClienteServiceTest {
         when(cotizaciones.findById(15L)).thenReturn(Optional.of(enviada));
 
         BusinessException sinComentario = assertThrows(BusinessException.class,
-                () -> servicio.registrar(15L, pedido("APROBADA", "  ", 7L)));
+                () -> servicio.registrar(15L, pedido("ACEPTADA_CLIENTE", "  ", 7L)));
         assertEquals(RespuestaClienteService.COMENTARIO_OBLIGATORIO, sinComentario.getMessage());
 
         BusinessException sinAdjunto = assertThrows(BusinessException.class,
-                () -> servicio.registrar(15L, pedido("APROBADA", "Llamó el 16/11 a las 9:00", null)));
+                () -> servicio.registrar(15L, pedido("ACEPTADA_CLIENTE", "Llamó el 16/11 a las 9:00", null)));
         assertEquals(RespuestaClienteService.ADJUNTO_OBLIGATORIO, sinAdjunto.getMessage());
         assertEquals("ENVIADA", enviada.getEstadoCotizacion().getCodigoEstado());
         verify(cotizaciones, never()).save(any());
@@ -163,7 +164,7 @@ class RespuestaClienteServiceTest {
         when(seguimientos.findByCotizacion(15L)).thenReturn(List.of(envio(ENVIADO)));
 
         BusinessException vencida = assertThrows(BusinessException.class,
-                () -> servicio.registrar(15L, pedido("APROBADA", "Llamó el 16/11 a las 9:00", 7L)));
+                () -> servicio.registrar(15L, pedido("ACEPTADA_CLIENTE", "Llamó el 16/11 a las 9:00", 7L)));
 
         assertEquals("La cotización está vencida", vencida.getMessage());
         assertEquals("ENVIADA", enviada.getEstadoCotizacion().getCodigoEstado());
@@ -173,10 +174,10 @@ class RespuestaClienteServiceTest {
     @Test
     void otroRolNoRegistra() {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
-                "ana", "n/a", List.of(new SimpleGrantedAuthority("ROLE_ASISTENTE_LOGISTICO"))));
+                "ana", "n/a", List.of(new SimpleGrantedAuthority("ROLE_GERENTE_GENERAL"))));
 
         AccessDeniedException error = assertThrows(AccessDeniedException.class,
-                () -> servicio.registrar(15L, pedido("APROBADA", "Llamó el 16/11 a las 9:00", 7L)));
+                () -> servicio.registrar(15L, pedido("ACEPTADA_CLIENTE", "Llamó el 16/11 a las 9:00", 7L)));
 
         assertEquals(RespuestaClienteService.SOLO_EL_JEFE, error.getMessage());
         verify(cotizaciones, never()).findById(any());
@@ -190,7 +191,7 @@ class RespuestaClienteServiceTest {
         when(seguimientos.findByCotizacion(15L)).thenReturn(List.of(envio(ENVIADO)));
 
         BusinessException error = assertThrows(BusinessException.class,
-                () -> servicio.registrar(15L, pedido("APROBADA", "Llamó el 16/11 a las 9:00", 7L)));
+                () -> servicio.registrar(15L, pedido("ACEPTADA_CLIENTE", "Llamó el 16/11 a las 9:00", 7L)));
 
         assertEquals("Esta cotización ya no se puede aprobar ni rechazar", error.getMessage());
         assertEquals("BORRADOR", borrador.getEstadoCotizacion().getCodigoEstado());

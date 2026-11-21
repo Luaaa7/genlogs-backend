@@ -1,5 +1,6 @@
 package com.genlogs.app.model;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 import jakarta.persistence.Column;
@@ -46,4 +47,21 @@ public class SeguimientoCotizacion extends Auditable {
     
     @Column(name = "comentario", columnDefinition = "TEXT")
     private String comentario;
+
+    /** Estado previo al evento. Nulo en filas anteriores a v3_4. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_estado_anterior")
+    private EstadoCotizacion estadoAnterior;
+
+    /** Día en que el cliente respondió (lo informa quien registra). */
+    @Column(name = "fecha_respuesta")
+    private LocalDate fechaRespuesta;
+
+    /** correo, whatsapp, llamada u otro. Nulo si el evento no es una respuesta. */
+    @Column(name = "medio", length = 20)
+    private String medio;
+
+    /** URL del archivo de evidencia, si se adjuntó. */
+    @Column(name = "ruta_adjunto", columnDefinition = "TEXT")
+    private String rutaAdjunto;
 }

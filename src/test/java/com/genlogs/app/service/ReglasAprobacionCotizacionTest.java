@@ -22,7 +22,7 @@ class ReglasAprobacionCotizacionTest {
 
     @Test
     void borradorNoSaltaAAprobadaRechazadaNiVencida() {
-        for (String destino : new String[] {"APROBADA", "RECHAZADA", "VENCIDA"}) {
+        for (String destino : new String[] {"ACEPTADA_CLIENTE", "APROBADA", "RECHAZADA", "VENCIDA"}) {
             BusinessException error = assertThrows(BusinessException.class, () ->
                     ReglasAprobacionCotizacion.validarCambioLibre("BORRADOR", destino, "motivo"));
             assertEquals(ReglasAprobacionCotizacion.DESTINO_NO_PERMITIDO, error.getMessage());
@@ -79,6 +79,7 @@ class ReglasAprobacionCotizacionTest {
     @Test
     void elPatchYaNoAbreLosEstadosDelCliente() {
         for (String[] salto : new String[][] {
+                {"EN_NEGOCIACION", "ACEPTADA_CLIENTE"},
                 {"EN_NEGOCIACION", "APROBADA"},
                 {"ENVIADA", "RECHAZADA"},
                 {"ENVIADA", "VENCIDA"}

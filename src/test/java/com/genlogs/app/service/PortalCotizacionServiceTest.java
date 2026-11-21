@@ -110,12 +110,12 @@ class PortalCotizacionServiceTest {
         assertEquals("La cotización está vencida", vencida.getMessage());
 
         cotizacion.setFechaValidez(LocalDate.now(PlazoDespacho.LIMA).plusDays(2));
-        when(estadoCotizacionRepository.findByCodigoEstado("APROBADA")).thenReturn(Optional.of(estado("APROBADA")));
+        when(estadoCotizacionRepository.findByCodigoEstado("ACEPTADA_CLIENTE")).thenReturn(Optional.of(estado("ACEPTADA_CLIENTE")));
         when(cotizacionRepository.findTotalesByCotizacion(7L)).thenReturn(Optional.empty());
         when(cotizacionDetalleRepository.findByCotizacion(7L)).thenReturn(List.of());
 
         servicio.aprobar(7L, null);
-        assertEquals("APROBADA", cotizacion.getEstadoCotizacion().getCodigoEstado());
+        assertEquals("ACEPTADA_CLIENTE", cotizacion.getEstadoCotizacion().getCodigoEstado());
         BusinessException resuelta = assertThrows(BusinessException.class, () -> servicio.aprobar(7L, null));
         assertEquals("Esta cotización ya no se puede aprobar ni rechazar", resuelta.getMessage());
     }
@@ -125,13 +125,13 @@ class PortalCotizacionServiceTest {
         Cotizacion cotizacion = cotizacion(12L, mia, "ENVIADA");
         cotizacion.setFechaValidez(LocalDate.of(2026, 11, 15));
         when(cotizacionRepository.findById(12L)).thenReturn(Optional.of(cotizacion));
-        when(estadoCotizacionRepository.findByCodigoEstado("APROBADA")).thenReturn(Optional.of(estado("APROBADA")));
+        when(estadoCotizacionRepository.findByCodigoEstado("ACEPTADA_CLIENTE")).thenReturn(Optional.of(estado("ACEPTADA_CLIENTE")));
         when(cotizacionRepository.findTotalesByCotizacion(12L)).thenReturn(Optional.empty());
         when(cotizacionDetalleRepository.findByCotizacion(12L)).thenReturn(List.of());
 
         servicio.setClock(Clock.fixed(Instant.parse("2026-11-16T04:59:00Z"), ZoneOffset.UTC));
         servicio.aprobar(12L, null);
-        assertEquals("APROBADA", cotizacion.getEstadoCotizacion().getCodigoEstado());
+        assertEquals("ACEPTADA_CLIENTE", cotizacion.getEstadoCotizacion().getCodigoEstado());
 
         cotizacion.setEstadoCotizacion(estado("ENVIADA"));
         servicio.setClock(Clock.fixed(Instant.parse("2026-11-16T05:00:00Z"), ZoneOffset.UTC));
@@ -277,8 +277,8 @@ class PortalCotizacionServiceTest {
         EstadoCotizacion estado = new EstadoCotizacion();
         estado.setCodigoEstado(codigo);
         estado.setNombreEstado("Enviada");
-        if ("APROBADA".equals(codigo)) {
-            estado.setNombreEstado("Aprobada");
+        if ("ACEPTADA_CLIENTE".equals(codigo)) {
+            estado.setNombreEstado("Aceptada por el cliente");
         }
         return estado;
     }

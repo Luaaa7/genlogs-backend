@@ -85,7 +85,7 @@ class CotizacionActualizarPermisosTest {
     }
 
     @org.junit.jupiter.api.Test
-    void soloElJefeRegistraLaRespuestaDelCliente() throws Exception {
+    void vendedorYJefeRegistranLaRespuestaYElRestoRecibe403() throws Exception {
         when(respuestas.registrar(anyLong(), any())).thenReturn("APROBADA");
         when(servicio.buscarPorId(anyLong())).thenReturn(CotizacionResponse.builder().idCotizacion(8L).build());
         String cuerpo = """
@@ -97,18 +97,24 @@ class CotizacionActualizarPermisosTest {
                         .content(cuerpo)
                         .with(user("jefe").roles("JEFE_ADMINISTRATIVO")))
                 .andExpect(status().isOk());
-        verify(respuestas).registrar(anyLong(), any());
-        verify(servicio).registrarOrdenSiAprobada(8L, "APROBADA");
+
+        mockMvc.perform(post("/api/cotizaciones/8/respuesta-cliente")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpo)
+                        .with(user("vendedor").roles("ASISTENTE_LOGISTICO")))
+                .andExpect(status().isOk());
+        verify(respuestas, org.mockito.Mockito.times(2)).registrar(anyLong(), any());
+        verify(servicio, org.mockito.Mockito.times(2)).registrarOrdenSiAprobada(8L, "APROBADA");
 
         for (String rol : new String[] {
-                "ASISTENTE_LOGISTICO", "ASISTENTE_ADMINISTRATIVO", "CLIENTE", "GERENTE_GENERAL" }) {
+                "ASISTENTE_ADMINISTRATIVO", "CLIENTE", "GERENTE_GENERAL" }) {
             mockMvc.perform(post("/api/cotizaciones/8/respuesta-cliente")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(cuerpo)
                             .with(user("otro").roles(rol)))
                     .andExpect(status().isForbidden());
         }
-        verify(respuestas, org.mockito.Mockito.times(1)).registrar(anyLong(), any());
+        verify(respuestas, org.mockito.Mockito.times(2)).registrar(anyLong(), any());
     }
 
     @Configuration

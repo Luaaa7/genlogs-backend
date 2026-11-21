@@ -62,6 +62,7 @@ class PortalCotizacionPuedeDecidirTest {
     @Test
     void unEstadoCerradoNoSeDecideAunqueLaFechaSirva() {
         LocalDate hoy = PortalCotizacionService.hoyLima(ULTIMO_MINUTO);
+        assertFalse(PortalCotizacionService.puedeDecidir(cotizacion("ACEPTADA_CLIENTE", VALIDEZ), hoy));
         assertFalse(PortalCotizacionService.puedeDecidir(cotizacion("APROBADA", VALIDEZ), hoy));
         assertFalse(PortalCotizacionService.puedeDecidir(cotizacion("RECHAZADA", VALIDEZ), hoy));
         assertFalse(PortalCotizacionService.puedeDecidir(cotizacion("VENCIDA", VALIDEZ), hoy));

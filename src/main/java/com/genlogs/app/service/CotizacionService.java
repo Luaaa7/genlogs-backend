@@ -180,6 +180,9 @@ public class CotizacionService {
             String codigoMoneda,
             Pageable pageable) {
 
+        if (codigoEstado != null && "APROBADA".equalsIgnoreCase(codigoEstado.trim())) {
+            codigoEstado = CodigoEstadoCotizacion.ACEPTADA_CLIENTE.name();
+        }
         Page<Cotizacion> pagina = cotizacionRepository.buscarPaginado(
                 codigoEstado, idCliente, codigoMoneda, pageable);
 
@@ -397,7 +400,7 @@ public class CotizacionService {
      * No abre esa transacción: si la orden falla, la cotización sigue APROBADA.
      */
     public void registrarOrdenSiAprobada(Long idCotizacion, String codigoEstado) {
-        if (!CodigoEstadoCotizacion.APROBADA.name().equalsIgnoreCase(codigoEstado)) {
+        if (!CodigoEstadoCotizacion.esAceptacionCliente(codigoEstado)) {
             return;
         }
         try {
@@ -615,6 +618,9 @@ public class CotizacionService {
                 ReglasAprobacionCotizacion.SOLO_APROBADA_INTERNA);
         EstadoCotizacion enviada = estadoDe(CodigoEstadoCotizacion.ENVIADA);
         aplicarEstado(cotizacion, enviada, usuario, "ENVIO_COTIZACION");
+        if (cotizacion.getFechaEnvio() == null) {
+            cotizacion.setFechaEnvio(LocalDateTime.now());
+        }
         cotizacionRepository.save(cotizacion);
         registrarSeguimiento(cotizacion, enviada, usuario, "Cotización enviada a " + destinatario);
     }
@@ -1525,6 +1531,7 @@ public class CotizacionService {
                         .clienteEmail(obtenerCorreoCliente(c))
                         .fechaCotizacion(c.getFechaCotizacion())
                         .fechaValidez(c.getFechaValidez())
+                        .fechaEnvio(c.getFechaEnvio())
                         .fechaCreacion(c.getDateCreate())
                         .estado(nombreEstado)
                         .estadoCodigo(codigoEstado)
@@ -1591,9 +1598,13 @@ public class CotizacionService {
         for (int i = 0; i < seguimientos.size(); i++) {
             SeguimientoCotizacion actual = seguimientos.get(i);
 
-            String estadoAnterior = i + 1 < seguimientos.size()
+            String calculado = i + 1 < seguimientos.size()
                     ? codigoEstadoDe(seguimientos.get(i + 1))
                     : null;
+            String guardado = actual.getEstadoAnterior() != null
+                    ? actual.getEstadoAnterior().getCodigoEstado()
+                    : null;
+            String estadoAnterior = guardado != null ? guardado : calculado;
 
             respuesta.add(
                     toSeguimientoResponse(actual, estadoAnterior));
@@ -1672,6 +1683,9 @@ public class CotizacionService {
                 .fecha(s.getFechaEvento() != null ? s.getFechaEvento().atZone(java.time.ZoneId.systemDefault()).toInstant() : null)
                 .comentario(s.getComentario())
                 .observaciones(s.getComentario())
+                .fechaRespuesta(s.getFechaRespuesta())
+                .medio(s.getMedio())
+                .rutaAdjunto(s.getRutaAdjunto())
                 .build();
     }
 

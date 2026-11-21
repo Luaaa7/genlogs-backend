@@ -158,8 +158,8 @@ public class AprobacionOrdenIndependienteTest {
 
         var respuesta = portal.aprobar(id, null);
 
-        assertEquals("Aprobada", respuesta.getBody().getEstado());
-        assertEquals("APROBADA", codigoDe(id));
+        assertEquals("Aceptada por el cliente", respuesta.getBody().getEstado());
+        assertEquals("ACEPTADA_CLIENTE", codigoDe(id));
         assertEquals(0, ordenesDe(id));
         assertAvisoDeFallo(id);
     }
@@ -169,7 +169,7 @@ public class AprobacionOrdenIndependienteTest {
         Long id = sembrar(false);
         entrar(rastro.nombreUsuario, RolSistema.JEFE_ADMINISTRATIVO.name());
         CambiarEstadoCotizacionRequest request = new CambiarEstadoCotizacionRequest();
-        request.setCodigoEstado("APROBADA");
+        request.setCodigoEstado("ACEPTADA_CLIENTE");
 
         assertThrows(BusinessException.class, () -> cotizaciones.cambiarEstado(id, request));
 
@@ -187,7 +187,7 @@ public class AprobacionOrdenIndependienteTest {
 
         portal.aprobar(id, null);
 
-        assertEquals("APROBADA", codigoDe(id));
+        assertEquals("ACEPTADA_CLIENTE", codigoDe(id));
         assertTrue(seguimientoCotizacionRepository.findByCotizacion(id).stream()
                 .anyMatch(s -> s.getComentario() != null && s.getComentario().contains("RECIBIDA")));
     }
@@ -203,7 +203,7 @@ public class AprobacionOrdenIndependienteTest {
         assertThrows(BusinessException.class, () -> portal.aprobar(id, null));
         assertNull(ordenCompraService.crearAutomatica(id));
 
-        assertEquals("APROBADA", codigoDe(id));
+        assertEquals("ACEPTADA_CLIENTE", codigoDe(id));
         assertEquals(1, ordenesDe(id));
         assertEquals(0, avisos().size());
     }
@@ -270,7 +270,7 @@ public class AprobacionOrdenIndependienteTest {
         }));
         rastro.condicion = condicion.getIdCondicionPago();
         EstadoCotizacion enviada = estadoCotizacionRepository.save(estado("ENVIADA", "Enviada", (short) 2, false));
-        EstadoCotizacion aprobada = estadoCotizacionRepository.save(estado("APROBADA", "Aprobada", (short) 4, true));
+        EstadoCotizacion aprobada = estadoCotizacionRepository.save(estado("ACEPTADA_CLIENTE", "Aceptada por el cliente", (short) 4, true));
         rastro.enviada = enviada.getIdEstadoCotizacion();
         rastro.aprobada = aprobada.getIdEstadoCotizacion();
         if (conRecibida) {
