@@ -173,7 +173,9 @@ public class FuentesConfigService {
                 f.getSesionValidaHasta(), f.getUltimaPrueba(), f.getUltimoError(),
                 f.getPausaSegundos(), f.getLimiteDiario(), f.getAciertosPrueba(),
                 credenciales.tiene(f.getCodigo(), TipoCredencial.USUARIO),
-                credenciales.tiene(f.getCodigo(), TipoCredencial.CLAVE));
+                credenciales.tiene(f.getCodigo(), TipoCredencial.CLAVE),
+                // EF2 (v3.4): qué reglas mínimas faltan, calculado; no se guarda.
+                ReglasMinimas.faltantes(selectorRepository.findByFuente_CodigoAndStatus(f.getCodigo(), "A")));
     }
 
     static CodigoFuente codigo(String texto) {

@@ -90,7 +90,7 @@ class LectorSesionRemotoTest {
 
         ResultadoSesion r = lector.iniciarSesion(CodigoFuente.EBAY, "https://www.ebay.com", USUARIO, CLAVE);
 
-        assertThat(r.resultado()).isEqualTo(ResultadoSesion.Resultado.ERROR);
+        assertThat(r.resultado()).isEqualTo(ResultadoSesion.Resultado.SIN_CONFIGURAR);
         assertThat(r.mensaje()).startsWith("eBay:").contains("Reglas de extracción");
         verifyNoInteractions(cliente);
     }

@@ -160,6 +160,41 @@ class SesionFuenteTest {
     }
 
     @Test
+    void probar_conCuentaYSinReglasLoginDejaSinProbar() throws Exception {
+        cargarCuenta(CodigoFuente.EBAY);
+        credenciales.guardar(CodigoFuente.EBAY, TipoCredencial.SESION, SESION, null, "PRUEBA");
+        when(lector.iniciarSesion(any(), any(), any(), any()))
+                .thenReturn(ResultadoSesion.sinConfigurar("eBay: faltan reglas de la página de inicio de sesión (casilla del"
+                        + " usuario, casilla de la clave, botón para ingresar y señal de sesión iniciada) en"
+                        + " Configuración > Fuentes > Reglas de extracción."));
+
+        mockMvc.perform(post("/api/fuentes/EBAY/probar").with(user(jefe).roles("JEFE_ADMINISTRATIVO")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estado").value("SIN_PROBAR"))
+                .andExpect(jsonPath("$.ultimoError").value(org.hamcrest.Matchers.containsString("reglas")));
+
+        FuenteBusquedaConfig f = fuente(CodigoFuente.EBAY);
+        assertThat(f.getEstado()).isEqualTo(EstadoFuente.SIN_PROBAR);
+        assertThat(f.getUltimoError()).contains("reglas");
+        assertThat(f.getSesionValidaHasta()).isNull();
+        assertThat(credenciales.tiene(CodigoFuente.EBAY, TipoCredencial.SESION)).isFalse();
+    }
+
+    @Test
+    void probar_errorDistintoDelLectorDejaConError() throws Exception {
+        cargarCuenta(CodigoFuente.AMAZON);
+        when(lector.iniciarSesion(any(), any(), any(), any()))
+                .thenReturn(ResultadoSesion.error("Amazon: tiempo agotado al conectar con la tienda."));
+
+        mockMvc.perform(post("/api/fuentes/AMAZON/probar").with(user(jefe).roles("JEFE_ADMINISTRATIVO")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estado").value("CON_ERROR"))
+                .andExpect(jsonPath("$.ultimoError").value("Amazon: tiempo agotado al conectar con la tienda."));
+
+        assertThat(fuente(CodigoFuente.AMAZON).getEstado()).isEqualTo(EstadoFuente.CON_ERROR);
+    }
+
+    @Test
     void probar_soloElJefeAdministrativo() throws Exception {
         cargarCuenta(CodigoFuente.EBAY);
         mockMvc.perform(post("/api/fuentes/EBAY/probar").with(user(asistente).roles("ASISTENTE_LOGISTICO")))
@@ -212,6 +247,19 @@ class SesionFuenteTest {
         f.setSesionValidaHasta(LocalDateTime.now().minusMinutes(1));
         when(lector.iniciarSesion(any(), any(), any(), any()))
                 .thenReturn(ResultadoSesion.error("El servicio de lectura no responde."));
+
+        assertThat(sesiones.sesionVigente(CodigoFuente.EBAY)).isEmpty();
+        assertThat(fuente(CodigoFuente.EBAY).getEstado()).isEqualTo(EstadoFuente.CON_ERROR);
+    }
+
+    @Test
+    void sesionVigente_siAlRenovarFaltanLasReglasQuedaConError() {
+        cargarCuenta(CodigoFuente.EBAY);
+        FuenteBusquedaConfig f = fuentes.findByCodigo(CodigoFuente.EBAY).orElseThrow();
+        f.setEstado(EstadoFuente.ACTIVA);
+        f.setSesionValidaHasta(LocalDateTime.now().minusMinutes(1));
+        when(lector.iniciarSesion(any(), any(), any(), any()))
+                .thenReturn(ResultadoSesion.sinConfigurar("eBay: faltan reglas de la página de inicio de sesión."));
 
         assertThat(sesiones.sesionVigente(CodigoFuente.EBAY)).isEmpty();
         assertThat(fuente(CodigoFuente.EBAY).getEstado()).isEqualTo(EstadoFuente.CON_ERROR);
