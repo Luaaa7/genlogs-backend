@@ -5,12 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -27,17 +25,17 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import com.genlogs.app.dto.RespuestaClienteRequest;
+import com.genlogs.app.enums.CodigoEstadoCotizacion;
 import com.genlogs.app.exception.BusinessException;
+import com.genlogs.app.exception.EstadoNoPermitidoException;
 import com.genlogs.app.model.AdjuntoCotizacion;
 import com.genlogs.app.model.Cotizacion;
 import com.genlogs.app.model.EstadoCotizacion;
 import com.genlogs.app.model.SeguimientoCotizacion;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.AdjuntoCotizacionRepository;
-import com.genlogs.app.repository.CotizacionDetalleRepository;
 import com.genlogs.app.repository.CotizacionRepository;
 import com.genlogs.app.repository.EstadoCotizacionRepository;
-import com.genlogs.app.repository.OrdenCompraRepository;
 import com.genlogs.app.repository.SeguimientoCotizacionRepository;
 import com.genlogs.app.repository.UsuarioRepository;
 
@@ -46,26 +44,26 @@ class RespuestaClienteServiceTest {
 
     @Mock private UsuarioRepository usuarios;
     @Mock private CotizacionRepository cotizaciones;
-    @Mock private CotizacionDetalleRepository detalles;
     @Mock private EstadoCotizacionRepository estados;
     @Mock private SeguimientoCotizacionRepository seguimientos;
-    @Mock private OrdenCompraRepository ordenes;
     @Mock private AdjuntoCotizacionRepository adjuntos;
 
     private RespuestaClienteService servicio;
-    private Usuario jefe;
+    private final LocalDate hoy = LocalDate.now(PlazoDespacho.LIMA);
 
     @BeforeEach
     void setUp() {
-        PortalCotizacionService portal = new PortalCotizacionService(
-                usuarios, cotizaciones, detalles, estados, seguimientos, ordenes);
         servicio = new RespuestaClienteService(
-                cotizaciones, adjuntos, seguimientos, usuarios, portal, estados, null);
-        jefe = new Usuario();
+                cotizaciones, adjuntos, seguimientos, usuarios, estados, null, null);
+        Usuario jefe = new Usuario();
         jefe.setNombreUsuario("jefe");
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
                 "jefe", "n/a", List.of(new SimpleGrantedAuthority("ROLE_JEFE_ADMINISTRATIVO"))));
         lenient().when(usuarios.findByNombreUsuario("jefe")).thenReturn(Optional.of(jefe));
+        lenient().when(usuarios.findByNombreUsuario("vendedor")).thenReturn(Optional.of(jefe));
+        lenient().when(estados.findByCodigoEstado(any())).thenAnswer(inv -> Optional.of(estado(inv.getArgument(0))));
+        lenient().when(seguimientos.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        lenient().when(cotizaciones.save(any())).thenAnswer(inv -> inv.getArgument(0));
     }
 
     @AfterEach
@@ -74,145 +72,116 @@ class RespuestaClienteServiceTest {
     }
 
     @Test
-    void elJefeApruebaDesdeEnviadaYDesdeNegociacion() {
+    void pidioCambiosQuedaEnNegociacionYNoSeCierra() {
         Cotizacion enviada = cotizacion(15L, "ENVIADA");
         when(cotizaciones.findById(15L)).thenReturn(Optional.of(enviada));
-        when(adjuntos.findById(7L)).thenReturn(Optional.of(adjunto(7L, enviada, "llamada.pdf")));
-        when(estados.findByCodigoEstado("ACEPTADA_CLIENTE")).thenReturn(Optional.of(estado("ACEPTADA_CLIENTE")));
-        SeguimientoCotizacion reenvio = envio(ENVIADO.plusDays(3));
-        when(seguimientos.findByCotizacion(15L)).thenReturn(List.of(reenvio, envio(ENVIADO)));
+        when(adjuntos.findById(7L)).thenReturn(Optional.of(adjunto(7L, enviada)));
 
-        assertEquals("ACEPTADA_CLIENTE", servicio.registrar(15L, pedido("ACEPTADA_CLIENTE", "Llamó el 16/11 a las 9:00", 7L)));
-        assertEquals("ACEPTADA_CLIENTE", enviada.getEstadoCotizacion().getCodigoEstado());
+        assertEquals("EN_NEGOCIACION", servicio.registrar(15L,
+                pedido("EN_NEGOCIACION", "Pidió otro plazo", 7L)));
 
-        BusinessException segunda = assertThrows(BusinessException.class,
-                () -> servicio.registrar(15L, pedido("ACEPTADA_CLIENTE", "Llamó el 16/11 a las 9:00", 7L)));
-        assertEquals("Esta cotización ya no se puede aprobar ni rechazar", segunda.getMessage());
-        verify(cotizaciones, times(1)).save(any());
+        assertEquals("EN_NEGOCIACION", enviada.getEstadoCotizacion().getCodigoEstado());
+        SeguimientoCotizacion seguimiento = seguimientoGuardado();
+        assertEquals("ENVIADA", seguimiento.getEstadoAnterior().getCodigoEstado());
+        assertEquals("EN_NEGOCIACION", seguimiento.getEstadoCotizacion().getCodigoEstado());
+        assertEquals(hoy, seguimiento.getFechaRespuesta());
+        assertEquals("whatsapp", seguimiento.getMedio());
+        assertEquals("Pidió otro plazo", seguimiento.getComentario());
+        assertEquals(7L, seguimiento.getAdjunto().getIdAdjunto());
 
-        Cotizacion negociacion = cotizacion(16L, "EN_NEGOCIACION");
-        when(cotizaciones.findById(16L)).thenReturn(Optional.of(negociacion));
-        when(adjuntos.findById(8L)).thenReturn(Optional.of(adjunto(8L, negociacion, "correo-minera.pdf")));
-        when(seguimientos.findByCotizacion(16L)).thenReturn(List.of(envio(ENVIADO)));
+        Cotizacion yaNegociando = cotizacion(16L, "EN_NEGOCIACION");
+        when(cotizaciones.findById(16L)).thenReturn(Optional.of(yaNegociando));
 
-        assertEquals("ACEPTADA_CLIENTE", servicio.registrar(16L, pedido("ACEPTADA_CLIENTE", "Correo del 16/11 10:15", 8L)));
-        assertEquals("ACEPTADA_CLIENTE", negociacion.getEstadoCotizacion().getCodigoEstado());
-        verify(cotizaciones, times(2)).save(any());
-
-        ArgumentCaptor<SeguimientoCotizacion> guardados = ArgumentCaptor.forClass(SeguimientoCotizacion.class);
-        verify(seguimientos, times(2)).save(guardados.capture());
-        assertEquals("Llamó el 16/11 a las 9:00 (adjunto: llamada.pdf)", guardados.getAllValues().get(0).getComentario());
-        assertEquals("Correo del 16/11 10:15 (adjunto: correo-minera.pdf)", guardados.getAllValues().get(1).getComentario());
+        assertEquals("EN_NEGOCIACION", servicio.registrar(16L,
+                pedido("EN_NEGOCIACION", "Sigue pidiendo cambios", null)));
+        assertEquals("EN_NEGOCIACION", yaNegociando.getEstadoCotizacion().getCodigoEstado());
     }
 
     @Test
-    void elRechazoNoDejaLaCotizacionAprobada() {
+    void aceptarGuardaLaAceptacionSinCrearLaOrden() {
         Cotizacion enviada = cotizacion(15L, "ENVIADA");
         when(cotizaciones.findById(15L)).thenReturn(Optional.of(enviada));
-        when(adjuntos.findById(7L)).thenReturn(Optional.of(adjunto(7L, enviada, "correo-minera.pdf")));
-        when(estados.findByCodigoEstado("RECHAZADA")).thenReturn(Optional.of(estado("RECHAZADA")));
-        when(seguimientos.findByCotizacion(15L)).thenReturn(List.of(envio(ENVIADO)));
+        when(adjuntos.findById(7L)).thenReturn(Optional.of(adjunto(7L, enviada)));
 
-        assertEquals("RECHAZADA", servicio.registrar(15L, pedido("RECHAZADA", "Correo del 16/11: no compran", 7L)));
+        assertEquals("ACEPTADA_CLIENTE", servicio.registrar(15L,
+                pedido("ACEPTADA_CLIENTE", "Aceptó por correo", 7L)));
+
+        assertEquals("ACEPTADA_CLIENTE", enviada.getEstadoCotizacion().getCodigoEstado());
+        SeguimientoCotizacion seguimiento = seguimientoGuardado();
+        assertEquals("ENVIADA", seguimiento.getEstadoAnterior().getCodigoEstado());
+        assertEquals("ACEPTADA_CLIENTE", seguimiento.getEstadoCotizacion().getCodigoEstado());
+        assertEquals("Aceptó por correo", seguimiento.getComentario());
+        assertEquals(7L, seguimiento.getAdjunto().getIdAdjunto());
+    }
+
+    @Test
+    void rechazarGuardaElRechazo() {
+        Cotizacion enviada = cotizacion(15L, "ENVIADA");
+        when(cotizaciones.findById(15L)).thenReturn(Optional.of(enviada));
+
+        assertEquals("RECHAZADA", servicio.registrar(15L,
+                pedido("RECHAZADA", "No compran este año", null)));
 
         assertEquals("RECHAZADA", enviada.getEstadoCotizacion().getCodigoEstado());
-        ArgumentCaptor<SeguimientoCotizacion> guardado = ArgumentCaptor.forClass(SeguimientoCotizacion.class);
-        verify(seguimientos).save(guardado.capture());
-        assertEquals("Correo del 16/11: no compran (adjunto: correo-minera.pdf)", guardado.getValue().getComentario());
+        SeguimientoCotizacion seguimiento = seguimientoGuardado();
+        assertEquals("ENVIADA", seguimiento.getEstadoAnterior().getCodigoEstado());
+        assertEquals("RECHAZADA", seguimiento.getEstadoCotizacion().getCodigoEstado());
+        assertEquals("No compran este año", seguimiento.getComentario());
     }
 
     @Test
-    void adjuntoAnteriorAlEnvioNoSirve() {
-        Cotizacion enviada = cotizacion(15L, "ENVIADA");
-        when(cotizaciones.findById(15L)).thenReturn(Optional.of(enviada));
-        AdjuntoCotizacion delBorrador = adjunto(7L, enviada, "borrador.pdf");
-        delBorrador.setDateCreate(ENVIADO);
-        when(adjuntos.findById(7L)).thenReturn(Optional.of(delBorrador));
-        when(seguimientos.findByCotizacion(15L)).thenReturn(List.of(envio(ENVIADO)));
-
-        BusinessException error = assertThrows(BusinessException.class,
-                () -> servicio.registrar(15L, pedido("ACEPTADA_CLIENTE", "Llamó el 16/11 a las 9:00", 7L)));
-
-        assertEquals(RespuestaClienteService.ADJUNTO_OBLIGATORIO, error.getMessage());
-        assertEquals("ENVIADA", enviada.getEstadoCotizacion().getCodigoEstado());
-        verify(cotizaciones, never()).save(any());
-        verify(seguimientos, never()).save(any());
-    }
-
-    @Test
-    void sinComentarioOSinAdjuntoNoGuarda() {
+    void elAsistenteLogisticoRegistraYOtroRolRecibe403() {
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                "vendedor", "n/a", List.of(new SimpleGrantedAuthority("ROLE_ASISTENTE_LOGISTICO"))));
         Cotizacion enviada = cotizacion(15L, "ENVIADA");
         when(cotizaciones.findById(15L)).thenReturn(Optional.of(enviada));
 
-        BusinessException sinComentario = assertThrows(BusinessException.class,
-                () -> servicio.registrar(15L, pedido("ACEPTADA_CLIENTE", "  ", 7L)));
-        assertEquals(RespuestaClienteService.COMENTARIO_OBLIGATORIO, sinComentario.getMessage());
+        assertEquals("EN_NEGOCIACION", servicio.registrar(15L,
+                pedido("EN_NEGOCIACION", "Pidió descuento", null)));
 
-        BusinessException sinAdjunto = assertThrows(BusinessException.class,
-                () -> servicio.registrar(15L, pedido("ACEPTADA_CLIENTE", "Llamó el 16/11 a las 9:00", null)));
-        assertEquals(RespuestaClienteService.ADJUNTO_OBLIGATORIO, sinAdjunto.getMessage());
-        assertEquals("ENVIADA", enviada.getEstadoCotizacion().getCodigoEstado());
-        verify(cotizaciones, never()).save(any());
-    }
-
-    @Test
-    void fueraDeVigenciaSeRechazaIgualQueEnElPortal() {
-        Cotizacion enviada = cotizacion(15L, "ENVIADA");
-        enviada.setFechaValidez(LocalDate.now(PlazoDespacho.LIMA).minusDays(1));
-        when(cotizaciones.findById(15L)).thenReturn(Optional.of(enviada));
-        when(adjuntos.findById(7L)).thenReturn(Optional.of(adjunto(7L, enviada, "correo-minera.pdf")));
-        when(seguimientos.findByCotizacion(15L)).thenReturn(List.of(envio(ENVIADO)));
-
-        BusinessException vencida = assertThrows(BusinessException.class,
-                () -> servicio.registrar(15L, pedido("ACEPTADA_CLIENTE", "Llamó el 16/11 a las 9:00", 7L)));
-
-        assertEquals("La cotización está vencida", vencida.getMessage());
-        assertEquals("ENVIADA", enviada.getEstadoCotizacion().getCodigoEstado());
-        verify(cotizaciones, never()).save(any());
-    }
-
-    @Test
-    void otroRolNoRegistra() {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
                 "ana", "n/a", List.of(new SimpleGrantedAuthority("ROLE_GERENTE_GENERAL"))));
-
         AccessDeniedException error = assertThrows(AccessDeniedException.class,
-                () -> servicio.registrar(15L, pedido("ACEPTADA_CLIENTE", "Llamó el 16/11 a las 9:00", 7L)));
-
+                () -> servicio.registrar(15L, pedido("RECHAZADA", "No", null)));
         assertEquals(RespuestaClienteService.SOLO_EL_JEFE, error.getMessage());
-        verify(cotizaciones, never()).findById(any());
     }
 
     @Test
-    void unEstadoQueNoEsEnviadaNiNegociacionSeRechaza() {
-        Cotizacion borrador = cotizacion(15L, "BORRADOR");
-        when(cotizaciones.findById(15L)).thenReturn(Optional.of(borrador));
-        when(adjuntos.findById(7L)).thenReturn(Optional.of(adjunto(7L, borrador, "correo-minera.pdf")));
-        when(seguimientos.findByCotizacion(15L)).thenReturn(List.of(envio(ENVIADO)));
+    void noVuelveAEscribirAprobadaYUnaViejaSeLeeComoAceptada() {
+        assertEquals("ACEPTADA_CLIENTE", CodigoEstadoCotizacion.visible("APROBADA"));
 
         BusinessException error = assertThrows(BusinessException.class,
-                () -> servicio.registrar(15L, pedido("ACEPTADA_CLIENTE", "Llamó el 16/11 a las 9:00", 7L)));
-
-        assertEquals("Esta cotización ya no se puede aprobar ni rechazar", error.getMessage());
-        assertEquals("BORRADOR", borrador.getEstadoCotizacion().getCodigoEstado());
+                () -> servicio.registrar(15L, pedido("APROBADA", "Aceptó", null)));
+        assertEquals(RespuestaClienteService.DESTINO_NO_ADMITIDO, error.getMessage());
         verify(cotizaciones, never()).save(any());
+
+        Cotizacion vieja = cotizacion(20L, "APROBADA");
+        when(cotizaciones.findById(20L)).thenReturn(Optional.of(vieja));
+        assertThrows(EstadoNoPermitidoException.class,
+                () -> servicio.registrar(20L, pedido("RECHAZADA", "Ya no", null)));
+        assertEquals("APROBADA", vieja.getEstadoCotizacion().getCodigoEstado());
     }
 
-    private static final LocalDateTime ENVIADO = LocalDateTime.of(2026, 11, 10, 9, 0);
+    private SeguimientoCotizacion seguimientoGuardado() {
+        ArgumentCaptor<SeguimientoCotizacion> guardado = ArgumentCaptor.forClass(SeguimientoCotizacion.class);
+        verify(seguimientos).save(guardado.capture());
+        return guardado.getValue();
+    }
 
-    private static RespuestaClienteRequest pedido(String codigo, String comentario, Long idAdjunto) {
+    private RespuestaClienteRequest pedido(String codigo, String comentario, Long idAdjunto) {
         RespuestaClienteRequest request = new RespuestaClienteRequest();
         request.setCodigoEstado(codigo);
         request.setComentario(comentario);
         request.setIdAdjunto(idAdjunto);
+        request.setFechaRespuesta(hoy.toString());
+        request.setMedio("whatsapp");
         return request;
     }
 
     private static Cotizacion cotizacion(Long id, String codigo) {
-        EstadoCotizacion estado = estado(codigo);
         Cotizacion cotizacion = new Cotizacion();
         cotizacion.setIdCotizacion(id);
-        cotizacion.setEstadoCotizacion(estado);
+        cotizacion.setEstadoCotizacion(estado(codigo));
         cotizacion.setFechaValidez(LocalDate.now(PlazoDespacho.LIMA).plusDays(5));
         cotizacion.setStatus("A");
         return cotizacion;
@@ -221,23 +190,17 @@ class RespuestaClienteServiceTest {
     private static EstadoCotizacion estado(String codigo) {
         EstadoCotizacion estado = new EstadoCotizacion();
         estado.setCodigoEstado(codigo);
+        estado.setNombreEstado(codigo);
         return estado;
     }
 
-    private static SeguimientoCotizacion envio(LocalDateTime fecha) {
-        SeguimientoCotizacion seguimiento = new SeguimientoCotizacion();
-        seguimiento.setEstadoCotizacion(estado("ENVIADA"));
-        seguimiento.setFechaEvento(fecha);
-        return seguimiento;
-    }
-
-    private static AdjuntoCotizacion adjunto(Long id, Cotizacion cotizacion, String nombre) {
+    private static AdjuntoCotizacion adjunto(Long id, Cotizacion cotizacion) {
         AdjuntoCotizacion adjunto = new AdjuntoCotizacion();
         adjunto.setIdAdjunto(id);
         adjunto.setCotizacion(cotizacion);
         adjunto.setStatus("A");
-        adjunto.setNombreArchivo(nombre);
-        adjunto.setDateCreate(ENVIADO.plusHours(2));
+        adjunto.setNombreArchivo("correo.pdf");
+        adjunto.setUrlArchivo("https://cdn.example/correo.pdf");
         return adjunto;
     }
 }

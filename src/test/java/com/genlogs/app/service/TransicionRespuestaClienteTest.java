@@ -1,11 +1,11 @@
 package com.genlogs.app.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -28,13 +28,15 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import com.genlogs.app.dto.EnviarCotizacionRequest;
+import com.genlogs.app.dto.EnviarCotizacionResponse;
 import com.genlogs.app.dto.SeguimientoCotizacionResponse;
-import com.genlogs.app.enums.CodigoEstadoCotizacion;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.EstadoNoPermitidoException;
+import com.genlogs.app.model.Cliente;
 import com.genlogs.app.model.Cotizacion;
 import com.genlogs.app.model.EstadoCotizacion;
-import com.genlogs.app.model.SeguimientoCotizacion;
+import com.genlogs.app.model.Tercero;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.AdjuntoCotizacionRepository;
 import com.genlogs.app.repository.CotizacionRepository;
@@ -51,6 +53,7 @@ class TransicionRespuestaClienteTest {
     @Mock private UsuarioRepository usuarios;
     @Mock private EstadoCotizacionRepository estados;
     @Mock private CloudinaryService cloudinary;
+    @Mock private CotizacionService envios;
 
     private RespuestaClienteService servicio;
     private final LocalDate hoy = LocalDate.now(PlazoDespacho.LIMA);
@@ -58,7 +61,7 @@ class TransicionRespuestaClienteTest {
     @BeforeEach
     void setUp() {
         servicio = new RespuestaClienteService(
-                cotizaciones, adjuntos, seguimientos, usuarios, null, estados, cloudinary);
+                cotizaciones, adjuntos, seguimientos, usuarios, estados, cloudinary, envios);
         lenient().when(estados.findByCodigoEstado(anyString())).thenAnswer(inv -> {
             EstadoCotizacion estado = new EstadoCotizacion();
             estado.setIdEstadoCotizacion(1);
@@ -77,20 +80,54 @@ class TransicionRespuestaClienteTest {
     }
 
     @Test
-    void aprobadaPorElJefePasaAEnviadaYGuardaLaFecha() {
+    void marcarEnviadaReutilizaElEnvioYNoCambiaElEstadoSiFalla() {
         entrar("vendedor", "ROLE_ASISTENTE_LOGISTICO");
         Cotizacion cotizacion = cotizacion(4L, "APROBADA_INTERNA", "Aprobada por el Jefe");
+        cotizacion.setCodigoCotizacion("COT-001");
+        cotizacion.setCliente(cliente("compras@mina.pe"));
         when(cotizaciones.findById(4L)).thenReturn(Optional.of(cotizacion));
+        when(envios.enviar(eq(4L), any())).thenReturn(
+                EnviarCotizacionResponse.builder().success(true).mensaje("Cotización enviada a compras@mina.pe").build());
 
         servicio.marcarEnviada(4L);
 
-        assertEquals(CodigoEstadoCotizacion.ENVIADA.name(), cotizacion.getEstadoCotizacion().getCodigoEstado());
-        assertNotNull(cotizacion.getFechaEnvio());
-        SeguimientoCotizacion seguimiento = capturar();
-        assertEquals("APROBADA_INTERNA", seguimiento.getEstadoAnterior().getCodigoEstado());
-        assertEquals("ENVIADA", seguimiento.getEstadoCotizacion().getCodigoEstado());
-        assertEquals("vendedor", seguimiento.getUsuario().getNombreUsuario());
-        assertNotNull(seguimiento.getFechaEvento());
+        ArgumentCaptor<EnviarCotizacionRequest> envio = ArgumentCaptor.forClass(EnviarCotizacionRequest.class);
+        verify(envios).enviar(eq(4L), envio.capture());
+        assertEquals("compras@mina.pe", envio.getValue().getCorreoDestinatario());
+        assertEquals("Cotización COT-001", envio.getValue().getAsunto());
+        assertEquals("", envio.getValue().getMensaje());
+        assertEquals(true, envio.getValue().isIncluirDetalles());
+        assertEquals("APROBADA_INTERNA", cotizacion.getEstadoCotizacion().getCodigoEstado());
+        verify(cotizaciones, never()).save(any());
+        verify(seguimientos, never()).save(any());
+
+        when(envios.enviar(eq(4L), any())).thenReturn(EnviarCotizacionResponse.builder()
+                .success(false)
+                .mensaje("No se pudo enviar el correo. Intenta de nuevo o revisa la configuración de correo.")
+                .build());
+        BusinessException fallo = assertThrows(BusinessException.class, () -> servicio.marcarEnviada(4L));
+        assertEquals("No se pudo enviar el correo. Intenta de nuevo o revisa la configuración de correo.", fallo.getMessage());
+        assertEquals("APROBADA_INTERNA", cotizacion.getEstadoCotizacion().getCodigoEstado());
+    }
+
+    @Test
+    void sinCorreoValidoResponde400YSigueAprobadaInterna() {
+        entrar("jefe", "ROLE_JEFE_ADMINISTRATIVO");
+        Cotizacion sinCorreo = cotizacion(4L, "APROBADA_INTERNA", "Aprobada por el Jefe");
+        sinCorreo.setCliente(cliente("  "));
+        when(cotizaciones.findById(4L)).thenReturn(Optional.of(sinCorreo));
+
+        BusinessException vacio = assertThrows(BusinessException.class, () -> servicio.marcarEnviada(4L));
+        assertEquals(RespuestaClienteService.SIN_CORREO, vacio.getMessage());
+
+        Cotizacion invalido = cotizacion(4L, "APROBADA_INTERNA", "Aprobada por el Jefe");
+        invalido.setCliente(cliente("no-es-correo"));
+        when(cotizaciones.findById(4L)).thenReturn(Optional.of(invalido));
+        BusinessException mal = assertThrows(BusinessException.class, () -> servicio.marcarEnviada(4L));
+        assertEquals(RespuestaClienteService.SIN_CORREO, mal.getMessage());
+        assertEquals("APROBADA_INTERNA", invalido.getEstadoCotizacion().getCodigoEstado());
+        verify(envios, never()).enviar(any(), any());
+        verify(cotizaciones, never()).save(any());
     }
 
     @Test
@@ -145,7 +182,7 @@ class TransicionRespuestaClienteTest {
 
     @Test
     void aceptarSoloConAdjuntoTambienVale() {
-        entrar("vendedor", "ROLE_VENDEDOR");
+        entrar("vendedor", "ROLE_ASISTENTE_LOGISTICO");
         Cotizacion enviada = cotizacion(8L, "ENVIADA", "Enviada");
         when(cotizaciones.findById(8L)).thenReturn(Optional.of(enviada));
         when(cloudinary.subirDocumento(any(), anyString())).thenReturn("https://cdn.example/oc.pdf");
@@ -241,12 +278,6 @@ class TransicionRespuestaClienteTest {
         return captor.getValue().getNombreArchivo();
     }
 
-    private SeguimientoCotizacion capturar() {
-        ArgumentCaptor<SeguimientoCotizacion> captor = ArgumentCaptor.forClass(SeguimientoCotizacion.class);
-        verify(seguimientos).save(captor.capture());
-        return captor.getValue();
-    }
-
     private void entrar(String usuario, String rol) {
         Usuario persona = new Usuario();
         persona.setNombreUsuario(usuario);
@@ -265,5 +296,13 @@ class TransicionRespuestaClienteTest {
         cotizacion.setEstadoCotizacion(estado);
         cotizacion.setStatus("A");
         return cotizacion;
+    }
+
+    private static Cliente cliente(String correo) {
+        Tercero tercero = new Tercero();
+        tercero.setCorreo(correo);
+        Cliente cliente = new Cliente();
+        cliente.setTercero(tercero);
+        return cliente;
     }
 }

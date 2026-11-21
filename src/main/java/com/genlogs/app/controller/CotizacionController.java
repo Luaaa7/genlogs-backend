@@ -35,7 +35,6 @@ import com.genlogs.app.dto.EnviarCotizacionRequest;
 import com.genlogs.app.dto.EnviarCotizacionResponse;
 import com.genlogs.app.dto.RespuestaClienteRegistradaResponse;
 import com.genlogs.app.dto.RespuestaClienteRequest;
-import com.genlogs.app.enums.CodigoEstadoCotizacion;
 import com.genlogs.app.dto.EstadisticasCotizacionResponse;
 import com.genlogs.app.dto.PaginaResponse;
 import com.genlogs.app.dto.SeguimientoCotizacionResponse;
@@ -240,7 +239,8 @@ public class CotizacionController {
     }
 
     /**
-     * Marca la cotización como enviada sin correo. Solo desde "Aprobada por el Jefe".
+     * Envía el correo de la cotización y, si sale, la deja en ENVIADA.
+     * Solo desde "Aprobada por el Jefe".
      */
     @PreAuthorize(PermisosCotizacion.REGISTRAR_RESPUESTA)
     @PostMapping("/{id}/marcar-enviada")
@@ -250,9 +250,9 @@ public class CotizacionController {
     }
 
     /**
-     * Respuesta del cliente registrada por el vendedor o el jefe.
-     * El JSON anterior ({@code codigoEstado}) sigue creando la orden al aceptar.
-     * La forma nueva ({@code accion}) no crea la orden: eso queda para el alta de la OC.
+     * Respuesta del cliente que registra el vendedor o el jefe.
+     * codigoEstado (ACEPTADA_CLIENTE, EN_NEGOCIACION, RECHAZADA) no crea la orden.
+     * La orden la registra después el alta de orden de compra.
      */
     @PreAuthorize(PermisosCotizacion.REGISTRAR_RESPUESTA)
     @PostMapping(value = "/{id}/respuesta-cliente", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -266,10 +266,7 @@ public class CotizacionController {
                     .seguimiento(seguimiento)
                     .build());
         }
-        String codigo = respuestaClienteService.registrar(id, request);
-        if (CodigoEstadoCotizacion.esAceptacionCliente(codigo)) {
-            cotizacionService.registrarOrdenSiAprobada(id, codigo);
-        }
+        respuestaClienteService.registrar(id, request);
         return ResponseEntity.ok(cotizacionService.buscarPorId(id));
     }
 

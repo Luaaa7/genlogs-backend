@@ -8,6 +8,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.regex.Pattern;
 import java.text.Normalizer;
 
 import org.springframework.security.access.AccessDeniedException;
@@ -17,6 +18,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.genlogs.app.dto.EnviarCotizacionRequest;
+import com.genlogs.app.dto.EnviarCotizacionResponse;
 import com.genlogs.app.dto.RespuestaClienteRequest;
 import com.genlogs.app.dto.SeguimientoCotizacionResponse;
 import com.genlogs.app.enums.CodigoEstadoCotizacion;
@@ -49,12 +52,8 @@ public class RespuestaClienteService {
             "Solo el asistente logístico o el jefe administrativo pueden registrar esto";
     /** El test y el flujo anterior citan este texto. */
     static final String SOLO_EL_JEFE = SOLO_VENDEDOR_O_JEFE;
-    static final String COMENTARIO_OBLIGATORIO =
-            "Indica cómo y cuándo respondió el cliente";
-    static final String ADJUNTO_OBLIGATORIO =
-            "Adjunta el correo o la orden de compra de la minera";
     static final String DESTINO_NO_ADMITIDO =
-            "La respuesta del cliente solo puede ser aprobada o rechazada";
+            "La respuesta del cliente solo puede ser aceptada, en negociación o rechazada";
     static final String ACCION_INVALIDA =
             "Indica qué respondió el cliente: aceptó, pidió cambios o rechazó";
     static final String FECHA_OBLIGATORIA = "La fecha de respuesta es obligatoria";
@@ -67,60 +66,87 @@ public class RespuestaClienteService {
     static final String MOTIVO_RECHAZO = "Indica el motivo del rechazo";
     static final String SOLO_ENVIADA =
             "Solo se marca como enviada una cotización aprobada por el Jefe";
+    static final String SIN_CORREO =
+            "El cliente no tiene un correo para enviar la cotización.";
 
     private static final String JEFE = "ROLE_" + RolSistema.JEFE_ADMINISTRATIVO.name();
     private static final String VENDEDOR = "ROLE_" + RolSistema.ASISTENTE_LOGISTICO.name();
-    private static final String VENDEDOR_LEGACY = "ROLE_VENDEDOR";
-    private static final String PROCESO_LEGACY = "RESPUESTA_FUERA_PORTAL";
     private static final String PROCESO_RESPUESTA = "RESPUESTA_CLIENTE";
-    private static final String PROCESO_ENVIO = "MARCAR_ENVIADA";
     private static final String CARPETA = "genlogs/cotizaciones/respuestas";
+    private static final Pattern CORREO = Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
     private static final List<String> COMENTARIOS_TRIGGER = List.of("Cotización registrada", "Cambio de estado");
 
     private final CotizacionRepository cotizacionRepository;
     private final AdjuntoCotizacionRepository adjuntoCotizacionRepository;
     private final SeguimientoCotizacionRepository seguimientoCotizacionRepository;
     private final UsuarioRepository usuarioRepository;
-    private final PortalCotizacionService portalCotizacionService;
     private final EstadoCotizacionRepository estadoCotizacionRepository;
     private final CloudinaryService cloudinaryService;
+    private final CotizacionService cotizacionService;
 
     /**
-     * Contrato anterior (JSON con codigoEstado). APROBADA se guarda como
-     * ACEPTADA_CLIENTE. La orden la sigue creando el controlador.
+     * Lo que manda la pantalla: codigoEstado, comentario, idAdjunto, fechaRespuesta y medio.
+     * No crea la orden. ACEPTADA_CLIENTE, EN_NEGOCIACION o RECHAZADA.
      */
     @Transactional
     public String registrar(Long idCotizacion, RespuestaClienteRequest request) {
         Usuario usuario = exigirVendedorOJefe();
-        String comentario = comentario(request);
         CodigoEstadoCotizacion destino = destino(request);
+        LocalDate dia = fecha(request == null ? null : request.getFechaRespuesta());
+        String medioNormal = medio(request == null ? null : request.getMedio());
+        String texto = request == null || request.getComentario() == null ? "" : request.getComentario().trim();
+        Long idAdjunto = request == null ? null : request.getIdAdjunto();
+        exigirTexto(destino, texto, idAdjunto);
+
         Cotizacion cotizacion = cotizacionRepository.findById(idCotizacion)
                 .orElseThrow(() -> new ResourceNotFoundException("Cotización no encontrada"));
-        AdjuntoCotizacion adjunto = exigirAdjuntoNuevo(cotizacion, request == null ? null : request.getIdAdjunto());
-        String conArchivo = comentario + " (adjunto: " + adjunto.getNombreArchivo() + ")";
-        portalCotizacionService.aplicarDecisionCliente(cotizacion, destino, usuario, conArchivo, PROCESO_LEGACY);
+        String actual = codigoDe(cotizacion);
+        if (!CodigoEstadoCotizacion.ENVIADA.name().equals(actual)
+                && !CodigoEstadoCotizacion.EN_NEGOCIACION.name().equals(actual)) {
+            throw new EstadoNoPermitidoException(
+                    "No se puede registrar la respuesta del cliente: la cotización está en "
+                            + nombreDe(cotizacion)
+                            + ". Solo se responde cuando está enviada o en negociación.");
+        }
+        AdjuntoCotizacion adjunto = idAdjunto == null ? null : adjuntoDeLaCotizacion(cotizacion, idAdjunto);
+        EstadoCotizacion anterior = cotizacion.getEstadoCotizacion();
+        EstadoCotizacion nuevo = estadoDe(destino);
+        aplicar(cotizacion, nuevo, usuario, PROCESO_RESPUESTA);
+        cotizacionRepository.save(cotizacion);
+        guardarSeguimiento(cotizacion, anterior, nuevo, usuario, texto, dia, medioNormal,
+                adjunto == null ? null : adjunto.getUrlArchivo(), adjunto, PROCESO_RESPUESTA);
         return destino.name();
     }
 
-    /** Aprobada por el Jefe → Enviada, sin correo. */
-    @Transactional
+    /**
+     * Aprobada por el Jefe → correo de la cotización y, si sale, ENVIADA.
+     * Reutiliza {@link CotizacionService#enviar}.
+     */
     public void marcarEnviada(Long idCotizacion) {
-        Usuario usuario = exigirVendedorOJefe();
+        exigirVendedorOJefe();
         Cotizacion cotizacion = cotizacionRepository.findById(idCotizacion)
                 .orElseThrow(() -> new ResourceNotFoundException("Cotización no encontrada"));
         String actual = codigoDe(cotizacion);
         if (!CodigoEstadoCotizacion.APROBADA_INTERNA.name().equals(actual)) {
             throw new EstadoNoPermitidoException(SOLO_ENVIADA + ". Ahora está en " + nombreDe(cotizacion) + ".");
         }
-        EstadoCotizacion anterior = cotizacion.getEstadoCotizacion();
-        EstadoCotizacion enviada = estadoDe(CodigoEstadoCotizacion.ENVIADA);
-        aplicar(cotizacion, enviada, usuario, PROCESO_ENVIO);
-        if (cotizacion.getFechaEnvio() == null) {
-            cotizacion.setFechaEnvio(LocalDateTime.now());
+        String correo = correoDelCliente(cotizacion);
+        if (!correoValido(correo)) {
+            throw new BusinessException(SIN_CORREO);
         }
-        cotizacionRepository.save(cotizacion);
-        guardarSeguimiento(cotizacion, anterior, enviada, usuario, "Marcada como enviada",
-                null, null, null, PROCESO_ENVIO);
+        String codigo = cotizacion.getCodigoCotizacion() == null ? "" : cotizacion.getCodigoCotizacion().trim();
+        EnviarCotizacionRequest envio = new EnviarCotizacionRequest();
+        envio.setCorreoDestinatario(correo);
+        envio.setAsunto(codigo.isEmpty() ? "Cotización" : "Cotización " + codigo);
+        envio.setMensaje("");
+        envio.setIncluirDetalles(true);
+        EnviarCotizacionResponse respuesta = cotizacionService.enviar(idCotizacion, envio);
+        if (respuesta == null || !respuesta.isSuccess()) {
+            String mensaje = respuesta == null || respuesta.getMensaje() == null || respuesta.getMensaje().isBlank()
+                    ? "No se pudo enviar el correo. Intenta de nuevo o revisa la configuración de correo."
+                    : respuesta.getMensaje();
+            throw new BusinessException(mensaje);
+        }
     }
 
     /**
@@ -163,8 +189,32 @@ public class RespuestaClienteService {
         aplicar(cotizacion, nuevo, usuario, PROCESO_RESPUESTA);
         cotizacionRepository.save(cotizacion);
         SeguimientoCotizacion seguimiento = guardarSeguimiento(
-                cotizacion, anterior, nuevo, usuario, texto, fecha, medioNormal, ruta, PROCESO_RESPUESTA);
+                cotizacion, anterior, nuevo, usuario, texto, fecha, medioNormal, ruta, null, PROCESO_RESPUESTA);
         return aRespuesta(seguimiento, anterior, nuevo, usuario);
+    }
+
+    private static void exigirTexto(CodigoEstadoCotizacion destino, String nota, Long idAdjunto) {
+        if (destino == CodigoEstadoCotizacion.ACEPTADA_CLIENTE) {
+            if (nota.isEmpty() && idAdjunto == null) {
+                throw new BusinessException(EVIDENCIA_ACEPTACION);
+            }
+            return;
+        }
+        if (nota.isEmpty()) {
+            throw new BusinessException(destino == CodigoEstadoCotizacion.EN_NEGOCIACION
+                    ? MOTIVO_CAMBIOS
+                    : MOTIVO_RECHAZO);
+        }
+    }
+
+    private AdjuntoCotizacion adjuntoDeLaCotizacion(Cotizacion cotizacion, Long idAdjunto) {
+        AdjuntoCotizacion adjunto = adjuntoCotizacionRepository.findById(idAdjunto)
+                .orElseThrow(() -> new BusinessException("No se encontró el adjunto"));
+        Long dueno = adjunto.getCotizacion() == null ? null : adjunto.getCotizacion().getIdCotizacion();
+        if (!cotizacion.getIdCotizacion().equals(dueno) || !"A".equals(adjunto.getStatus())) {
+            throw new BusinessException("El adjunto no pertenece a la cotización");
+        }
+        return adjunto;
     }
 
     private static void exigirEvidencia(String accion, String nota, boolean conArchivo) {
@@ -220,6 +270,7 @@ public class RespuestaClienteService {
             LocalDate fechaRespuesta,
             String medio,
             String ruta,
+            AdjuntoCotizacion adjunto,
             String proceso) {
         cotizacionRepository.flush();
         SeguimientoCotizacion fila = filaDelTrigger(cotizacion, anterior, nuevo);
@@ -238,6 +289,7 @@ public class RespuestaClienteService {
         fila.setFechaRespuesta(fechaRespuesta);
         fila.setMedio(medio);
         fila.setRutaAdjunto(ruta);
+        fila.setAdjunto(adjunto);
         if (fila.getFechaEvento() == null) {
             fila.setFechaEvento(LocalDateTime.now());
         }
@@ -273,8 +325,10 @@ public class RespuestaClienteService {
 
     private static SeguimientoCotizacionResponse aRespuesta(
             SeguimientoCotizacion s, EstadoCotizacion anterior, EstadoCotizacion nuevo, Usuario usuario) {
-        String codigoNuevo = nuevo == null ? null : nuevo.getCodigoEstado();
-        String codigoAnterior = anterior == null ? null : anterior.getCodigoEstado();
+        String codigoNuevo = nuevo == null ? null : CodigoEstadoCotizacion.visible(nuevo.getCodigoEstado());
+        String codigoAnterior = anterior == null
+                ? null
+                : CodigoEstadoCotizacion.visible(anterior.getCodigoEstado());
         String nombre = usuario == null ? null : usuario.getNombreUsuario();
         return SeguimientoCotizacionResponse.builder()
                 .idSeguimiento(s.getIdSeguimiento())
@@ -298,15 +352,14 @@ public class RespuestaClienteService {
                 .fechaRespuesta(s.getFechaRespuesta())
                 .medio(s.getMedio())
                 .rutaAdjunto(s.getRutaAdjunto())
+                .idAdjunto(s.getAdjunto() == null ? null : s.getAdjunto().getIdAdjunto())
                 .build();
     }
 
     private Usuario exigirVendedorOJefe() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         boolean permitido = auth != null && auth.getAuthorities().stream()
-                .anyMatch(a -> JEFE.equals(a.getAuthority())
-                        || VENDEDOR.equals(a.getAuthority())
-                        || VENDEDOR_LEGACY.equals(a.getAuthority()));
+                .anyMatch(a -> JEFE.equals(a.getAuthority()) || VENDEDOR.equals(a.getAuthority()));
         if (!permitido || auth.getName() == null || auth.getName().isBlank()) {
             throw new AccessDeniedException(SOLO_VENDEDOR_O_JEFE);
         }
@@ -314,21 +367,15 @@ public class RespuestaClienteService {
                 .orElseThrow(() -> new AccessDeniedException(SOLO_VENDEDOR_O_JEFE));
     }
 
-    private static String comentario(RespuestaClienteRequest request) {
-        String texto = request == null || request.getComentario() == null ? "" : request.getComentario().trim();
-        if (texto.isEmpty()) {
-            throw new BusinessException(COMENTARIO_OBLIGATORIO);
-        }
-        return texto;
-    }
-
     private static CodigoEstadoCotizacion destino(RespuestaClienteRequest request) {
         String codigo = request == null || request.getCodigoEstado() == null
                 ? ""
                 : request.getCodigoEstado().trim();
-        if (CodigoEstadoCotizacion.esAceptacionCliente(codigo)
-                && !CodigoEstadoCotizacion.APROBADA_INTERNA.name().equalsIgnoreCase(codigo)) {
+        if (CodigoEstadoCotizacion.ACEPTADA_CLIENTE.name().equalsIgnoreCase(codigo)) {
             return CodigoEstadoCotizacion.ACEPTADA_CLIENTE;
+        }
+        if (CodigoEstadoCotizacion.EN_NEGOCIACION.name().equalsIgnoreCase(codigo)) {
+            return CodigoEstadoCotizacion.EN_NEGOCIACION;
         }
         if (CodigoEstadoCotizacion.RECHAZADA.name().equalsIgnoreCase(codigo)) {
             return CodigoEstadoCotizacion.RECHAZADA;
@@ -379,10 +426,34 @@ public class RespuestaClienteService {
         return normal.replaceAll("\\p{M}", "");
     }
 
-    private static String codigoDe(Cotizacion cotizacion) {
-        return cotizacion.getEstadoCotizacion() == null
+    /** El mismo correo que muestra el detalle: el del contacto y, si no es válido, el del cliente. */
+    private static String correoDelCliente(Cotizacion cotizacion) {
+        String contacto = cotizacion.getContacto() == null ? "" : texto(cotizacion.getContacto().getCorreo());
+        String delCliente = cotizacion.getCliente() == null || cotizacion.getCliente().getTercero() == null
                 ? ""
-                : cotizacion.getEstadoCotizacion().getCodigoEstado();
+                : texto(cotizacion.getCliente().getTercero().getCorreo());
+        if (correoValido(contacto)) {
+            return contacto;
+        }
+        if (correoValido(delCliente)) {
+            return delCliente;
+        }
+        return contacto.isEmpty() ? delCliente : contacto;
+    }
+
+    private static String texto(String valor) {
+        return valor == null ? "" : valor.trim();
+    }
+
+    private static boolean correoValido(String correo) {
+        return correo != null && CORREO.matcher(correo).matches();
+    }
+
+    private static String codigoDe(Cotizacion cotizacion) {
+        if (cotizacion.getEstadoCotizacion() == null) {
+            return "";
+        }
+        return CodigoEstadoCotizacion.visible(cotizacion.getEstadoCotizacion().getCodigoEstado());
     }
 
     private static String nombreDe(Cotizacion cotizacion) {
@@ -395,36 +466,4 @@ public class RespuestaClienteService {
                 : nombre;
     }
 
-    /**
-     * Vale el adjunto activo de esta cotización subido después del primer paso a ENVIADA.
-     * Un archivo del borrador, o uno anterior o igual a ese envío, no sirve.
-     */
-    private AdjuntoCotizacion exigirAdjuntoNuevo(Cotizacion cotizacion, Long idAdjunto) {
-        if (idAdjunto == null) {
-            throw new BusinessException(ADJUNTO_OBLIGATORIO);
-        }
-        AdjuntoCotizacion adjunto = adjuntoCotizacionRepository.findById(idAdjunto)
-                .orElseThrow(() -> new BusinessException(ADJUNTO_OBLIGATORIO));
-        Long dueno = adjunto.getCotizacion() == null ? null : adjunto.getCotizacion().getIdCotizacion();
-        LocalDateTime envio = fechaDelPrimerEnvio(cotizacion.getIdCotizacion());
-        if (!cotizacion.getIdCotizacion().equals(dueno)
-                || !"A".equals(adjunto.getStatus())
-                || envio == null
-                || adjunto.getDateCreate() == null
-                || !adjunto.getDateCreate().isAfter(envio)) {
-            throw new BusinessException(ADJUNTO_OBLIGATORIO);
-        }
-        return adjunto;
-    }
-
-    /** El seguimiento ENVIADA más antiguo. Un reenvío posterior no mueve esta fecha. */
-    private LocalDateTime fechaDelPrimerEnvio(Long idCotizacion) {
-        return seguimientoCotizacionRepository.findByCotizacion(idCotizacion).stream()
-                .filter(s -> s.getEstadoCotizacion() != null
-                        && CodigoEstadoCotizacion.ENVIADA.name().equals(s.getEstadoCotizacion().getCodigoEstado()))
-                .map(SeguimientoCotizacion::getFechaEvento)
-                .filter(Objects::nonNull)
-                .min(Comparator.naturalOrder())
-                .orElse(null);
-    }
 }
