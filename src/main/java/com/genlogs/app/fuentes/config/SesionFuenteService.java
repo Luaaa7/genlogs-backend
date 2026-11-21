@@ -34,6 +34,7 @@ public class SesionFuenteService {
     private final FuenteBusquedaConfigRepository fuenteRepository;
     private final FuenteCredencialRepository credencialRepository;
     private final CredencialesFuenteService credenciales;
+    private final FuenteSelectorRepository selectorRepository;
     private final FuentesConfigService config;
     private final LectorSesion lector;
     private final UsuarioRepository usuarioRepository;
@@ -56,6 +57,10 @@ public class SesionFuenteService {
         if (fuente.getEstado() != EstadoFuente.ACTIVA) {
             return Optional.empty();
         }
+        if (!configuracionCompleta(codigo)) {
+            aplicar(fuente, false, ResultadoSesion.sinConfigurar("Fuente omitida: sin configurar."));
+            return Optional.empty();
+        }
         LocalDateTime hasta = fuente.getSesionValidaHasta();
         if (hasta != null && hasta.isAfter(LocalDateTime.now().plus(MARGEN_RENOVACION))) {
             Optional<String> guardada = credenciales.leer(codigo, TipoCredencial.SESION);
@@ -74,6 +79,14 @@ public class SesionFuenteService {
     public void marcarVerificacion(CodigoFuente codigo, String motivo) {
         aplicar(fuente(codigo), false, ResultadoSesion.verificacion(
                 motivo != null && !motivo.isBlank() ? motivo : "La tienda pidió un código o CAPTCHA."));
+    }
+
+    /** Comprueba cuenta y reglas mínimas antes de cuota, pausa o renovación de sesión. */
+    public boolean configuracionCompleta(CodigoFuente codigo) {
+        return credenciales.tiene(codigo, TipoCredencial.USUARIO)
+                && credenciales.tiene(codigo, TipoCredencial.CLAVE)
+                && ReglasMinimas.faltantes(
+                        selectorRepository.findByFuente_CodigoAndStatus(codigo, "A")).isEmpty();
     }
 
     /**
@@ -123,13 +136,13 @@ public class SesionFuenteService {
     /**
      * Un fallo de conexión, un tiempo agotado o un bloqueo quedan en CON_ERROR.
      * En «Probar sesión», faltar la cuenta o las reglas de ingreso no es un fallo de la tienda:
-     * SIN_PROBAR. En la renovación antes de buscar (D-41) cualquier fallo queda CON_ERROR,
-     * para que se avise al Jefe.
+     * SIN_PROBAR. También en la renovación antes de buscar (D-41): falta de configuración
+     * reemplaza la decisión anterior de CON_ERROR y no genera aviso al Jefe.
      */
     private static EstadoFuente estadoSiNoOk(ResultadoSesion r, boolean manual) {
         return switch (r.resultado()) {
             case VERIFICACION -> EstadoFuente.REQUIERE_VERIFICACION;
-            case SIN_CONFIGURAR -> manual ? EstadoFuente.SIN_PROBAR : EstadoFuente.CON_ERROR;
+            case SIN_CONFIGURAR -> EstadoFuente.SIN_PROBAR;
             default -> EstadoFuente.CON_ERROR;
         };
     }

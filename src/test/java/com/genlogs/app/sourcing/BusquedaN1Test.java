@@ -74,6 +74,7 @@ class BusquedaN1Test {
         when(fuenteRepo.findByActivaTrueAndStatusOrderByIdFuente("A")).thenReturn(List.of(a, c));
         when(sesiones.sesionVigente(CodigoFuente.EBAY)).thenReturn(Optional.of("sesion-a"));
         when(sesiones.sesionVigente(CodigoFuente.MERCADO_LIBRE)).thenReturn(Optional.of("sesion-c"));
+        when(sesiones.configuracionCompleta(any())).thenReturn(true);
         when(lector.buscar(eq(CodigoFuente.EBAY), any(), any(), any(), any()))
                 .thenReturn(ResultadoLectura.ok(List.of(
                         new FichaFuente("Filtro CAT", "desc", "18.50", "usd",

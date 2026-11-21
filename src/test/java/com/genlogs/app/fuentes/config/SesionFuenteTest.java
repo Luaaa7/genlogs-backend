@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,6 +51,7 @@ class SesionFuenteTest {
     @Autowired private ClientesDePrueba datos;
     @Autowired private FuenteBusquedaConfigRepository fuentes;
     @Autowired private CredencialesFuenteService credenciales;
+    @Autowired private FuenteSelectorRepository selectores;
     @Autowired private SesionFuenteService sesiones;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EntityManager em;
@@ -80,6 +82,33 @@ class SesionFuenteTest {
     private void cargarCuenta(CodigoFuente codigo) {
         credenciales.guardar(codigo, TipoCredencial.USUARIO, USUARIO_TIENDA, null, "PRUEBA");
         credenciales.guardar(codigo, TipoCredencial.CLAVE, CLAVE_TIENDA, null, "PRUEBA");
+    }
+
+    private void cargarReglasCompletas(CodigoFuente codigo) {
+        FuenteBusquedaConfig fuente = fuentes.findByCodigo(codigo).orElseThrow();
+        for (CampoSelector campo : List.of(CampoSelector.ITEM, CampoSelector.NOMBRE,
+                CampoSelector.PRECIO, CampoSelector.ENLACE)) {
+            FuenteSelector regla = new FuenteSelector();
+            regla.setFuente(fuente);
+            regla.setPagina(PaginaSelector.BUSQUEDA);
+            regla.setCampo(campo);
+            regla.setRegla("." + campo.name().toLowerCase());
+            regla.setUserCreate("PRUEBA");
+            regla.setProcessCreate("PRUEBA");
+            selectores.save(regla);
+        }
+        for (CampoSelector campo : List.of(CampoSelector.USUARIO, CampoSelector.CLAVE,
+                CampoSelector.ENVIAR, CampoSelector.EXITO)) {
+            FuenteSelector regla = new FuenteSelector();
+            regla.setFuente(fuente);
+            regla.setPagina(PaginaSelector.LOGIN);
+            regla.setCampo(campo);
+            regla.setRegla("#" + campo.name().toLowerCase());
+            regla.setUserCreate("PRUEBA");
+            regla.setProcessCreate("PRUEBA");
+            selectores.save(regla);
+        }
+        em.flush();
     }
 
     private FuenteBusquedaConfig fuente(CodigoFuente codigo) {
@@ -213,6 +242,7 @@ class SesionFuenteTest {
     @Test
     void sesionVigente_conSesionAlDiaLaDevuelveSinLlamarAlLector() {
         cargarCuenta(CodigoFuente.EBAY);
+        cargarReglasCompletas(CodigoFuente.EBAY);
         credenciales.guardar(CodigoFuente.EBAY, TipoCredencial.SESION, SESION, null, "PRUEBA");
         FuenteBusquedaConfig f = fuentes.findByCodigo(CodigoFuente.EBAY).orElseThrow();
         f.setEstado(EstadoFuente.ACTIVA);
@@ -225,6 +255,7 @@ class SesionFuenteTest {
     @Test
     void sesionVigente_vencidaSeRenuevaSolaAntesDeBuscar() {
         cargarCuenta(CodigoFuente.EBAY);
+        cargarReglasCompletas(CodigoFuente.EBAY);
         credenciales.guardar(CodigoFuente.EBAY, TipoCredencial.SESION, "{\"vieja\":true}", null, "PRUEBA");
         FuenteBusquedaConfig f = fuentes.findByCodigo(CodigoFuente.EBAY).orElseThrow();
         f.setEstado(EstadoFuente.ACTIVA);
@@ -242,6 +273,7 @@ class SesionFuenteTest {
     @Test
     void sesionVigente_siLaRenovacionFallaQuedaFueraDeLaBusqueda() {
         cargarCuenta(CodigoFuente.EBAY);
+        cargarReglasCompletas(CodigoFuente.EBAY);
         FuenteBusquedaConfig f = fuentes.findByCodigo(CodigoFuente.EBAY).orElseThrow();
         f.setEstado(EstadoFuente.ACTIVA);
         f.setSesionValidaHasta(LocalDateTime.now().minusMinutes(1));
@@ -251,19 +283,18 @@ class SesionFuenteTest {
         assertThat(sesiones.sesionVigente(CodigoFuente.EBAY)).isEmpty();
         assertThat(fuente(CodigoFuente.EBAY).getEstado()).isEqualTo(EstadoFuente.CON_ERROR);
     }
+@Test
+void sesionVigente_siAlRenovarFaltanLasReglasQuedaSinProbar() {
+    cargarCuenta(CodigoFuente.EBAY);
+    FuenteBusquedaConfig f = fuentes.findByCodigo(CodigoFuente.EBAY).orElseThrow();
+    f.setEstado(EstadoFuente.ACTIVA);
+    f.setSesionValidaHasta(LocalDateTime.now().minusMinutes(1));
 
-    @Test
-    void sesionVigente_siAlRenovarFaltanLasReglasQuedaConError() {
-        cargarCuenta(CodigoFuente.EBAY);
-        FuenteBusquedaConfig f = fuentes.findByCodigo(CodigoFuente.EBAY).orElseThrow();
-        f.setEstado(EstadoFuente.ACTIVA);
-        f.setSesionValidaHasta(LocalDateTime.now().minusMinutes(1));
-        when(lector.iniciarSesion(any(), any(), any(), any()))
-                .thenReturn(ResultadoSesion.sinConfigurar("eBay: faltan reglas de la página de inicio de sesión."));
+    assertThat(sesiones.sesionVigente(CodigoFuente.EBAY)).isEmpty();
+    assertThat(fuente(CodigoFuente.EBAY).getEstado()).isEqualTo(EstadoFuente.SIN_PROBAR);
 
-        assertThat(sesiones.sesionVigente(CodigoFuente.EBAY)).isEmpty();
-        assertThat(fuente(CodigoFuente.EBAY).getEstado()).isEqualTo(EstadoFuente.CON_ERROR);
-    }
+    verify(lector, never()).iniciarSesion(any(), any(), any(), any());
+}
 
     @Test
     void sesionVigente_fuenteNoProbadaNoEntraNiLlamaAlLector() {
