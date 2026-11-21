@@ -2,6 +2,7 @@ package com.genlogs.app.sourcing;
 
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
+import com.genlogs.app.fuentes.config.CodigoFuente;
 import com.genlogs.app.fuentes.config.FuenteBusquedaConfig;
 import com.genlogs.app.fuentes.config.FuenteBusquedaConfigRepository;
 import com.genlogs.app.model.Moneda;
@@ -113,7 +114,20 @@ public class SourcingService {
         List<String> descripciones = new ArrayList<>();
         Set<String> leidasEn9b1 = new HashSet<>();
 
-        for (FuenteBusquedaConfig fuente : fuenteRepository.findByActivaTrueAndStatusOrderByIdFuente("A")) {
+        List<FuenteBusquedaConfig> fuentesActivas =
+                fuenteRepository.findByActivaTrueAndStatusOrderByIdFuente("A");
+        Set<String> codigosActivos = fuentesActivas.stream()
+                .map(f -> f.getCodigo().name())
+                .collect(java.util.stream.Collectors.toSet());
+        List<FuenteBusqueda> apis = fuentesApi.orderedStream().toList();
+        Set<String> codigosApi = apis.stream()
+                .map(FuenteBusqueda::codigo)
+                .collect(java.util.stream.Collectors.toSet());
+
+        for (FuenteBusquedaConfig fuente : fuentesActivas) {
+            if (fuente.getCodigo() == CodigoFuente.EBAY && codigosApi.contains("EBAY")) {
+                continue;
+            }
             ConsultaFuente r;
             try {
                 r = consultaFuente.consultar(fuente, consulta);
@@ -155,8 +169,11 @@ public class SourcingService {
             }
         }
 
-        for (FuenteBusqueda api : fuentesApi.orderedStream().toList()) {
+        for (FuenteBusqueda api : apis) {
             String codigo = api.codigo();
+            if ("EBAY".equals(codigo) && !codigosActivos.contains("EBAY")) {
+                continue;
+            }
             if (leidasEn9b1.contains(codigo) || consultadas.contains(codigo)) {
                 continue;
             }

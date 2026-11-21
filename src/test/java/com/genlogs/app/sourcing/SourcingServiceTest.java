@@ -257,14 +257,13 @@ class SourcingServiceTest {
 
     @Test
     void apiEbay_noDuplicaSiEl9b1YaLeyo() {
-        when(consultaFuente.consultar(eq(ebay), any())).thenReturn(ConsultaFuente.de("EBAY", EstadoConsultaFuente.OK,
-                null, List.of(new ResultadoBusqueda("Scraping", null, null, BigDecimal.ONE, "USD",
-                        "https://www.ebay.com/itm/s", null))));
         FuenteBusqueda api = mock(FuenteBusqueda.class);
         when(api.codigo()).thenReturn("EBAY");
+        when(api.buscar(any())).thenReturn(List.of());
 
         servicio(api).buscar(pedido("1R-0750", true));
 
-        verify(api, never()).buscar(any());
+        verify(consultaFuente, never()).consultar(any(), any());
+        verify(api).buscar(any());
     }
 }
