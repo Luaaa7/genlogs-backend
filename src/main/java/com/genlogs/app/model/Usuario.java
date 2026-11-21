@@ -47,6 +47,10 @@ public class Usuario extends Auditable {
     @Column(name = "intentos_fallidos", nullable = false)
     private Short intentosFallidos = 0;
 
+    /** Identificador de la cuenta de Google (claim sub) si el cliente entra con Google. */
+    @Column(name = "google_sub", length = 255, unique = true)
+    private String googleSub;
+
     @Column(name = "iniciales", length = 3, nullable = false)
     private String iniciales;
 }

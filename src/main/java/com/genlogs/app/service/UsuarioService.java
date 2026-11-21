@@ -38,7 +38,7 @@ public class UsuarioService {
     /** Usuarios del portal que pidieron acceso a una empresa que ya es cliente y esperan activación. */
     @Transactional(readOnly = true)
     public List<UsuarioResponse> listarPendientesPortal() {
-        return usuarioRepository.findByStatusAndProcessCreate("I", PortalClienteService.PROCESO_PENDIENTE).stream()
+        return usuarioRepository.buscarPendientesPortal(PortalClienteService.PROCESO_PENDIENTE).stream()
                 .map(this::toResponse)
                 .toList();
     }
@@ -52,7 +52,8 @@ public class UsuarioService {
     public UsuarioResponse activarPendientePortal(Long idUsuario) {
         Usuario usuario = usuarioRepository.findById(idUsuario)
                 .filter(u -> "I".equals(u.getStatus() == null ? null : u.getStatus().trim()))
-                .filter(u -> PortalClienteService.PROCESO_PENDIENTE.equals(u.getProcessCreate()))
+                .filter(u -> PortalClienteService.PROCESO_PENDIENTE.equals(u.getProcessCreate())
+                        || PortalClienteService.PROCESO_PENDIENTE.equals(u.getProcessUpdate()))
                 .orElseThrow(() -> new ResourceNotFoundException("No hay un acceso pendiente con ese usuario"));
         usuario.setStatus("A");
         usuario.setIntentosFallidos((short) 0);
@@ -63,7 +64,7 @@ public class UsuarioService {
         try {
             notificacionService.enviarCorreoCliente(usuario.getCorreo(), usuario.getNombres(),
                     "Tu acceso al portal de GENLOGS está habilitado",
-                    "Ya puedes ingresar al portal de GENLOGS con tu correo y contraseña.");
+                    "Ya puedes ingresar al portal de GENLOGS con tu correo y contraseña, o con Google si te registraste así.");
         } catch (RuntimeException ex) {
             // El acceso ya quedó activo; el correo es solo un aviso.
         }
