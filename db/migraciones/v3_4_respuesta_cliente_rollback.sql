@@ -1,7 +1,7 @@
 -- ============================================================================
 -- Vuelta atrás de v3_4_respuesta_cliente.sql
 -- Devuelve el código APROBADA / "Aprobada" y quita las columnas nuevas.
--- Los valores de fecha_envio, medio, nota de respuesta y ruta se pierden.
+-- Los valores de fecha_envio, medio, nota de respuesta, ruta y adjunto se pierden.
 -- ============================================================================
 
 BEGIN;
@@ -10,7 +10,13 @@ ALTER TABLE public.seguimiento_cotizacion
     DROP CONSTRAINT IF EXISTS ck_seguimiento_cotizacion_medio;
 
 ALTER TABLE public.seguimiento_cotizacion
+    DROP CONSTRAINT IF EXISTS fk_seguimiento_adjunto;
+
+ALTER TABLE public.seguimiento_cotizacion
     DROP CONSTRAINT IF EXISTS fk_seguimiento_estado_anterior;
+
+ALTER TABLE public.seguimiento_cotizacion
+    DROP COLUMN IF EXISTS id_adjunto;
 
 ALTER TABLE public.seguimiento_cotizacion
     DROP COLUMN IF EXISTS ruta_adjunto;

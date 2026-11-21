@@ -29,7 +29,7 @@ import com.genlogs.app.service.RespuestaClienteService;
 class RespuestaClienteControllerTest {
 
     private static final String CUERPO = """
-            {"codigoEstado":"APROBADA","comentario":"Llamó el 16/11 a las 9:00","idAdjunto":7}
+            {"codigoEstado":"ACEPTADA_CLIENTE","comentario":"Llamó el 16/11 a las 9:00","idAdjunto":7}
             """;
 
     private CotizacionService cotizaciones;
@@ -41,7 +41,7 @@ class RespuestaClienteControllerTest {
         cotizaciones = mock(CotizacionService.class);
         respuestas = mock(RespuestaClienteService.class);
         when(cotizaciones.buscarPorId(15L)).thenReturn(
-                CotizacionResponse.builder().idCotizacion(15L).estadoCodigo("APROBADA").build());
+                CotizacionResponse.builder().idCotizacion(15L).estadoCodigo("ACEPTADA_CLIENTE").build());
         mockMvc = MockMvcBuilders
                 .standaloneSetup(new CotizacionController(cotizaciones, respuestas))
                 .setControllerAdvice(new GlobalExceptionHandler())
@@ -49,8 +49,8 @@ class RespuestaClienteControllerTest {
     }
 
     @Test
-    void aprobarPideLaOrdenUnaSolaVezYRechazarNoLaPide() throws Exception {
-        when(respuestas.registrar(eq(15L), any())).thenReturn("APROBADA");
+    void aceptarYRechazarRegistranLaRespuestaSinCrearLaOrden() throws Exception {
+        when(respuestas.registrar(eq(15L), any())).thenReturn("ACEPTADA_CLIENTE");
         mockMvc.perform(post("/api/cotizaciones/15/respuesta-cliente")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(CUERPO))
@@ -63,7 +63,9 @@ class RespuestaClienteControllerTest {
                         .content(CUERPO))
                 .andExpect(status().isBadRequest());
 
-        verify(cotizaciones, times(1)).registrarOrdenSiAprobada(15L, "APROBADA");
+        verify(respuestas, times(2)).registrar(eq(15L), any());
+        // v3.4: aceptar ya no crea la orden; se registra después en el alta de la OC.
+        verify(cotizaciones, never()).registrarOrdenSiAprobada(eq(15L), any());
 
         when(respuestas.registrar(eq(16L), any())).thenReturn("RECHAZADA");
         when(cotizaciones.buscarPorId(16L)).thenReturn(

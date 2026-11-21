@@ -10,7 +10,7 @@
 --    al mismo id, así que el cambio de código arrastra los datos.
 -- 2. fecha_envio en cotizacion.
 -- 3. En seguimiento_cotizacion: estado anterior, fecha de la respuesta,
---    medio y ruta del adjunto.
+--    medio, ruta del adjunto y el adjunto de evidencia (id_adjunto).
 -- ============================================================================
 
 BEGIN;
@@ -77,12 +77,23 @@ ALTER TABLE public.seguimiento_cotizacion
     ADD COLUMN IF NOT EXISTS ruta_adjunto TEXT;
 
 ALTER TABLE public.seguimiento_cotizacion
+    ADD COLUMN IF NOT EXISTS id_adjunto BIGINT;
+
+ALTER TABLE public.seguimiento_cotizacion
     DROP CONSTRAINT IF EXISTS fk_seguimiento_estado_anterior;
 
 ALTER TABLE public.seguimiento_cotizacion
     ADD CONSTRAINT fk_seguimiento_estado_anterior
     FOREIGN KEY (id_estado_anterior)
     REFERENCES public.estado_cotizacion (id_estado_cotizacion);
+
+ALTER TABLE public.seguimiento_cotizacion
+    DROP CONSTRAINT IF EXISTS fk_seguimiento_adjunto;
+
+ALTER TABLE public.seguimiento_cotizacion
+    ADD CONSTRAINT fk_seguimiento_adjunto
+    FOREIGN KEY (id_adjunto)
+    REFERENCES public.adjunto_cotizacion (id_adjunto);
 
 ALTER TABLE public.seguimiento_cotizacion
     DROP CONSTRAINT IF EXISTS ck_seguimiento_cotizacion_medio;

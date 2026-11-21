@@ -32,4 +32,16 @@ public enum CodigoEstadoCotizacion {
         return ACEPTADA_CLIENTE.name().equalsIgnoreCase(limpio)
                 || "APROBADA".equalsIgnoreCase(limpio);
     }
+
+    /**
+     * El código tal como lo usa el sistema: el viejo APROBADA (si la migración
+     * aún no corrió) se lee como ACEPTADA_CLIENTE. Los demás quedan igual.
+     */
+    public static String visible(String codigo) {
+        if (codigo == null) {
+            return null;
+        }
+        String limpio = codigo.trim();
+        return "APROBADA".equalsIgnoreCase(limpio) ? ACEPTADA_CLIENTE.name() : limpio;
+    }
 }

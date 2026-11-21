@@ -86,10 +86,10 @@ class CotizacionActualizarPermisosTest {
 
     @org.junit.jupiter.api.Test
     void vendedorYJefeRegistranLaRespuestaYElRestoRecibe403() throws Exception {
-        when(respuestas.registrar(anyLong(), any())).thenReturn("APROBADA");
+        when(respuestas.registrar(anyLong(), any())).thenReturn("ACEPTADA_CLIENTE");
         when(servicio.buscarPorId(anyLong())).thenReturn(CotizacionResponse.builder().idCotizacion(8L).build());
         String cuerpo = """
-                {"codigoEstado":"APROBADA","comentario":"Llamó el 16/11 a las 9:00","idAdjunto":7}
+                {"codigoEstado":"ACEPTADA_CLIENTE","comentario":"Llamó el 16/11 a las 9:00","idAdjunto":7}
                 """;
 
         mockMvc.perform(post("/api/cotizaciones/8/respuesta-cliente")
@@ -104,7 +104,8 @@ class CotizacionActualizarPermisosTest {
                         .with(user("vendedor").roles("ASISTENTE_LOGISTICO")))
                 .andExpect(status().isOk());
         verify(respuestas, org.mockito.Mockito.times(2)).registrar(anyLong(), any());
-        verify(servicio, org.mockito.Mockito.times(2)).registrarOrdenSiAprobada(8L, "APROBADA");
+        // v3.4: la respuesta del cliente ya no crea la orden; se registra después en el alta de la OC.
+        verify(servicio, never()).registrarOrdenSiAprobada(anyLong(), any());
 
         for (String rol : new String[] {
                 "ASISTENTE_ADMINISTRATIVO", "CLIENTE", "GERENTE_GENERAL" }) {

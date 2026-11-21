@@ -71,5 +71,7 @@ public class SeguimientoCotizacionResponse {
 
     /** Ruta o URL del adjunto de evidencia. */
     private String rutaAdjunto;
-}
 
+    /** id del adjunto de evidencia (adjunto_cotizacion), si lo hay. */
+    private Long idAdjunto;
+}

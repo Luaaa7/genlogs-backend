@@ -64,4 +64,9 @@ public class SeguimientoCotizacion extends Auditable {
     /** URL del archivo de evidencia, si se adjuntó. */
     @Column(name = "ruta_adjunto", columnDefinition = "TEXT")
     private String rutaAdjunto;
+
+    /** Adjunto de evidencia de la respuesta (correo u OC de la minera), si lo hay. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_adjunto")
+    private AdjuntoCotizacion adjunto;
 }
