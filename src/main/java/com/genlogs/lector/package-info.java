@@ -34,8 +34,9 @@
  * la verificación humana. El lector devuelve VERIFICACION y cierra el contexto:
  * no resuelve CAPTCHA ni expone un navegador interactivo. La transferencia de una
  * sesión completada manualmente sigue siendo un acuerdo pendiente con L1/L2.
- * El login genérico admite un formulario de usuario y contraseña del mismo origen;
- * SSO y formularios de varias pantallas requieren un contrato adicional.
+ * El login genérico admite un formulario de usuario y contraseña del mismo origen.
+ * D-42 añade el selector opcional login.continuar: primer pantalla con el usuario y,
+ * tras ese botón, la pantalla de la clave, siempre en el mismo sitio. SSO sigue fuera.
  *
  * <p>Karla (K1/K2) conserva las migraciones y el cifrado. No hay acceso directo a BD.
  * La sesión devuelve storageState de Playwright (cookies/localStorage) y validaHasta
