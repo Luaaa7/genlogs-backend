@@ -48,7 +48,7 @@ public class TasaIgvController {
         return ResponseEntity.ok(tasaIgvService.historial());
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasRole('JEFE_ADMINISTRATIVO')")
     @PostMapping
     public ResponseEntity<TasaIgv> registrar(@Valid @RequestBody TasaIgvRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
