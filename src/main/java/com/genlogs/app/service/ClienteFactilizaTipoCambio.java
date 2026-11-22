@@ -67,6 +67,9 @@ public class ClienteFactilizaTipoCambio implements ConsultaTipoCambio {
                 if (avisoFactiliza != null) {
                     avisoFactiliza.revisar(response.statusCode());
                 }
+                if (AvisoFactiliza.esDelPlan(response.statusCode())) {
+                    throw new FactilizaSinPlanException(response.statusCode());
+                }
                 throw new IllegalStateException("Factiliza respondió " + response.statusCode());
             }
             return venta(mapper.readTree(response.body()), fecha);
