@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.genlogs.app.dto.UsuarioRequest;
+import com.genlogs.app.dto.AccesoPendienteResponse;
 import com.genlogs.app.dto.UsuarioResponse;
 import com.genlogs.app.dto.UsuarioUpdateRequest; // Importante para el PUT
 import com.genlogs.app.service.UsuarioService;
@@ -69,7 +70,7 @@ public class UsuarioController {
     /** Accesos del portal que esperan activación (empresa que ya era cliente). */
     @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
     @GetMapping("/pendientes-portal")
-    public ResponseEntity<List<UsuarioResponse>> pendientesPortal() {
+    public ResponseEntity<List<AccesoPendienteResponse>> pendientesPortal() {
         return ResponseEntity.ok(usuarioService.listarPendientesPortal());
     }
 
@@ -78,5 +79,13 @@ public class UsuarioController {
     @PatchMapping("/{id}/activar")
     public ResponseEntity<UsuarioResponse> activar(@PathVariable Long id) {
         return ResponseEntity.ok(usuarioService.activarPendientePortal(id));
+    }
+
+    /** El Jefe Administrativo rechaza un acceso pendiente del portal (BPMN 8.4). 204; 404 si no está pendiente. */
+    @PreAuthorize("hasAnyRole('JEFE_ADMINISTRATIVO','ADMINISTRADOR')")
+    @PatchMapping("/{id}/rechazar")
+    public ResponseEntity<Void> rechazar(@PathVariable Long id) {
+        usuarioService.rechazarPendientePortal(id);
+        return ResponseEntity.noContent().build();
     }
 }
