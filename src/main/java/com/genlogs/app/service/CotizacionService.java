@@ -1469,12 +1469,18 @@ public class CotizacionService {
         String nombreCliente = obtenerNombreCliente(c);
 
         String codigoEstado = c.getEstadoCotizacion() != null
-                ? c.getEstadoCotizacion().getCodigoEstado()
+                ? CodigoEstadoCotizacion.visible(c.getEstadoCotizacion().getCodigoEstado())
                 : null;
 
         String nombreEstado = c.getEstadoCotizacion() != null
                 ? c.getEstadoCotizacion().getNombreEstado()
                 : null;
+        if (CodigoEstadoCotizacion.ACEPTADA_CLIENTE.name().equals(codigoEstado)
+                && c.getEstadoCotizacion() != null
+                && "APROBADA".equalsIgnoreCase(c.getEstadoCotizacion().getCodigoEstado())
+                && (nombreEstado == null || "Aprobada".equalsIgnoreCase(nombreEstado.trim()))) {
+            nombreEstado = "Aceptada por el cliente";
+        }
 
         String codigoMoneda = c.getMoneda() != null
                 ? c.getMoneda().getCodigoMoneda()
@@ -1602,7 +1608,7 @@ public class CotizacionService {
                     ? codigoEstadoDe(seguimientos.get(i + 1))
                     : null;
             String guardado = actual.getEstadoAnterior() != null
-                    ? actual.getEstadoAnterior().getCodigoEstado()
+                    ? CodigoEstadoCotizacion.visible(actual.getEstadoAnterior().getCodigoEstado())
                     : null;
             String estadoAnterior = guardado != null ? guardado : calculado;
 
@@ -1615,7 +1621,7 @@ public class CotizacionService {
 
     private String codigoEstadoDe(SeguimientoCotizacion seguimiento) {
         return seguimiento.getEstadoCotizacion() != null
-                ? seguimiento.getEstadoCotizacion().getCodigoEstado()
+                ? CodigoEstadoCotizacion.visible(seguimiento.getEstadoCotizacion().getCodigoEstado())
                 : null;
     }
 
@@ -1654,7 +1660,7 @@ public class CotizacionService {
             String estadoAnterior) {
 
         String codigoEstado = s.getEstadoCotizacion() != null
-                ? s.getEstadoCotizacion().getCodigoEstado()
+                ? CodigoEstadoCotizacion.visible(s.getEstadoCotizacion().getCodigoEstado())
                 : null;
 
         String nombreEstado = s.getEstadoCotizacion() != null
@@ -1686,6 +1692,7 @@ public class CotizacionService {
                 .fechaRespuesta(s.getFechaRespuesta())
                 .medio(s.getMedio())
                 .rutaAdjunto(s.getRutaAdjunto())
+                .idAdjunto(s.getAdjunto() == null ? null : s.getAdjunto().getIdAdjunto())
                 .build();
     }
 

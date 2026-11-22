@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -159,6 +160,8 @@ class TransicionRespuestaClienteTest {
         assertEquals("whatsapp", aceptada.getMedio());
         assertEquals("Confirmó por mensaje", aceptada.getComentario());
         assertEquals("jefe", aceptada.getUsuario());
+        assertNull(aceptada.getIdAdjunto());
+        verify(envios, never()).registrarOrdenSiAprobada(anyLong(), any());
 
         Cotizacion negociacion = cotizacion(2L, "EN_NEGOCIACION", "En negociación");
         when(cotizaciones.findById(2L)).thenReturn(Optional.of(negociacion));
@@ -196,6 +199,7 @@ class TransicionRespuestaClienteTest {
         assertEquals("https://cdn.example/oc.pdf", respuesta.getRutaAdjunto());
         assertNull(respuesta.getComentario());
         assertEquals("oc_minera.pdf", capturarAdjunto());
+        verify(envios, never()).registrarOrdenSiAprobada(anyLong(), any());
     }
 
     @Test

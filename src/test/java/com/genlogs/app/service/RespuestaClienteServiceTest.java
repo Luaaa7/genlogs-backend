@@ -47,6 +47,7 @@ class RespuestaClienteServiceTest {
     @Mock private EstadoCotizacionRepository estados;
     @Mock private SeguimientoCotizacionRepository seguimientos;
     @Mock private AdjuntoCotizacionRepository adjuntos;
+    @Mock private CotizacionService cotizacionService;
 
     private RespuestaClienteService servicio;
     private final LocalDate hoy = LocalDate.now(PlazoDespacho.LIMA);
@@ -54,7 +55,7 @@ class RespuestaClienteServiceTest {
     @BeforeEach
     void setUp() {
         servicio = new RespuestaClienteService(
-                cotizaciones, adjuntos, seguimientos, usuarios, estados, null, null);
+                cotizaciones, adjuntos, seguimientos, usuarios, estados, null, cotizacionService);
         Usuario jefe = new Usuario();
         jefe.setNombreUsuario("jefe");
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
@@ -111,7 +112,11 @@ class RespuestaClienteServiceTest {
         assertEquals("ENVIADA", seguimiento.getEstadoAnterior().getCodigoEstado());
         assertEquals("ACEPTADA_CLIENTE", seguimiento.getEstadoCotizacion().getCodigoEstado());
         assertEquals("Aceptó por correo", seguimiento.getComentario());
+        assertEquals(hoy, seguimiento.getFechaRespuesta());
+        assertEquals("whatsapp", seguimiento.getMedio());
         assertEquals(7L, seguimiento.getAdjunto().getIdAdjunto());
+        assertEquals("https://cdn.example/correo.pdf", seguimiento.getRutaAdjunto());
+        verify(cotizacionService, never()).registrarOrdenSiAprobada(any(), any());
     }
 
     @Test
