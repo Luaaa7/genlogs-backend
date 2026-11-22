@@ -131,6 +131,24 @@ class AccesosPendientesPortalTest {
     }
 
     @Test
+    void bloquearAntesDeActivarNoLoSacaDePendientes() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        Usuario registro = pendienteDeRegistro(n, cliente(n, "Empresa " + n));
+        Usuario google = pendienteDeGoogle(n, cliente(n + 50, "Empresa G " + n));
+
+        for (Usuario u : new Usuario[] { registro, google }) {
+            mockMvc.perform(patch("/api/usuarios/" + u.getIdUsuario() + "/bloqueo?bloqueado=true").with(user("jefe." + n).roles("JEFE_ADMINISTRATIVO")))
+                    .andExpect(status().isOk());
+            mockMvc.perform(patch("/api/usuarios/" + u.getIdUsuario() + "/bloqueo?bloqueado=false").with(user("jefe." + n).roles("JEFE_ADMINISTRATIVO")))
+                    .andExpect(status().isOk());
+        }
+
+        mockMvc.perform(get("/api/usuarios/pendientes-portal").with(user("jefe." + n).roles("JEFE_ADMINISTRATIVO")))
+                .andExpect(jsonPath("$[?(@.idUsuario == " + registro.getIdUsuario() + ")]").isNotEmpty())
+                .andExpect(jsonPath("$[?(@.idUsuario == " + google.getIdUsuario() + ")]").isNotEmpty());
+    }
+
+    @Test
     void soloElJefeRechazaYSoloAccesosPendientes() throws Exception {
         int n = SECUENCIA.incrementAndGet();
         Cliente cliente = cliente(n, "Empresa " + n);

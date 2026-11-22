@@ -150,7 +150,10 @@ public class UsuarioService {
             usuario.setIntentosFallidos((short) 0); // desbloquear resetea el contador
         }
         usuario.setUserUpdate(usuarioActual());
-        usuario.setProcessUpdate("CAMBIO_BLOQUEO_USUARIO");
+        // Un acceso pendiente del portal sigue pendiente (BPMN 8.4): su marca vive en process_update.
+        if (!PortalClienteService.esAccesoPendiente(usuario)) {
+            usuario.setProcessUpdate("CAMBIO_BLOQUEO_USUARIO");
+        }
         usuario.setDateUpdate(LocalDateTime.now());
 
         usuario = usuarioRepository.save(usuario);
