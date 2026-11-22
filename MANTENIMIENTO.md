@@ -108,3 +108,11 @@ En producción hay que poner `VENCIMIENTO_SIMULACION=false` para vencer de verda
 después de revisar el log. Para trabajar en local contra la base de producción,
 dejar la simulación en `true` y `VENCIMIENTO_AL_ARRANCAR=false`. Con
 `VENCIMIENTO_ACTIVO=false` no corre ni la 01:00 ni el arranque.
+
+## 5. Búsqueda al agregar un ítem
+
+`GENLOGS_BUSQUEDA_HABILITADA` sigue en `false` por defecto (`genlogs.busqueda.habilitada`).
+Con la bandera apagada, `SourcingController` no se registra y `/api/sourcing` responde 404.
+El modal de ítems de la cotización solo puede usar el catálogo y el texto libre: no consulta
+referencias guardadas ni puede marcar una como ÚTIL. Para eso hay que poner
+`GENLOGS_BUSQUEDA_HABILITADA=true` y aplicar `db/migraciones/v3_4_sourcing_marca_util.sql`.

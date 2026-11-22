@@ -124,6 +124,10 @@ class MatrizRolesTest {
                         "GERENTE_GENERAL", "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO"),
                 caso("Búsqueda", "POST", "/api/sourcing/url/leer", "{\"url\":\"https://ejemplo.com\"}",
                         "ASISTENTE_LOGISTICO"),
+                // Elegir desde la cotización escribe el historial. La matriz de Búsqueda
+                // deja esa escritura al Asistente Logístico; el Jefe solo consulta.
+                caso("Búsqueda", "POST", "/api/sourcing/" + id + "/elegir-desde-cotizacion", "{}",
+                        "ASISTENTE_LOGISTICO"),
 
                 // ---- Cotizaciones y márgenes: sin Contador ni SST; aprueba el Jefe ----
                 caso("Cotizaciones", "GET", "/api/cotizaciones", null,

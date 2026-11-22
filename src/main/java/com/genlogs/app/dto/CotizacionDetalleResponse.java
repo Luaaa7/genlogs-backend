@@ -45,4 +45,6 @@ public class CotizacionDetalleResponse {
     private BigDecimal subtotal;
     /** NACIONAL, IMPORTADO o nulo si la línea no lo pudo determinar. */
     private OrigenRepuesto origen;
+    /** Referencia de sourcing, si la línea se armó eligiéndola. */
+    private Long idSourcing;
 }

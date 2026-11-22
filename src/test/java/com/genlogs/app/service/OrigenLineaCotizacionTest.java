@@ -2,6 +2,7 @@ package com.genlogs.app.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -19,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.genlogs.app.dto.CotizacionDetalleRequest;
 import com.genlogs.app.enums.OrigenRepuesto;
+import com.genlogs.app.exception.ResourceNotFoundException;
 import com.genlogs.app.model.Cotizacion;
 import com.genlogs.app.model.CotizacionDetalle;
 import com.genlogs.app.model.Producto;
@@ -26,6 +28,9 @@ import com.genlogs.app.model.UnidadMedida;
 import com.genlogs.app.repository.CotizacionDetalleRepository;
 import com.genlogs.app.repository.ProductoRepository;
 import com.genlogs.app.repository.UnidadMedidaRepository;
+import com.genlogs.app.sourcing.HistorialSourcing;
+
+import jakarta.persistence.EntityManager;
 
 @ExtendWith(MockitoExtension.class)
 class OrigenLineaCotizacionTest {
@@ -33,6 +38,7 @@ class OrigenLineaCotizacionTest {
     @Mock private ProductoRepository productos;
     @Mock private CotizacionDetalleRepository detalles;
     @Mock private UnidadMedidaRepository unidades;
+    @Mock private EntityManager entityManager;
     @InjectMocks private CotizacionService servicio;
 
     @Test
@@ -69,7 +75,45 @@ class OrigenLineaCotizacionTest {
         CotizacionDetalle linea = servicio.construirLinea(new Cotizacion(), req, "ana");
 
         assertNull(linea.getOrigen());
+        assertNull(linea.getIdSourcing());
         verify(productos, never()).findOrigenById(any());
+        verify(entityManager, never()).find(any(), any());
+    }
+
+    @Test
+    void conIdSourcingLoGuardaYLoDevuelve() {
+        when(entityManager.find(HistorialSourcing.class, 4L)).thenReturn(new HistorialSourcing());
+        UnidadMedida unidad = new UnidadMedida();
+        unidad.setIdUnidadMedida(1);
+        when(unidades.findFirstByStatusOrderByIdUnidadMedidaAsc("A")).thenReturn(Optional.of(unidad));
+        CotizacionDetalleRequest req = new CotizacionDetalleRequest();
+        req.setDescripcion("filtro a medida");
+        req.setCantidad(BigDecimal.ONE);
+        req.setPrecioUnitario(BigDecimal.TEN);
+        req.setIdSourcing(4L);
+
+        CotizacionDetalle linea = servicio.construirLinea(new Cotizacion(), req, "ana");
+
+        assertEquals(4L, linea.getIdSourcing());
+        linea.setIdCotizacionDetalle(3L);
+        when(detalles.findByCotizacion(1L)).thenReturn(List.of(linea));
+        assertEquals(4L, servicio.listarLineas(1L).get(0).getIdSourcing());
+    }
+
+    @Test
+    void idSourcingInexistenteSeRechaza() {
+        when(entityManager.find(HistorialSourcing.class, 4L)).thenReturn(null);
+        UnidadMedida unidad = new UnidadMedida();
+        unidad.setIdUnidadMedida(1);
+        when(unidades.findFirstByStatusOrderByIdUnidadMedidaAsc("A")).thenReturn(Optional.of(unidad));
+        CotizacionDetalleRequest req = new CotizacionDetalleRequest();
+        req.setDescripcion("filtro a medida");
+        req.setCantidad(BigDecimal.ONE);
+        req.setPrecioUnitario(BigDecimal.TEN);
+        req.setIdSourcing(4L);
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> servicio.construirLinea(new Cotizacion(), req, "ana"));
     }
 
     @Test

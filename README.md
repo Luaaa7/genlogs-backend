@@ -76,7 +76,7 @@ Todas las variables se leen desde el entorno del sistema o desde un archivo `.en
 | `CLOUDINARY_API_KEY` | No | vacio | API key de Cloudinary. |
 | `CLOUDINARY_API_SECRET` | No | vacio | API secret de Cloudinary. |
 | `FACTILIZA_API_KEY` | No | vacio | Autocompletado de RUC/DNI. Sin ella el servicio responde datos simulados. |
-| `FACTILIZA_BASE_URL` | No | `https://api.factiliza.com/v1` | Base URL de Factiliza. |
+| `GENLOGS_BUSQUEDA_HABILITADA` | No | `false` | Enciende `/api/sourcing`. Con `false` el modal de ítems de la cotización solo puede usar catálogo y texto libre. |
 | `HIKARI_MAX_POOL_SIZE` | No | `5` | Conexiones maximas del pool Hikari. |
 | `HIKARI_MIN_IDLE` | No | `1` | Conexiones ociosas minimas. |
 | `MAX_INTENTOS_FALLIDOS` | No | `5` | Intentos de login fallidos antes de bloquear la cuenta. |
@@ -632,6 +632,7 @@ docker run -d -p 8080:8080 --env-file .env genlogs-backend:latest
 
 ## 15. Limitaciones conocidas
 
+- **Búsqueda apagada por defecto** (`GENLOGS_BUSQUEDA_HABILITADA=false`): `/api/sourcing` no se registra y responde 404. El modal para agregar un ítem a la cotización queda limitado a catálogo y texto libre; no puede reutilizar referencias ni marcarlas ÚTIL.
 - **No hay scripts SQL ni migraciones versionadas.** El esquema debe existir en la base de datos (seccion 4.2, opcion B para generarlo en desarrollo).
 - **No hay datos seed.** El primer usuario (y el rol `ADMINISTRADOR`) deben insertarse manualmente.
 - **La cobertura de tests es minima:** una unica prueba de carga de contexto.

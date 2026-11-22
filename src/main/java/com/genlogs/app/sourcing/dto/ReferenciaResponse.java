@@ -3,6 +3,7 @@ package com.genlogs.app.sourcing.dto;
 import com.genlogs.app.sourcing.EstadoSourcing;
 import com.genlogs.app.sourcing.HistorialSourcing;
 import com.genlogs.app.sourcing.MetodoBusqueda;
+import com.genlogs.app.sourcing.OrigenMarcaUtil;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -28,7 +29,10 @@ public record ReferenciaResponse(
         EstadoSourcing estado,
         boolean editadoAMano,
         LocalDateTime creadoEn,
-        String descripcion) {
+        String descripcion,
+        OrigenMarcaUtil marcadaUtilDesde,
+        LocalDateTime marcadaUtilEn,
+        String marcadaUtilPor) {
 
     public static ReferenciaResponse de(HistorialSourcing h) {
         return de(h, null);
@@ -51,6 +55,9 @@ public record ReferenciaResponse(
                 h.getEstado(),
                 Boolean.TRUE.equals(h.getEditadoAMano()),
                 h.getCreadoEn(),
-                descripcion);
+                descripcion,
+                h.getMarcadaUtilDesde(),
+                h.getMarcadaUtilEn(),
+                h.getMarcadaUtilPor() != null ? h.getMarcadaUtilPor().getNombreUsuario() : null);
     }
 }

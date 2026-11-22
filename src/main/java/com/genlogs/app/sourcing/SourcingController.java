@@ -2,6 +2,7 @@ package com.genlogs.app.sourcing;
 
 import com.genlogs.app.sourcing.dto.BuscarReferenciasRequest;
 import com.genlogs.app.sourcing.dto.CambiarEstadoReferenciaRequest;
+import com.genlogs.app.sourcing.dto.ElegirDesdeCotizacionRequest;
 import com.genlogs.app.sourcing.dto.GuardarUrlRequest;
 import com.genlogs.app.sourcing.dto.LeerUrlRequest;
 import com.genlogs.app.sourcing.dto.ReferenciaResponse;
@@ -42,8 +43,24 @@ public class SourcingController {
     @PreAuthorize("hasAnyRole('ASISTENTE_LOGISTICO','JEFE_ADMINISTRATIVO','GERENTE_GENERAL')")
     public ResponseEntity<List<ReferenciaResponse>> historial(
             @RequestParam(required = false) Long idSolicitudItem,
-            @RequestParam(required = false) String numeroParte) {
-        return ResponseEntity.ok(sourcingService.listar(idSolicitudItem, numeroParte));
+            @RequestParam(required = false) String numeroParte,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) Boolean soloElegibles,
+            @RequestParam(required = false) Integer limite) {
+        return ResponseEntity.ok(sourcingService.listar(idSolicitudItem, numeroParte, q, soloElegibles, limite));
+    }
+
+    /**
+     * La cotización elige una referencia ya guardada. No busca en fuentes.
+     * La matriz de Búsqueda deja la escritura al Asistente Logístico; el Jefe solo consulta.
+     */
+    @PostMapping("/{idSourcing}/elegir-desde-cotizacion")
+    @PreAuthorize("hasRole('ASISTENTE_LOGISTICO')")
+    public ResponseEntity<ReferenciaResponse> elegirDesdeCotizacion(
+            @PathVariable Long idSourcing,
+            @RequestBody(required = false) ElegirDesdeCotizacionRequest request) {
+        Long idSolicitudItem = request == null ? null : request.idSolicitudItem();
+        return ResponseEntity.ok(sourcingService.elegirDesdeCotizacion(idSourcing, idSolicitudItem));
     }
 
     @PatchMapping("/{idSourcing}/estado")

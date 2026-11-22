@@ -1,10 +1,13 @@
 package com.genlogs.app.sourcing;
 
 import com.genlogs.app.exception.BusinessException;
+import com.genlogs.app.exception.ResourceNotFoundException;
 import com.genlogs.app.fuentes.config.CodigoFuente;
 import com.genlogs.app.fuentes.config.FuenteBusquedaConfig;
 import com.genlogs.app.fuentes.config.FuenteBusquedaConfigRepository;
 import com.genlogs.app.model.Moneda;
+import com.genlogs.app.model.SolicitudItem;
+import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.MonedaRepository;
 import com.genlogs.app.repository.SolicitudItemRepository;
 import com.genlogs.app.repository.UsuarioRepository;
@@ -12,10 +15,14 @@ import com.genlogs.app.service.ClavesParametro;
 import com.genlogs.app.service.ParametrosService;
 import com.genlogs.app.sourcing.dto.BuscarReferenciasRequest;
 import com.genlogs.app.sourcing.dto.ResultadoBusquedaResponse;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
+import org.springframework.data.domain.Pageable;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -33,6 +40,8 @@ import static org.mockito.Mockito.*;
 class SourcingServiceTest {
 
     private HistorialSourcingRepository historialRepo;
+    private SolicitudItemRepository solicitudRepo;
+    private UsuarioRepository usuarioRepo;
     private MonedaRepository monedaRepo;
     private FuenteBusquedaConfigRepository fuenteRepo;
     private ConsultaFuenteService consultaFuente;
@@ -42,6 +51,8 @@ class SourcingServiceTest {
     @BeforeEach
     void setUp() {
         historialRepo = mock(HistorialSourcingRepository.class);
+        solicitudRepo = mock(SolicitudItemRepository.class);
+        usuarioRepo = mock(UsuarioRepository.class);
         monedaRepo = mock(MonedaRepository.class);
         fuenteRepo = mock(FuenteBusquedaConfigRepository.class);
         consultaFuente = mock(ConsultaFuenteService.class);
@@ -59,8 +70,8 @@ class SourcingServiceTest {
         for (int i = 0; i < apis.length; i++) {
             bf.registerSingleton("api" + i, apis[i]);
         }
-        SourcingService s = new SourcingService(historialRepo, mock(SolicitudItemRepository.class),
-                monedaRepo, mock(UsuarioRepository.class), fuenteRepo, consultaFuente, parametros,
+        SourcingService s = new SourcingService(historialRepo, solicitudRepo,
+                monedaRepo, usuarioRepo, fuenteRepo, consultaFuente, parametros,
                 bf.getBeanProvider(FuenteBusqueda.class));
         s.setClock(Clock.fixed(Instant.parse("2026-11-11T20:00:00Z"), ZoneId.of("America/Lima")));
         return s;
@@ -265,5 +276,201 @@ class SourcingServiceTest {
 
         verify(consultaFuente, never()).consultar(any(), any());
         verify(api).buscar(any());
+    }
+
+    @AfterEach
+    void limpiarSesion() {
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void elegirDesdeCotizacion_marcaSoloLaElegida_yLasDemasQuedanCapturado() {
+        entrar("ana");
+        HistorialSourcing elegida = referencia(1L, EstadoSourcing.CAPTURADO);
+        HistorialSourcing otra = referencia(2L, EstadoSourcing.CAPTURADO);
+        when(historialRepo.findById(1L)).thenReturn(Optional.of(elegida));
+        when(historialRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var respuesta = servicio().elegirDesdeCotizacion(1L, null);
+
+        assertThat(elegida.getEstado()).isEqualTo(EstadoSourcing.UTIL);
+        assertThat(elegida.getMarcadaUtilDesde()).isEqualTo(OrigenMarcaUtil.COTIZACION);
+        assertThat(elegida.getMarcadaUtilPor().getNombreUsuario()).isEqualTo("ana");
+        assertThat(elegida.getMarcadaUtilEn()).isEqualTo(LocalDateTime.of(2026, 11, 11, 15, 0));
+        assertThat(respuesta.marcadaUtilDesde()).isEqualTo(OrigenMarcaUtil.COTIZACION);
+        assertThat(respuesta.marcadaUtilPor()).isEqualTo("ana");
+        assertThat(otra.getEstado()).isEqualTo(EstadoSourcing.CAPTURADO);
+        assertThat(otra.getMarcadaUtilDesde()).isNull();
+        verify(historialRepo, times(1)).save(elegida);
+        verify(historialRepo, never()).save(otra);
+        verify(historialRepo, never()).findByNumeroParteIgnoreCaseOrderByCreadoEnDesc(any());
+    }
+
+    @Test
+    void elegirDesdeCotizacion_conDescartada_esRechazada() {
+        when(historialRepo.findById(3L)).thenReturn(Optional.of(referencia(3L, EstadoSourcing.DESCARTADO)));
+
+        assertThatThrownBy(() -> servicio().elegirDesdeCotizacion(3L, null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("No se puede elegir una referencia descartada");
+        verify(historialRepo, never()).save(any());
+    }
+
+    @Test
+    void elegirDesdeCotizacion_yaUtilDesdeBusqueda_conservaElOrigen() {
+        HistorialSourcing h = referencia(4L, EstadoSourcing.UTIL);
+        h.setMarcadaUtilDesde(OrigenMarcaUtil.BUSQUEDA);
+        Usuario jefe = new Usuario();
+        jefe.setNombreUsuario("jefe");
+        h.setMarcadaUtilPor(jefe);
+        h.setMarcadaUtilEn(LocalDateTime.of(2026, 11, 1, 9, 0));
+        when(historialRepo.findById(4L)).thenReturn(Optional.of(h));
+        when(historialRepo.save(h)).thenReturn(h);
+
+        var respuesta = servicio().elegirDesdeCotizacion(4L, null);
+
+        assertThat(h.getEstado()).isEqualTo(EstadoSourcing.UTIL);
+        assertThat(h.getMarcadaUtilDesde()).isEqualTo(OrigenMarcaUtil.BUSQUEDA);
+        assertThat(h.getMarcadaUtilPor()).isSameAs(jefe);
+        assertThat(h.getMarcadaUtilEn()).isEqualTo(LocalDateTime.of(2026, 11, 1, 9, 0));
+        assertThat(respuesta.marcadaUtilDesde()).isEqualTo(OrigenMarcaUtil.BUSQUEDA);
+        assertThat(respuesta.marcadaUtilPor()).isEqualTo("jefe");
+    }
+
+    @Test
+    void elegirDesdeCotizacion_convertida_noCambiaEstado() {
+        HistorialSourcing h = referencia(5L, EstadoSourcing.CONVERTIDO);
+        when(historialRepo.findById(5L)).thenReturn(Optional.of(h));
+        when(historialRepo.save(h)).thenReturn(h);
+
+        var respuesta = servicio().elegirDesdeCotizacion(5L, null);
+
+        assertThat(h.getEstado()).isEqualTo(EstadoSourcing.CONVERTIDO);
+        assertThat(h.getMarcadaUtilDesde()).isNull();
+        assertThat(respuesta.estado()).isEqualTo(EstadoSourcing.CONVERTIDO);
+        assertThat(respuesta.marcadaUtilDesde()).isNull();
+    }
+
+    @Test
+    void elegirDesdeCotizacion_enlazaElItemDeSolicitudSoloSiNoTeniaUno() {
+        SolicitudItem item = new SolicitudItem();
+        item.setIdSolicitudItem(9L);
+        when(solicitudRepo.findById(9L)).thenReturn(Optional.of(item));
+        HistorialSourcing sinItem = referencia(6L, EstadoSourcing.CAPTURADO);
+        when(historialRepo.findById(6L)).thenReturn(Optional.of(sinItem));
+        when(historialRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        servicio().elegirDesdeCotizacion(6L, 9L);
+        assertThat(sinItem.getSolicitudItem()).isSameAs(item);
+
+        SolicitudItem ya = new SolicitudItem();
+        ya.setIdSolicitudItem(3L);
+        HistorialSourcing conItem = referencia(7L, EstadoSourcing.UTIL);
+        conItem.setSolicitudItem(ya);
+        conItem.setMarcadaUtilDesde(OrigenMarcaUtil.BUSQUEDA);
+        when(historialRepo.findById(7L)).thenReturn(Optional.of(conItem));
+
+        servicio().elegirDesdeCotizacion(7L, 9L);
+        assertThat(conItem.getSolicitudItem().getIdSolicitudItem()).isEqualTo(3L);
+        verify(solicitudRepo, times(1)).findById(9L);
+    }
+
+    @Test
+    void elegirDesdeCotizacion_sinReferencia_noEncontrada() {
+        when(historialRepo.findById(8L)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> servicio().elegirDesdeCotizacion(8L, null))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void cambiarEstado_aUtilDesdeBusqueda_registraBusqueda() {
+        entrar("ana");
+        HistorialSourcing h = referencia(7L, EstadoSourcing.CAPTURADO);
+        when(historialRepo.findById(7L)).thenReturn(Optional.of(h));
+        when(historialRepo.save(h)).thenReturn(h);
+
+        var respuesta = servicio().cambiarEstado(7L, EstadoSourcing.UTIL);
+
+        assertThat(h.getMarcadaUtilDesde()).isEqualTo(OrigenMarcaUtil.BUSQUEDA);
+        assertThat(h.getMarcadaUtilPor().getNombreUsuario()).isEqualTo("ana");
+        assertThat(h.getMarcadaUtilEn()).isEqualTo(LocalDateTime.of(2026, 11, 11, 15, 0));
+        assertThat(respuesta.marcadaUtilDesde()).isEqualTo(OrigenMarcaUtil.BUSQUEDA);
+    }
+
+    @Test
+    void cambiarEstado_aDescartado_limpiaLaMarca() {
+        HistorialSourcing h = referencia(7L, EstadoSourcing.UTIL);
+        h.setMarcadaUtilDesde(OrigenMarcaUtil.COTIZACION);
+        h.setMarcadaUtilPor(new Usuario());
+        h.setMarcadaUtilEn(LocalDateTime.of(2026, 11, 1, 9, 0));
+        when(historialRepo.findById(7L)).thenReturn(Optional.of(h));
+        when(historialRepo.save(h)).thenReturn(h);
+
+        servicio().cambiarEstado(7L, EstadoSourcing.DESCARTADO);
+
+        assertThat(h.getEstado()).isEqualTo(EstadoSourcing.DESCARTADO);
+        assertThat(h.getMarcadaUtilDesde()).isNull();
+        assertThat(h.getMarcadaUtilPor()).isNull();
+        assertThat(h.getMarcadaUtilEn()).isNull();
+    }
+
+    @Test
+    void listar_conQ_sinDescartadas_yConLimite() {
+        when(historialRepo.buscarPorTexto(anyString(), anyString(), anyString(), eq(true), any()))
+                .thenReturn(List.of(referencia(1L, EstadoSourcing.UTIL)));
+
+        var lista = servicio().listar(null, null, "Fíltro", true, 80);
+
+        ArgumentCaptor<Pageable> pagina = ArgumentCaptor.forClass(Pageable.class);
+        verify(historialRepo).buscarPorTexto(eq("%filtro%"), eq(SourcingService.ACENTOS),
+                eq(SourcingService.SIN_ACENTOS), eq(true), pagina.capture());
+        assertThat(pagina.getValue().getPageSize()).isEqualTo(50);
+        assertThat(lista).singleElement().satisfies(r -> assertThat(r.estado()).isEqualTo(EstadoSourcing.UTIL));
+        verify(historialRepo, never()).findByNumeroParteIgnoreCaseOrderByCreadoEnDesc(any());
+    }
+
+    @Test
+    void listar_escapaLosComodines() {
+        servicio().listar(null, null, "100%_a\\b", false, 20);
+
+        verify(historialRepo).buscarPorTexto(eq("%100\\%\\_a\\\\b%"), anyString(), anyString(), eq(false), any());
+    }
+
+    @Test
+    void listar_qCorto_esRechazado() {
+        assertThatThrownBy(() -> servicio().listar(null, null, " a ", null, null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Escribe al menos 2 caracteres para buscar");
+        verify(historialRepo, never()).buscarPorTexto(anyString(), anyString(), anyString(), anyBoolean(), any());
+    }
+
+    @Test
+    void listar_sinParametrosNuevos_secomportaIgual() {
+        HistorialSourcing descartada = referencia(9L, EstadoSourcing.DESCARTADO);
+        when(historialRepo.findByNumeroParteIgnoreCaseOrderByCreadoEnDesc("1R-0750"))
+                .thenReturn(List.of(descartada));
+
+        var lista = servicio().listar(null, "1R-0750", null, null, null);
+
+        assertThat(lista).singleElement().satisfies(r -> assertThat(r.estado()).isEqualTo(EstadoSourcing.DESCARTADO));
+        verify(historialRepo, never()).buscarPorTexto(anyString(), anyString(), anyString(), anyBoolean(), any());
+    }
+
+    private void entrar(String nombre) {
+        Usuario usuario = new Usuario();
+        usuario.setNombreUsuario(nombre);
+        when(usuarioRepo.findByNombreUsuario(nombre)).thenReturn(Optional.of(usuario));
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(nombre, "n/a", List.of()));
+    }
+
+    private static HistorialSourcing referencia(Long id, EstadoSourcing estado) {
+        return HistorialSourcing.builder()
+                .idSourcing(id)
+                .fuente("EBAY")
+                .metodo(MetodoBusqueda.NUMERO_PARTE)
+                .numeroParte("1R-0750")
+                .estado(estado)
+                .build();
     }
 }

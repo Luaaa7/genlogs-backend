@@ -69,4 +69,8 @@ public class CotizacionDetalle extends Auditable {
     @Enumerated(EnumType.STRING)
     @Column(name = "origen", length = 10)
     private OrigenRepuesto origen;
+
+    /** Referencia de historial_sourcing elegida al armar la línea. Nulo en cotizaciones antiguas. */
+    @Column(name = "id_sourcing")
+    private Long idSourcing;
 }

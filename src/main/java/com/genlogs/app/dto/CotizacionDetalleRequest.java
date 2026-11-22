@@ -56,4 +56,7 @@ public class CotizacionDetalleRequest {
      * Si no viene, al crear la línea se copia del producto.
      */
     private OrigenRepuesto origen;
+
+    /** Opcional. Referencia de sourcing elegida para esta línea. */
+    private Long idSourcing;
 }
