@@ -27,5 +27,7 @@ public enum TipoAviso {
     ACCESO_PORTAL_PENDIENTE,
     /** v3.3 (L4): una fuente de búsqueda pasó a CON_ERROR o REQUIERE_VERIFICACION; aviso al Jefe Adm. */
     FUENTE_CON_ERROR,
+    /** v3.4: Factiliza rechazó la clave (plan vencido, sin consultas o token inválido). Al Jefe, una vez al día. */
+    FACTILIZA_SIN_PLAN,
     GENERAL
 }

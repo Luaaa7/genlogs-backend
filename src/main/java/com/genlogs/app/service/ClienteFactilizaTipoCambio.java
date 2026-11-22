@@ -30,6 +30,14 @@ public class ClienteFactilizaTipoCambio implements ConsultaTipoCambio {
     private final HttpClient cliente = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
     private final ObjectMapper mapper = new ObjectMapper();
 
+    /** Avisa al Jefe si Factiliza rechaza la clave (v3.4). */
+    private AvisoFactiliza avisoFactiliza;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setAvisoFactiliza(AvisoFactiliza avisoFactiliza) {
+        this.avisoFactiliza = avisoFactiliza;
+    }
+
     public ClienteFactilizaTipoCambio(
             @Value("${factiliza.api-key:}") String apiKey,
             @Value("${factiliza.base-url:https://api.factiliza.com/v1}") String baseUrl) {
@@ -56,6 +64,12 @@ public class ClienteFactilizaTipoCambio implements ConsultaTipoCambio {
             HttpResponse<String> response = cliente.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() >= 300) {
                 log.error("Factiliza respondió {} al consultar el tipo de cambio", response.statusCode());
+                if (avisoFactiliza != null) {
+                    avisoFactiliza.revisar(response.statusCode());
+                }
+                if (AvisoFactiliza.esDelPlan(response.statusCode())) {
+                    throw new FactilizaSinPlanException(response.statusCode());
+                }
                 throw new IllegalStateException("Factiliza respondió " + response.statusCode());
             }
             return venta(mapper.readTree(response.body()), fecha);
