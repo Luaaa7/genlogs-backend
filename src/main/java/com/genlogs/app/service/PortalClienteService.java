@@ -84,6 +84,20 @@ public class PortalClienteService {
     private static final String SECTOR_CAPTACION = "MINERIA";
     /** Marca del usuario que pidió acceso a una empresa que ya es cliente (lo usa UsuarioService.activar). */
     public static final String PROCESO_PENDIENTE = "REGISTRO_PORTAL_PENDIENTE";
+
+    /**
+     * Acceso del portal que espera la revisión del Jefe Administrativo (BPMN 8.4): inactivo y
+     * marcado como pendiente al registrarse (process_create, sin cambios después) o al completar
+     * los datos de la empresa con Google (process_update). Activado o rechazado deja de serlo.
+     */
+    public static boolean esAccesoPendiente(Usuario usuario) {
+        String status = usuario.getStatus() == null ? "" : usuario.getStatus().trim();
+        if (!status.startsWith("I")) {
+            return false;
+        }
+        return PROCESO_PENDIENTE.equals(usuario.getProcessUpdate())
+                || (PROCESO_PENDIENTE.equals(usuario.getProcessCreate()) && usuario.getProcessUpdate() == null);
+    }
     private static final java.util.Set<String> ESTADOS_CANCELABLES = java.util.Set.of(
             EstadoSolicitud.PENDIENTE.name(), EstadoSolicitud.EN_REVISION.name());
 

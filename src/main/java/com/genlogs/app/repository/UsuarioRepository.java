@@ -32,9 +32,11 @@ public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
 
     /**
      * Accesos pendientes del portal: los que se registraron con una empresa que ya es cliente
-     * (process_create) y las cuentas de Google que completaron sus datos con esa empresa (process_update).
+     * (process_create, sin cambios después) y las cuentas de Google que completaron sus datos con esa
+     * empresa (process_update). Igual que PortalClienteService.esAccesoPendiente.
      */
-    @Query("SELECT u FROM Usuario u WHERE u.status = 'I' AND (u.processCreate = :proceso OR u.processUpdate = :proceso)")
+    @Query("SELECT u FROM Usuario u WHERE u.status = 'I' AND (u.processUpdate = :proceso"
+            + " OR (u.processCreate = :proceso AND u.processUpdate IS NULL)) ORDER BY u.idUsuario")
     List<Usuario> buscarPendientesPortal(@Param("proceso") String proceso);
 
     /** Usuarios del portal de una empresa (para avisarles si alguien pide acceso con su RUC). */

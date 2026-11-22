@@ -67,8 +67,7 @@ public class IngresoGoogleService {
             }
             String status = usuario.getStatus() == null ? "" : usuario.getStatus().trim();
             if (status.startsWith("I")) {
-                if (PortalClienteService.PROCESO_PENDIENTE.equals(usuario.getProcessCreate())
-                        || PortalClienteService.PROCESO_PENDIENTE.equals(usuario.getProcessUpdate())) {
+                if (PortalClienteService.esAccesoPendiente(usuario)) {
                     return IngresoGoogleResponse.pendiente(usuario.getNombres());
                 }
                 throw new BusinessException("El usuario está inactivo. Contacta al administrador.");

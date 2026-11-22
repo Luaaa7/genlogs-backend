@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.genlogs.app.dto.UsuarioRequest;
+import com.genlogs.app.dto.AccesoPendienteResponse;
 import com.genlogs.app.dto.UsuarioResponse;
 import com.genlogs.app.dto.UsuarioUpdateRequest; // Asegúrate de tener este DTO importado si lo requiere
 import com.genlogs.app.exception.BusinessException;
@@ -35,26 +36,32 @@ public class UsuarioService {
     private final PasswordResetTokenRepository resetTokenRepository;
     private final NotificacionService notificacionService;
 
-    /** Usuarios del portal que pidieron acceso a una empresa que ya es cliente y esperan activación. */
+    /** Accesos del portal que esperan la revisión del Jefe Administrativo (BPMN 8.4), con su empresa. */
     @Transactional(readOnly = true)
-    public List<UsuarioResponse> listarPendientesPortal() {
+    public List<AccesoPendienteResponse> listarPendientesPortal() {
         return usuarioRepository.buscarPendientesPortal(PortalClienteService.PROCESO_PENDIENTE).stream()
-                .map(this::toResponse)
+                .map(UsuarioService::aPendiente)
                 .toList();
     }
 
+    private static AccesoPendienteResponse aPendiente(Usuario u) {
+        boolean porGoogle = PortalClienteService.PROCESO_PENDIENTE.equals(u.getProcessUpdate());
+        var tercero = u.getCliente() == null ? null : u.getCliente().getTercero();
+        return new AccesoPendienteResponse(u.getIdUsuario(), u.getNombres(), u.getCorreo(),
+                tercero == null ? null : tercero.getRazonSocial(),
+                tercero == null ? null : tercero.getNumeroDocumento(),
+                porGoogle ? u.getDateUpdate() : u.getDateCreate(),
+                porGoogle ? "GOOGLE" : "REGISTRO");
+    }
+
     /**
-     * El Jefe Administrativo activa a un usuario pendiente del portal. Solo aplica a los
-     * que quedaron pendientes al registrarse: un usuario dado de baja no se reactiva aquí.
+     * El Jefe Administrativo activa un acceso pendiente del portal (BPMN 8.4). Solo aplica a los
+     * pendientes: un usuario dado de baja o rechazado no se reactiva aquí.
      * Al cliente se le avisa por correo; si el correo falla, el usuario queda activo igual.
      */
     @Transactional
     public UsuarioResponse activarPendientePortal(Long idUsuario) {
-        Usuario usuario = usuarioRepository.findById(idUsuario)
-                .filter(u -> "I".equals(u.getStatus() == null ? null : u.getStatus().trim()))
-                .filter(u -> PortalClienteService.PROCESO_PENDIENTE.equals(u.getProcessCreate())
-                        || PortalClienteService.PROCESO_PENDIENTE.equals(u.getProcessUpdate()))
-                .orElseThrow(() -> new ResourceNotFoundException("No hay un acceso pendiente con ese usuario"));
+        Usuario usuario = pendientePortal(idUsuario);
         usuario.setStatus("A");
         usuario.setIntentosFallidos((short) 0);
         usuario.setUserUpdate(usuarioActual());
@@ -69,6 +76,33 @@ public class UsuarioService {
             // El acceso ya quedó activo; el correo es solo un aviso.
         }
         return toResponse(usuario);
+    }
+
+    /**
+     * El Jefe Administrativo rechaza un acceso pendiente del portal (BPMN 8.4): queda inactivo y
+     * sale de la lista de pendientes. Al cliente se le avisa por correo; si falla, el rechazo sigue.
+     */
+    @Transactional
+    public void rechazarPendientePortal(Long idUsuario) {
+        Usuario usuario = pendientePortal(idUsuario);
+        usuario.setUserUpdate(usuarioActual());
+        usuario.setProcessUpdate("RECHAZAR_ACCESO_PORTAL");
+        usuario.setDateUpdate(LocalDateTime.now());
+        usuarioRepository.save(usuario);
+        try {
+            notificacionService.enviarCorreoCliente(usuario.getCorreo(), usuario.getNombres(),
+                    "Tu acceso al portal de GENLOGS no fue aprobado",
+                    "Revisamos tu pedido de acceso al portal de GENLOGS y no pudimos aprobarlo. "
+                            + "Si crees que es un error, escríbenos y te ayudamos.");
+        } catch (RuntimeException ex) {
+            // El acceso ya quedó rechazado; el correo es solo un aviso.
+        }
+    }
+
+    private Usuario pendientePortal(Long idUsuario) {
+        return usuarioRepository.findById(idUsuario)
+                .filter(PortalClienteService::esAccesoPendiente)
+                .orElseThrow(() -> new ResourceNotFoundException("No hay un acceso pendiente con ese usuario"));
     }
 
     @Transactional(readOnly = true)
