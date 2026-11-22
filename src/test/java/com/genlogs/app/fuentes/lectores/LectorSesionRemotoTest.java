@@ -115,6 +115,25 @@ class LectorSesionRemotoTest {
     }
 
     @Test
+    void conContinuarLoMandaComoSegundoPasoSinVolverloObligatorio() throws Exception {
+        conReglas(
+                regla(PaginaSelector.LOGIN, CampoSelector.USUARIO, "#userid"),
+                regla(PaginaSelector.LOGIN, CampoSelector.CONTINUAR, "#continue"),
+                regla(PaginaSelector.LOGIN, CampoSelector.CLAVE, "#pass"),
+                regla(PaginaSelector.LOGIN, CampoSelector.ENVIAR, "#sgnBt"),
+                regla(PaginaSelector.LOGIN, CampoSelector.EXITO, "#gh-ug"));
+        when(cliente.iniciarSesion(any())).thenReturn(conSesion("2026-11-17T06:00:00Z"));
+
+        lector.iniciarSesion(CodigoFuente.EBAY, "https://www.ebay.com", USUARIO, CLAVE);
+
+        ArgumentCaptor<ContratoLector.Peticion> captor = ArgumentCaptor.forClass(ContratoLector.Peticion.class);
+        verify(cliente).iniciarSesion(captor.capture());
+        assertThat(captor.getValue().reglas()).isEqualTo(Map.of("login", Map.of(
+                "usuario", "#userid", "continuar", "#continue", "clave", "#pass",
+                "enviar", "#sgnBt", "exito", "#gh-ug")));
+    }
+
+    @Test
     void conSesionQuedaOkConLaSesionGuardableYSuVencimiento() throws Exception {
         conLasCuatroReglasLogin();
         when(cliente.iniciarSesion(any())).thenReturn(conSesion("2026-11-17T06:00:00Z"));

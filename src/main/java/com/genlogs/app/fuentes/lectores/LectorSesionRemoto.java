@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -65,7 +66,10 @@ public class LectorSesionRemoto implements LectorSesion {
             CampoSelector.USUARIO, "usuario",
             CampoSelector.CLAVE, "clave",
             CampoSelector.ENVIAR, "enviar",
-            CampoSelector.EXITO, "exito");
+            CampoSelector.EXITO, "exito",
+            CampoSelector.CONTINUAR, "continuar");
+    /** Las cuatro de siempre. CONTINUAR no es obligatoria: el ingreso de una sola pantalla no la usa. */
+    private static final Set<String> REGLAS_OBLIGATORIAS = Set.of("usuario", "clave", "enviar", "exito");
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -92,7 +96,7 @@ public class LectorSesionRemoto implements LectorSesion {
             return ResultadoSesion.error(tienda + ": no tiene página de inicio de sesión.");
         }
         Map<String, String> login = reglasLogin(codigo);
-        if (login.size() != CAMPOS_LOGIN.size()) {
+        if (!login.keySet().containsAll(REGLAS_OBLIGATORIAS)) {
             return ResultadoSesion.sinConfigurar(tienda + ": faltan reglas de la página de inicio de sesión (casilla del"
                     + " usuario, casilla de la clave, botón para ingresar y señal de sesión iniciada) en"
                     + " Configuración > Fuentes > Reglas de extracción.");
