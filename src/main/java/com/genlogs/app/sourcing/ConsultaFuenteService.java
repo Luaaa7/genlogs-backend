@@ -68,6 +68,10 @@ public class ConsultaFuenteService {
     public ConsultaFuente consultar(FuenteBusquedaConfig fuente, ConsultaBusqueda consulta) {
         CodigoFuente codigo = fuente.getCodigo();
         String nombre = codigo.name();
+        if (!sesiones.configuracionCompleta(codigo)) {
+            return ConsultaFuente.de(nombre, EstadoConsultaFuente.OMITIDA_SESION,
+                    "Fuente omitida: sin configurar.", List.of());
+        }
         int limite = limiteDe(fuente);
         ControlCuota cuota = cuotaDe(codigo);
         if (cuota.usadasHoy() >= limite) {
