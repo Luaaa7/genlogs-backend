@@ -770,6 +770,8 @@ public class CotizacionService {
                             lineaOriginal.getDescripcionPersonalizada())
                     .cantidad(lineaOriginal.getCantidad())
                     .precioUnitario(lineaOriginal.getPrecioUnitario())
+                    .costoUnitario(lineaOriginal.getCostoUnitario())
+                    .margenPorcentaje(lineaOriginal.getMargenPorcentaje())
                     .descuentoUnitario(lineaOriginal.getDescuentoUnitario())
                     .origen(lineaOriginal.getOrigen())
                     .build();
@@ -896,6 +898,8 @@ public class CotizacionService {
                 .descripcionPersonalizada(descripcion)
                 .cantidad(req.getCantidad())
                 .precioUnitario(req.getPrecioUnitario())
+                .costoUnitario(req.getCostoUnitario())
+                .margenPorcentaje(req.getMargenPorcentaje())
                 .descuentoUnitario(
                         req.getDescuentoUnitario() != null
                                 ? req.getDescuentoUnitario()
@@ -1431,8 +1435,8 @@ public class CotizacionService {
     }
 
     /**
-     * Cantidad, precio y descuento son lo único que trae el request.
-     * El costo no viaja, así que aquí no se valida su conversión.
+     * El precio de venta es el del request. El costo y el margen, si vienen,
+     * se guardan tal cual y no se usan para recalcular ese precio.
      */
     private static void exigirImportes(List<CotizacionDetalleRequest> lineas) {
         BigDecimal total = BigDecimal.ZERO;
@@ -1442,6 +1446,14 @@ public class CotizacionService {
             }
             if (linea.getPrecioUnitario() == null || linea.getPrecioUnitario().compareTo(BigDecimal.ZERO) < 0) {
                 throw new BusinessException("El precio no puede ser negativo");
+            }
+            if (linea.getCostoUnitario() != null && linea.getCostoUnitario().compareTo(BigDecimal.ZERO) < 0) {
+                throw new BusinessException("El costo unitario no puede ser negativo");
+            }
+            if (linea.getMargenPorcentaje() != null
+                    && (linea.getMargenPorcentaje().compareTo(BigDecimal.ZERO) < 0
+                            || linea.getMargenPorcentaje().compareTo(new BigDecimal("90")) > 0)) {
+                throw new BusinessException("El margen debe estar entre 0 y 90");
             }
             BigDecimal descuento = linea.getDescuentoUnitario() != null
                     ? linea.getDescuentoUnitario()
@@ -1939,6 +1951,7 @@ public class CotizacionService {
         BigDecimal importe = d.getImporteLinea() != null
                 ? d.getImporteLinea()
                 : calcularImporteLinea(d);
+        boolean veMargen = VisibilidadMargen.puedeVerMargen(autenticacionActual());
 
         return CotizacionDetalleResponse.builder()
                 .idCotizacionDetalle(d.getIdCotizacionDetalle())
@@ -1967,6 +1980,8 @@ public class CotizacionService {
                 .descripcion(d.getDescripcionPersonalizada())
                 .cantidad(d.getCantidad())
                 .precioUnitario(d.getPrecioUnitario())
+                .costoUnitario(veMargen ? d.getCostoUnitario() : null)
+                .margenPorcentaje(veMargen ? d.getMargenPorcentaje() : null)
                 .descuentoUnitario(d.getDescuentoUnitario())
                 .importeLinea(importe)
                 .subtotal(importe)

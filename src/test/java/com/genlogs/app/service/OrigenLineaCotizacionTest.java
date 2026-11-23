@@ -11,13 +11,18 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import com.genlogs.app.dto.CotizacionDetalleRequest;
+import com.genlogs.app.dto.CotizacionDetalleResponse;
 import com.genlogs.app.enums.OrigenRepuesto;
 import com.genlogs.app.model.Cotizacion;
 import com.genlogs.app.model.CotizacionDetalle;
@@ -34,6 +39,11 @@ class OrigenLineaCotizacionTest {
     @Mock private CotizacionDetalleRepository detalles;
     @Mock private UnidadMedidaRepository unidades;
     @InjectMocks private CotizacionService servicio;
+
+    @AfterEach
+    void limpiarSesion() {
+        SecurityContextHolder.clearContext();
+    }
 
     @Test
     void crearConOrigenImportadoLoGuarda() {
@@ -104,6 +114,31 @@ class OrigenLineaCotizacionTest {
         when(detalles.findByCotizacion(1L)).thenReturn(List.of(linea));
 
         assertEquals(OrigenRepuesto.IMPORTADO, servicio.listarLineas(1L).get(0).getOrigen());
+    }
+
+    @Test
+    void unRolSinMargenRecibeCostoYMargenEnNull() {
+        CotizacionDetalle linea = new CotizacionDetalle();
+        linea.setIdCotizacionDetalle(3L);
+        linea.setCantidad(BigDecimal.ONE);
+        linea.setPrecioUnitario(new BigDecimal("150"));
+        linea.setCostoUnitario(new BigDecimal("100"));
+        linea.setMargenPorcentaje(new BigDecimal("20"));
+        when(detalles.findByCotizacion(1L)).thenReturn(List.of(linea));
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                "cliente", "n/a", List.of(new SimpleGrantedAuthority("ROLE_CLIENTE"))));
+
+        CotizacionDetalleResponse oculta = servicio.listarLineas(1L).get(0);
+
+        assertNull(oculta.getCostoUnitario());
+        assertNull(oculta.getMargenPorcentaje());
+        assertEquals(0, new BigDecimal("150").compareTo(oculta.getPrecioUnitario()));
+
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                "jefe", "n/a", List.of(new SimpleGrantedAuthority("ROLE_JEFE_ADMINISTRATIVO"))));
+        CotizacionDetalleResponse visible = servicio.listarLineas(1L).get(0);
+        assertEquals(0, new BigDecimal("100").compareTo(visible.getCostoUnitario()));
+        assertEquals(0, new BigDecimal("20").compareTo(visible.getMargenPorcentaje()));
     }
 
     private static CotizacionDetalleRequest pedido(Long idProducto, OrigenRepuesto origen) {

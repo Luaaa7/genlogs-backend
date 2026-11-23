@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 
 import com.genlogs.app.enums.OrigenRepuesto;
 
+import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
@@ -47,6 +48,15 @@ public class CotizacionDetalleRequest {
     @NotNull(message = "El precio unitario es obligatorio")
     @DecimalMin(value = "0.0", message = "El precio no puede ser negativo")
     private BigDecimal precioUnitario;
+
+    /** Costo unitario en la moneda de la cotización. Si no viene, se guarda null. */
+    @DecimalMin(value = "0.0", message = "El costo unitario no puede ser negativo")
+    private BigDecimal costoUnitario;
+
+    /** Margen en porcentaje, de 0 a 90. Si no viene, se guarda null. */
+    @DecimalMin(value = "0.0", message = "El margen debe estar entre 0 y 90")
+    @DecimalMax(value = "90", message = "El margen debe estar entre 0 y 90")
+    private BigDecimal margenPorcentaje;
 
     @DecimalMin(value = "0.0", message = "El descuento no puede ser negativo")
     private BigDecimal descuentoUnitario = BigDecimal.ZERO;
