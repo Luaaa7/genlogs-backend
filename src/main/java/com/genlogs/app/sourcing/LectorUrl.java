@@ -101,10 +101,20 @@ public class LectorUrl {
                 sinDatos ? "La página no publica precio ni imagen. Completa los datos a mano." : null);
     }
 
+    /**
+     * Primer precio del texto: grupos de miles con espacio ("1 250.90") y decimales con punto o coma.
+     * Así un rango ("US $1.50 - US $2.00 /piece") o un mínimo ("$5.00 (min. 10 pieces)") no se
+     * pegan en un solo número inválido y el precio no se pierde.
+     */
+    private static final Pattern PRIMER_PRECIO =
+            Pattern.compile("\\d{1,3}(?:[ \\u00A0\\u202F]\\d{3})+(?:[.,]\\d+)*|\\d+(?:[.,]\\d+)*");
+
     /** "1,234.56" → 1234.56 · "1.234,56" → 1234.56 · "18,50" → 18.50 · "US$ 25" → 25 */
     static BigDecimal normalizarPrecio(String texto) {
         if (texto == null) return null;
-        String t = texto.replaceAll("[^0-9.,]", "");
+        Matcher primero = PRIMER_PRECIO.matcher(texto);
+        if (!primero.find()) return null;
+        String t = primero.group().replaceAll("[^0-9.,]", "");
         if (t.isEmpty()) return null;
         int coma = t.lastIndexOf(','), punto = t.lastIndexOf('.');
         if (coma > punto) {
