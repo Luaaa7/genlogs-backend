@@ -42,7 +42,7 @@ class OrdenCompraPermisosTest {
     private Validator validator;
 
     @ParameterizedTest
-    @ValueSource(strings = {"GERENTE_GENERAL", "JEFE_ADMINISTRATIVO", "CONTADOR_GENERAL"})
+    @ValueSource(strings = {"GERENTE_GENERAL", "CONTADOR_GENERAL"})
     void quienSoloVeListaYNoEscribe(String rol) throws Exception {
         mockMvc.perform(get("/api/ordenes-compra").with(user("u").roles(rol)))
                 .andExpect(status().isOk());
@@ -119,6 +119,30 @@ class OrdenCompraPermisosTest {
                 .andExpect(status().isForbidden());
     }
 
+    /** El Jefe registra la orden: crear, cambiar estado y subir archivo. Confirmar sigue vedado. */
+    @Test
+    void elJefeAdministrativoCreaCambiaEstadoYSubeArchivoPeroNoConfirma() throws Exception {
+        mockMvc.perform(post("/api/ordenes-compra")
+                        .with(user("u").roles("JEFE_ADMINISTRATIVO"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"idCotizacion\":1,\"numeroOrdenCompra\":\"0001-10\"}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(patch("/api/ordenes-compra/1/estado")
+                        .with(user("u").roles("JEFE_ADMINISTRATIVO"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"codigoEstado\":\"RECIBIDA\"}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(multipart("/api/ordenes-compra/1/archivo")
+                        .file(new MockMultipartFile("archivo", "oc.pdf", "application/pdf", new byte[] {'%'}))
+                        .with(user("u").roles("JEFE_ADMINISTRATIVO")))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(patch("/api/ordenes-compra/1/confirmar-oc")
+                        .with(user("u").roles("JEFE_ADMINISTRATIVO"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"numeroOc\":\"4500012345\",\"monto\":10.50}"))
+                .andExpect(status().isForbidden());
+    }
+
     /** El Asistente Administrativo ve y gestiona la OC (RF-85): pasa el permiso y la cotización 1 no existe. */
     @Test
     void elAsistenteAdministrativoVeYGestiona() throws Exception {
@@ -160,7 +184,8 @@ class OrdenCompraPermisosTest {
         assertTrue(validator.validate(monedaValida).isEmpty());
 
         assertFalse(PermisosOrdenCompra.VER.contains("CLIENTE"));
-        assertFalse(PermisosOrdenCompra.GESTIONAR.contains("JEFE_ADMINISTRATIVO"));
+        assertTrue(PermisosOrdenCompra.GESTIONAR.contains("JEFE_ADMINISTRATIVO"));
+        assertFalse(PermisosOrdenCompra.CONFIRMAR.contains("JEFE_ADMINISTRATIVO"));
     }
 
     @Test

@@ -4,8 +4,8 @@ package com.genlogs.app.service;
  * {@code @PreAuthorize} de órdenes de compra.
  * Ver: los cinco roles de consulta, más ADMINISTRADOR y VENDEDOR (no están en
  * {@link com.genlogs.app.enums.RolSistema} y ya entraban).
- * Crear, cambiar estado y subir el archivo: Asistente Administrativo, y se
- * conserva a ADMINISTRADOR y VENDEDOR. El jefe queda solo en consulta.
+ * Crear, cambiar estado y subir el archivo: Jefe Administrativo y Asistente
+ * Administrativo, y se conserva a ADMINISTRADOR y VENDEDOR.
  * Confirmar lo leído: solo el Asistente Administrativo.
  */
 public final class PermisosOrdenCompra {
@@ -20,6 +20,7 @@ public final class PermisosOrdenCompra {
             + "'ADMINISTRADOR','VENDEDOR')";
 
     public static final String GESTIONAR = "hasAnyRole("
+            + "T(com.genlogs.app.enums.RolSistema).JEFE_ADMINISTRATIVO.name(),"
             + "T(com.genlogs.app.enums.RolSistema).ASISTENTE_ADMINISTRATIVO.name(),"
             + "'ADMINISTRADOR','VENDEDOR')";
 
