@@ -58,7 +58,10 @@ final class ValidacionLectura {
                 // KA (v3.3): solo "mayor"; un rango de precio vale su mayor valor.
                 if (!"mayor".equals(value)) fallar(Estado.SOLICITUD_INVALIDA);
             } else if ("login".equals(key)) {
-                if (!(value instanceof Map<?, ?> login) || !login.keySet().equals(Set.of("usuario", "clave", "enviar", "exito"))) {
+                Set<String> obligatorias = Set.of("usuario", "clave", "enviar", "exito");
+                Set<String> permitidas = Set.of("usuario", "clave", "enviar", "exito", "continuar");
+                if (!(value instanceof Map<?, ?> login) || !permitidas.containsAll(login.keySet())
+                        || !login.keySet().containsAll(obligatorias)) {
                     fallar(Estado.SOLICITUD_INVALIDA);
                 }
                 ((Map<?, ?>) value).values().forEach(ValidacionLectura::selector);

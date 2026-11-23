@@ -72,6 +72,9 @@ public class ConsultaTipoCambioService {
                 throw new IllegalStateException("El tipo de cambio no sirve");
             }
             guardar(hoy, venta, FuenteTipoCambio.SUNAT, null);
+        } catch (FactilizaSinPlanException e) {
+            // BPMN 10-F: ya llegó el aviso de Factiliza (con la causa); no se manda un segundo aviso.
+            log.error("No se pudo consultar el tipo de cambio de {}: {}", hoy, e.getMessage());
         } catch (RuntimeException e) {
             log.error("No se pudo consultar el tipo de cambio de {}", hoy, e);
             avisarFallo();
@@ -81,7 +84,7 @@ public class ConsultaTipoCambioService {
     private void avisarFallo() {
         try {
             notificacionService.avisarRol(RolSistema.JEFE_ADMINISTRATIVO, TipoAviso.TIPO_CAMBIO,
-                    TITULO, MENSAJE, "/tipo-cambio", false);
+                    TITULO, MENSAJE, "/configuracion/tipo-cambio", false);
         } catch (RuntimeException e) {
             log.error("No se pudo avisar que falló el tipo de cambio", e);
         }

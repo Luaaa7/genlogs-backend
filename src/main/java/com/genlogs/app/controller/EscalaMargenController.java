@@ -29,7 +29,7 @@ public class EscalaMargenController {
         return ResponseEntity.ok(escalaMargenService.obtener());
     }
 
-    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    @PreAuthorize("hasRole('JEFE_ADMINISTRATIVO')")
     @PutMapping
     public ResponseEntity<EscalaMargenDto.Escala> guardar(@Valid @RequestBody EscalaMargenDto.Escala escala) {
         return ResponseEntity.ok(escalaMargenService.guardar(escala));

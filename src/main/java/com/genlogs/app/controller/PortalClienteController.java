@@ -13,14 +13,20 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.genlogs.app.dto.CancelarPedidoRequest;
+import com.genlogs.app.dto.CompletarEmpresaRequest;
+import com.genlogs.app.dto.CompletarEmpresaResponse;
+import com.genlogs.app.dto.CuentaPortalResponse;
 import com.genlogs.app.dto.CrearSolicitudRequest;
 import com.genlogs.app.dto.CrearSolicitudResponse;
 import com.genlogs.app.dto.IngresoClienteRequest;
 import com.genlogs.app.dto.IngresoClienteResponse;
+import com.genlogs.app.dto.IngresoGoogleRequest;
+import com.genlogs.app.dto.IngresoGoogleResponse;
 import com.genlogs.app.dto.PedidoResponse;
 import com.genlogs.app.dto.RegistroClienteRequest;
 import com.genlogs.app.dto.RegistroClienteResponse;
 import com.genlogs.app.service.AuthService;
+import com.genlogs.app.service.IngresoGoogleService;
 import com.genlogs.app.service.PortalClienteService;
 
 import jakarta.validation.Valid;
@@ -33,6 +39,7 @@ public class PortalClienteController {
 
     private final PortalClienteService portalClienteService;
     private final AuthService authService;
+    private final IngresoGoogleService ingresoGoogleService;
 
     /** Público. Acceso inmediato (D-10): devuelve el token del cliente. */
     @PostMapping("/registro")
@@ -44,6 +51,24 @@ public class PortalClienteController {
     @PostMapping("/login")
     public ResponseEntity<IngresoClienteResponse> login(@Valid @RequestBody IngresoClienteRequest request) {
         return ResponseEntity.ok(authService.loginCliente(request));
+    }
+
+    /** Público. Ingreso con Google (v3.4): crea la cuenta del cliente si es nueva. */
+    @PostMapping("/google")
+    public ResponseEntity<IngresoGoogleResponse> google(@Valid @RequestBody IngresoGoogleRequest request) {
+        return ResponseEntity.ok(ingresoGoogleService.ingresar(request.getCredential()));
+    }
+
+    /** Datos de la cuenta: si ya tiene empresa (perfil completo). */
+    @GetMapping("/cuenta")
+    public ResponseEntity<CuentaPortalResponse> cuenta() {
+        return ResponseEntity.ok(portalClienteService.cuenta());
+    }
+
+    /** Datos de la empresa, antes de la primera cotización de una cuenta que entró con Google. */
+    @PostMapping("/empresa")
+    public ResponseEntity<CompletarEmpresaResponse> completarEmpresa(@Valid @RequestBody CompletarEmpresaRequest request) {
+        return ResponseEntity.ok(portalClienteService.completarEmpresa(request));
     }
 
     @GetMapping("/pedidos")

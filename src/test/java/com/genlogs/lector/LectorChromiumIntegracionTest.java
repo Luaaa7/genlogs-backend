@@ -62,4 +62,26 @@ class LectorChromiumIntegracionTest {
         assertFalse(response.sesion().storageState().toString().contains("test-secret"));
         assertEquals(Estado.URL_NO_PERMITIDA, fixture(html.replace("<form ", "<form action='https://evil.test/' "), 200).ejecutar("sesion", req).estado());
     }
+
+    @Test void iniciaSesionEnDosPasosSinDevolverLaClave() {
+        var motor = new LectorChromium(10000, context -> context.route("**/*", route -> {
+            String path = URI.create(route.request().url()).getPath();
+            String html = path.contains("paso2")
+                    ? """
+                    <form onsubmit="event.preventDefault(); document.cookie='session=fixture; Secure; SameSite=Lax';
+                    document.body.innerHTML='<h1 id=ok>Sesión lista</h1>'">
+                    <input id=pass type=password><button>Entrar</button></form>
+                    """
+                    : """
+                    <form action="https://www.ebay.com/paso2"><input id=user><button id=next>Continuar</button></form>
+                    """;
+            route.fulfill(new FulfillOptions().setContentType("text/html").setBody(html));
+        }));
+        var req = new Peticion("EBAY", "https://www.ebay.com/login", Map.of("login", Map.of(
+                "usuario", "#user", "continuar", "#next", "clave", "#pass", "enviar", "button", "exito", "#ok")),
+                null, new Credenciales("test-user", "test-secret"), null);
+        var response = motor.ejecutar("sesion", req);
+        assertEquals(Estado.OK, response.estado());
+        assertFalse(response.sesion().storageState().toString().contains("test-secret"));
+    }
 }

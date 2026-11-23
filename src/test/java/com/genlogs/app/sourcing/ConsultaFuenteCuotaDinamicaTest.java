@@ -53,6 +53,7 @@ class ConsultaFuenteCuotaDinamicaTest {
         fuenteRepo = mock(FuenteBusquedaConfigRepository.class);
         avisos = mock(AvisoFuenteConError.class);
         when(selectores.findByFuente_CodigoAndStatus(any(), eq("A"))).thenReturn(List.of());
+        when(sesiones.configuracionCompleta(any())).thenReturn(true);
         when(sesiones.sesionVigente(any())).thenReturn(Optional.of("sesion-opaca"));
         when(lector.buscar(any(), any(), any(), any(), any())).thenReturn(ResultadoLectura.sinResultados());
         servicio = new ConsultaFuenteService(fuenteRepo, selectores, sesiones, lector,

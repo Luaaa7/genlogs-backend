@@ -25,6 +25,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.genlogs.app.dto.CoberturaPublicaResponse;
+import com.genlogs.app.dto.CompletarEmpresaRequest;
+import com.genlogs.app.dto.CompletarEmpresaResponse;
+import com.genlogs.app.dto.CuentaPortalResponse;
 import com.genlogs.app.dto.ConsultaDocumentoResponse;
 import com.genlogs.app.dto.CrearSolicitudRequest;
 import com.genlogs.app.dto.CrearSolicitudResponse;
@@ -81,6 +84,20 @@ public class PortalClienteService {
     private static final String SECTOR_CAPTACION = "MINERIA";
     /** Marca del usuario que pidió acceso a una empresa que ya es cliente (lo usa UsuarioService.activar). */
     public static final String PROCESO_PENDIENTE = "REGISTRO_PORTAL_PENDIENTE";
+
+    /**
+     * Acceso del portal que espera la revisión del Jefe Administrativo (BPMN 8.4): inactivo y
+     * marcado como pendiente al registrarse (process_create, sin cambios después) o al completar
+     * los datos de la empresa con Google (process_update). Activado o rechazado deja de serlo.
+     */
+    public static boolean esAccesoPendiente(Usuario usuario) {
+        String status = usuario.getStatus() == null ? "" : usuario.getStatus().trim();
+        if (!status.startsWith("I")) {
+            return false;
+        }
+        return PROCESO_PENDIENTE.equals(usuario.getProcessUpdate())
+                || (PROCESO_PENDIENTE.equals(usuario.getProcessCreate()) && usuario.getProcessUpdate() == null);
+    }
     private static final java.util.Set<String> ESTADOS_CANCELABLES = java.util.Set.of(
             EstadoSolicitud.PENDIENTE.name(), EstadoSolicitud.EN_REVISION.name());
 
@@ -180,7 +197,9 @@ public class PortalClienteService {
 
         Cliente existente = clienteRepository.findByNumeroDocumento(ruc).orElse(null);
         boolean empresaNueva = existente == null;
-        Cliente cliente = empresaNueva ? altaNueva(ruc, correo, request) : existente;
+        Cliente cliente = empresaNueva
+                ? altaNueva(ruc, correo, request.getRazonSocial(), request.getTelefono())
+                : existente;
         if (!"ACTIVO".equals(cliente.getSituacion())) {
             throw new BusinessException("Tu empresa no tiene el acceso al portal habilitado. Escríbenos para ayudarte.");
         }
@@ -233,9 +252,9 @@ public class PortalClienteService {
     }
 
     /** RUC que no está en la base: el límite de intentos y, después, Factiliza. */
-    private Cliente altaNueva(String ruc, String correo, RegistroClienteRequest request) {
+    private Cliente altaNueva(String ruc, String correo, String razonSocialEscrita, String telefono) {
         limitadorRegistro.verificar(ruc, correo);
-        return altaClienteDesdeRuc(ruc, request);
+        return altaClienteDesdeRuc(ruc, razonSocialEscrita, telefono, correo);
     }
 
     private static final String SIN_VALIDACION_RUC = "No pudimos validar tu RUC. Inténtalo de nuevo en unos minutos.";
@@ -245,7 +264,7 @@ public class PortalClienteService {
      * tercero y el cliente. Sin domicilio fiscal ubicable en el catálogo no se
      * puede crear el tercero (tercero.id_distrito), así que se pide contacto.
      */
-    private Cliente altaClienteDesdeRuc(String ruc, RegistroClienteRequest request) {
+    private Cliente altaClienteDesdeRuc(String ruc, String razonSocialEscrita, String telefono, String correo) {
         ConsultaDocumentoResponse datos;
         try {
             datos = factilizaService.consultarPorNumero(ruc);
@@ -280,7 +299,7 @@ public class PortalClienteService {
 
         // Si Factiliza no trae razón social, se usa la que escribió el visitante.
         String razonSocial = datos.getRazonSocial() == null || datos.getRazonSocial().isBlank()
-                ? request.getRazonSocial().trim()
+                ? razonSocialEscrita.trim()
                 : datos.getRazonSocial().trim();
 
         Tercero tercero = new Tercero();
@@ -289,8 +308,8 @@ public class PortalClienteService {
         tercero.setRazonSocial(recortar(razonSocial, 200));
         tercero.setDistrito(distrito);
         tercero.setDireccion(recortar(datos.getDireccion(), 255));
-        tercero.setTelefono(vacioComoNull(request.getTelefono()));
-        tercero.setCorreo(request.getCorreo().trim());
+        tercero.setTelefono(vacioComoNull(telefono));
+        tercero.setCorreo(correo.trim());
         auditarAlta(tercero);
         tercero = terceroRepository.save(tercero);
 
@@ -330,6 +349,63 @@ public class PortalClienteService {
         }
         String v = valor.trim();
         return v.length() > maximo ? v.substring(0, maximo) : v;
+    }
+
+    /**
+     * Cuenta que entró con Google y todavía no tiene empresa: antes de su primera
+     * cotización da su RUC. Se aplican las mismas reglas que en el registro (D-10):
+     * <ul>
+     *   <li>Empresa nueva: límite de intentos, validación en Factiliza y alta del cliente;
+     *       la cuenta sigue activa y ya puede pedir cotizaciones.</li>
+     *   <li>Empresa que ya es cliente: la cuenta queda pendiente (status 'I') hasta que la
+     *       active el Jefe Administrativo, porque el RUC es público. Se le avisa (BR4).</li>
+     * </ul>
+     */
+    @Transactional
+    public CompletarEmpresaResponse completarEmpresa(CompletarEmpresaRequest request) {
+        Usuario usuario = exigirUsuarioPortal();
+        if (usuario.getCliente() != null) {
+            throw new EstadoNoPermitidoException("Tu cuenta ya tiene los datos de tu empresa.");
+        }
+        String ruc = soloDigitos(request.getRuc());
+        if (!RUC_VALIDO.matcher(ruc).matches()) {
+            throw new BusinessException(
+                    "Necesitamos el RUC de tu empresa (11 dígitos, empieza con 10 o 20). Si eres persona natural, usa tu RUC 10.");
+        }
+        Cliente existente = clienteRepository.findByNumeroDocumento(ruc).orElse(null);
+        boolean empresaNueva = existente == null;
+        Cliente cliente = empresaNueva
+                ? altaNueva(ruc, usuario.getCorreo(), request.getRazonSocial(), request.getTelefono())
+                : existente;
+        if (!"ACTIVO".equals(cliente.getSituacion())) {
+            throw new BusinessException("Tu empresa no tiene el acceso al portal habilitado. Escríbenos para ayudarte.");
+        }
+
+        usuario.setCliente(cliente);
+        usuario.setNombres(recortar(request.getNombreContacto(), 150));
+        usuario.setUserUpdate(usuario.getNombreUsuario());
+        usuario.setDateUpdate(LocalDateTime.now());
+        if (empresaNueva) {
+            usuario.setProcessUpdate("COMPLETAR_EMPRESA");
+            usuarioRepository.save(usuario);
+            return new CompletarEmpresaResponse(false, "Listo, ya puedes pedir tus cotizaciones.");
+        }
+        usuario.setStatus("I");
+        usuario.setProcessUpdate(PROCESO_PENDIENTE);
+        usuarioRepository.save(usuario);
+        avisarAccesoPendiente(cliente, usuario);
+        return new CompletarEmpresaResponse(true,
+                "Tu empresa ya tiene cuenta en el portal. Tu acceso quedó pendiente: "
+                        + "GENLOGS lo revisará y te avisaremos por correo cuando esté habilitado.");
+    }
+
+    /** Datos de la cuenta para el portal: si ya tiene empresa (perfil completo). */
+    @Transactional(readOnly = true)
+    public CuentaPortalResponse cuenta() {
+        Usuario usuario = exigirUsuarioPortal();
+        Cliente cliente = usuario.getCliente();
+        return new CuentaPortalResponse(usuario.getNombres(), usuario.getCorreo(), cliente != null,
+                cliente == null ? null : cliente.getTercero().getRazonSocial());
     }
 
     @Transactional(readOnly = true)
@@ -425,6 +501,16 @@ public class PortalClienteService {
                 anterior + " → CANCELADA por el cliente (" + texto + ")");
     }
 
+    /** Usuario del portal autenticado, tenga o no empresa (cuentas que entraron con Google). */
+    private Usuario exigirUsuarioPortal() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken) {
+            throw new AccessDeniedException("El acceso del portal todavía no está habilitado");
+        }
+        return usuarioRepository.findWithClienteByNombreUsuario(auth.getName())
+                .orElseThrow(() -> new AccessDeniedException("El acceso del portal todavía no está habilitado"));
+    }
+
     /** Sin fila de usuario o sin id_cliente no hay portal: 403, no una lista vacía. */
     private Usuario exigirCliente() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -478,7 +564,8 @@ public class PortalClienteService {
                 .build();
     }
 
-    private String nombreUsuarioDisponible(String correo) {
+    /** También lo usa el ingreso con Google (IngresoGoogleService). */
+    String nombreUsuarioDisponible(String correo) {
         int arroba = correo.indexOf('@');
         String base = (arroba > 0 ? correo.substring(0, arroba) : "cliente")
                 .toLowerCase(Locale.ROOT)
@@ -506,7 +593,7 @@ public class PortalClienteService {
      * Primero el contacto; si no alcanza, la razón social; si tampoco, las
      * letras seguidas de ambos.
      */
-    private String iniciales(String contacto, String razonSocial) {
+    String iniciales(String contacto, String razonSocial) {
         String porPalabras = inicialesDePalabras(contacto);
         if (porPalabras.length() < 2) {
             porPalabras = inicialesDePalabras(razonSocial);

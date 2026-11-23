@@ -47,6 +47,7 @@ import com.genlogs.app.repository.TipoCambioRepository;
 import com.genlogs.app.repository.UsuarioRepository;
 import com.genlogs.app.service.ConsultaTipoCambio;
 import com.genlogs.app.service.ConsultaTipoCambioService;
+import com.genlogs.app.service.FactilizaSinPlanException;
 import com.genlogs.app.service.TipoCambioService;
 
 @SpringBootTest
@@ -197,6 +198,29 @@ class ConsultaTipoCambioTest {
                 .andExpect(status().isForbidden());
 
         assertFalse(tipoCambios.findByMoneda_CodigoMonedaAndFecha("USD", hoy).isPresent());
+    }
+
+    @Test
+    void elAvisoDeTipoDeCambioLlevaALaPaginaQueExiste() {
+        when(cliente.ventaDelDia(any())).thenThrow(new IllegalStateException("sin red"));
+
+        consulta.consultarHoy();
+
+        assertTrue(notificaciones.findAll().stream()
+                .filter(n -> TipoAviso.TIPO_CAMBIO.name().equals(n.getTipo()))
+                .allMatch(n -> "/configuracion/tipo-cambio".equals(n.getEnlace())));
+        assertEquals(1, avisos());
+    }
+
+    @Test
+    void siFactilizaRechazaLaClaveSoloLlegaElAvisoDeFactilizaNoDos() {
+        fila(hoy.minusDays(1), "3.7000", FuenteTipoCambio.SUNAT, null);
+        when(cliente.ventaDelDia(any())).thenThrow(new FactilizaSinPlanException(401));
+
+        consulta.consultarHoy();
+
+        assertFalse(tipoCambios.findByMoneda_CodigoMonedaAndFecha("USD", hoy).isPresent());
+        assertEquals(0, avisos());
     }
 
     private long avisos() {

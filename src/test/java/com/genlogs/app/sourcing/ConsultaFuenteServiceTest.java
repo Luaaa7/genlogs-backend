@@ -48,6 +48,7 @@ class ConsultaFuenteServiceTest {
         pausa = mock(PausaFuente.class);
         avisos = mock(AvisoFuenteConError.class);
         when(selectorRepo.findByFuente_CodigoAndStatus(any(), eq("A"))).thenReturn(List.of());
+        when(sesiones.configuracionCompleta(CodigoFuente.EBAY)).thenReturn(true);
         when(sesiones.sesionVigente(CodigoFuente.EBAY)).thenReturn(Optional.of("sesion-opaca"));
         servicio = new ConsultaFuenteService(fuenteRepo, selectorRepo, sesiones, lector, pausa, avisos);
         ebay = fuente(CodigoFuente.EBAY, 50, 3);
@@ -71,6 +72,21 @@ class ConsultaFuenteServiceTest {
 
     private static FichaFuente ficha(String nombre, String precio, String enlace) {
         return new FichaFuente(nombre, "desc", precio, "USD", "https://img.example/1.jpg", enlace);
+    }
+
+    @Test
+    void sinCuenta_seOmiteAntesDeCuotaPausaSesionYAviso() {
+        when(sesiones.configuracionCompleta(CodigoFuente.EBAY)).thenReturn(false);
+
+        ConsultaFuente r = servicio.consultar(ebay, consulta);
+
+        assertThat(r.estado()).isEqualTo(EstadoConsultaFuente.OMITIDA_SESION);
+        assertThat(r.motivo()).isEqualTo("Fuente omitida: sin configurar.");
+        verify(pausa, never()).esperar(anyInt());
+        verify(sesiones, never()).sesionVigente(any());
+        verify(lector, never()).buscar(any(), any(), any(), any(), any());
+        verify(fuenteRepo, never()).save(any());
+        verify(avisos, never()).avisarSiCorresponde(any(), any(), any());
     }
 
     @Test

@@ -33,6 +33,7 @@ import com.genlogs.app.model.Cliente;
 import com.genlogs.app.model.Cotizacion;
 import com.genlogs.app.model.CotizacionDetalle;
 import com.genlogs.app.model.EstadoCotizacion;
+import com.genlogs.app.model.Producto;
 import com.genlogs.app.model.SeguimientoCotizacion;
 import com.genlogs.app.model.Usuario;
 import com.genlogs.app.repository.CotizacionDetalleRepository;
@@ -217,6 +218,39 @@ class PortalCotizacionServiceTest {
         assertTrue(json.contains("rodamiento"));
         assertFalse(json.contains("origen"), json);
         assertFalse(json.contains("IMPORTADO"), json);
+    }
+
+    @Test
+    void unItemSinDescripcionPersonalizadaMuestraElNombreDelProducto() {
+        Producto producto = new Producto();
+        producto.setNombreProducto("Rodamiento 6205");
+        CotizacionDetalle linea = new CotizacionDetalle();
+        linea.setProducto(producto);
+        linea.setDescripcionPersonalizada(" ");
+
+        assertEquals("Rodamiento 6205", lineaDelPortal(linea));
+    }
+
+    @Test
+    void unItemConDescripcionPersonalizadaLaConserva() {
+        Producto producto = new Producto();
+        producto.setNombreProducto("Rodamiento 6205");
+        CotizacionDetalle linea = new CotizacionDetalle();
+        linea.setProducto(producto);
+        linea.setDescripcionPersonalizada("Rodamiento para faja");
+
+        assertEquals("Rodamiento para faja", lineaDelPortal(linea));
+    }
+
+    private String lineaDelPortal(CotizacionDetalle linea) {
+        Cotizacion cotizacion = cotizacion(4L, mia, "ENVIADA");
+        cotizacion.setFechaCotizacion(null);
+        cotizacion.setFechaValidez(null);
+        when(cotizacionRepository.findById(4L)).thenReturn(Optional.of(cotizacion));
+        when(cotizacionRepository.findTotalesByCotizacion(4L)).thenReturn(Optional.empty());
+        when(cotizacionDetalleRepository.findByCotizacion(4L)).thenReturn(List.of(linea));
+        when(ordenCompraRepository.numerosOcCliente(4L)).thenReturn(List.of());
+        return servicio.detalle(4L).getLineas().get(0).getDescripcion();
     }
 
     @Test

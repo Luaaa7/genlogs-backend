@@ -147,18 +147,19 @@ public class FuentesConfigService {
 
     // ---------------------------------------------------------------- apoyo
 
-    /** Campos de la página LOGIN: dónde va el correo, la clave, el botón y la señal de que ya entró. */
+    /** Campos de la página LOGIN. CONTINUAR es opcional (ingreso en dos pantallas, D-42). */
     private static final Set<CampoSelector> CAMPOS_LOGIN =
-            EnumSet.of(CampoSelector.USUARIO, CampoSelector.CLAVE, CampoSelector.ENVIAR, CampoSelector.EXITO);
+            EnumSet.of(CampoSelector.USUARIO, CampoSelector.CLAVE, CampoSelector.ENVIAR, CampoSelector.EXITO,
+                    CampoSelector.CONTINUAR);
 
-    /** LOGIN solo lleva sus 4 campos; BUSQUEDA y FICHA nunca los llevan. */
+    /** LOGIN solo lleva sus campos; BUSQUEDA y FICHA nunca los llevan. */
     private static void exigirCampoDeLaPagina(SelectorFuenteDto r) {
         if (r == null || r.pagina() == null || r.campo() == null) {
             return; // la validación del DTO ya responde 400 por estos casos
         }
         boolean campoDeLogin = CAMPOS_LOGIN.contains(r.campo());
         if (r.pagina() == PaginaSelector.LOGIN && !campoDeLogin) {
-            throw new BusinessException("La página LOGIN solo admite USUARIO, CLAVE, ENVIAR y EXITO; "
+            throw new BusinessException("La página LOGIN solo admite USUARIO, CLAVE, ENVIAR, EXITO y CONTINUAR; "
                     + r.campo() + " va en BUSQUEDA o FICHA");
         }
         if (r.pagina() != PaginaSelector.LOGIN && campoDeLogin) {

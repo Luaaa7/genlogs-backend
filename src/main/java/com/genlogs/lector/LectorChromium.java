@@ -93,6 +93,21 @@ public final class LectorChromium implements ServicioLectura.Motor {
 
     private Respuesta iniciarSesion(Page page, BrowserContext context, Peticion req, long deadline) throws Exception {
         Map<String, Object> login = campo(req.reglas(), "login");
+        String continuar = texto(login, "continuar");
+        if (continuar != null) {
+            // D-42: primera pantalla solo con el usuario. La clave aparece después de CONTINUAR.
+            URI pagina = URI.create(page.url());
+            URI pedida = URI.create(req.url());
+            if (!"https".equalsIgnoreCase(pagina.getScheme()) || !pedida.getAuthority().equals(pagina.getAuthority())) {
+                return estado(Estado.URL_NO_PERMITIDA);
+            }
+            context.setDefaultTimeout(restante(deadline));
+            page.locator("css=" + texto(login, "usuario")).fill(req.credenciales().usuario());
+            context.setDefaultTimeout(restante(deadline));
+            page.locator("css=" + continuar).click();
+            context.setDefaultTimeout(restante(deadline));
+            page.locator("css=" + texto(login, "clave")).waitFor();
+        }
         String action = (String) page.locator("css=" + texto(login, "clave")).evaluate("el => el.form?.action || location.href");
         URI original = URI.create(req.url()), form = URI.create(action), actual = URI.create(page.url());
         if (!original.getAuthority().equals(form.getAuthority()) || !original.getAuthority().equals(actual.getAuthority())

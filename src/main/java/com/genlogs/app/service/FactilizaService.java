@@ -65,6 +65,14 @@ public class FactilizaService {
     /** D-15: búsqueda del distrito por nombre en el catálogo del INEI (con NASCA = NAZCA). */
     private final UbigeoService ubigeoService;
 
+    /** Avisa al Jefe si Factiliza rechaza la clave (v3.4). Opcional para no cambiar el constructor. */
+    private AvisoFactiliza avisoFactiliza;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setAvisoFactiliza(AvisoFactiliza avisoFactiliza) {
+        this.avisoFactiliza = avisoFactiliza;
+    }
+
     public FactilizaService(DistritoRepository distritoRepository,
                             TerceroRepository terceroRepository,
                             ConsultaDocumentoRepository consultaDocumentoRepository,
@@ -302,6 +310,9 @@ public class FactilizaService {
 
             if (response.statusCode() >= 300) {
                 log.error("Factiliza respondió {}: {}", response.statusCode(), enmascararDocumento(response.body()));
+                if (avisoFactiliza != null) {
+                    avisoFactiliza.revisar(response.statusCode());
+                }
                 throw new BusinessException("No se pudo consultar el documento en Factiliza");
             }
 

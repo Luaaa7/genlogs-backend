@@ -2,6 +2,7 @@ package com.genlogs.app.security;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -230,7 +231,15 @@ class SeguridadRolesTest {
         assertOrigenPermitido("/api/portal/pedidos", "https://genlogs-frontend-kym5.onrender.com");
         assertOrigenPermitido("/api/public/catalogo", "http://localhost:5173");
         assertOrigenPermitido("/api/portal/registro", "http://127.0.0.1:5173");
-        assertOrigenPermitido("/api/clientes", "https://genlogs-frontend-prueba.onrender.com");
+        // v3.4 (K4): la vista previa de un PR del frontend
+        assertOrigenPermitido("/api/clientes", "https://genlogs-frontend-kym5-pr-12.onrender.com");
+    }
+
+    @Test
+    void corsRechazaOtrasAppsDeRender() {
+        // v3.4 (K4): ya no se acepta *.onrender.com, que dejaba pasar cualquier app de Render.
+        assertOrigenRechazado("/api/clientes", "https://genlogs-frontend-prueba.onrender.com");
+        assertOrigenRechazado("/api/clientes", "https://otra-app.onrender.com");
     }
 
     private void assertOrigenPermitido(String ruta, String origen) {
@@ -238,5 +247,12 @@ class SeguridadRolesTest {
         CorsConfiguration configuracion = corsConfigurationSource.getCorsConfiguration(request);
         assertNotNull(configuracion, ruta);
         assertEquals(origen, configuracion.checkOrigin(origen));
+    }
+
+    private void assertOrigenRechazado(String ruta, String origen) {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", ruta);
+        CorsConfiguration configuracion = corsConfigurationSource.getCorsConfiguration(request);
+        assertNotNull(configuracion, ruta);
+        assertNull(configuracion.checkOrigin(origen), origen);
     }
 }
