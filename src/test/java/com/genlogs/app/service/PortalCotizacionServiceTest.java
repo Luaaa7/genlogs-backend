@@ -255,6 +255,25 @@ class PortalCotizacionServiceTest {
         assertFalse(abierta.contains("motivoAnulacion"));
     }
 
+    @Test
+    void subtotalMasIgvEsElTotal() {
+        Cotizacion cotizacion = cotizacion(4L, mia, "ENVIADA");
+        when(cotizacionRepository.findById(4L)).thenReturn(Optional.of(cotizacion));
+        when(cotizacionRepository.findByCliente(5L)).thenReturn(List.of(cotizacion));
+        when(cotizacionRepository.findTotalesByCotizacion(4L)).thenReturn(Optional.of(totales("100.00", "18.00", "118.00")));
+        when(cotizacionDetalleRepository.findByCotizacion(4L)).thenReturn(List.of());
+        when(ordenCompraRepository.numerosOcCliente(4L)).thenReturn(List.of());
+
+        PortalCotizacionResponse detalle = servicio.detalle(4L);
+        PortalCotizacionResponse listada = servicio.listar().get(0);
+
+        assertEquals(0, detalle.getSubtotal().add(detalle.getIgv()).compareTo(detalle.getTotal()));
+        assertEquals(new BigDecimal("100.00"), detalle.getSubtotal());
+        assertEquals(new BigDecimal("18.00"), detalle.getIgv());
+        assertEquals(new BigDecimal("118.00"), detalle.getTotal());
+        assertEquals(0, listada.getSubtotal().add(listada.getIgv()).compareTo(listada.getTotal()));
+    }
+
     private static Cliente cliente(Long id) {
         Cliente cliente = new Cliente();
         cliente.setIdCliente(id);
@@ -271,6 +290,25 @@ class PortalCotizacionServiceTest {
         cotizacion.setFechaValidez(LocalDate.now(PlazoDespacho.LIMA).plusDays(5));
         cotizacion.setStatus("A");
         return cotizacion;
+    }
+
+    private static CotizacionRepository.TotalesCotizacionProjection totales(String subtotal, String igv, String total) {
+        return new CotizacionRepository.TotalesCotizacionProjection() {
+            @Override
+            public BigDecimal getSubtotal() {
+                return new BigDecimal(subtotal);
+            }
+
+            @Override
+            public BigDecimal getIgv() {
+                return new BigDecimal(igv);
+            }
+
+            @Override
+            public BigDecimal getTotal() {
+                return new BigDecimal(total);
+            }
+        };
     }
 
     private static EstadoCotizacion estado(String codigo) {

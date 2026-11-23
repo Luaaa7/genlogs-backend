@@ -203,9 +203,12 @@ public class PortalCotizacionService {
     }
 
     private PortalCotizacionResponse aRespuesta(Cotizacion cotizacion, boolean conLineas) {
-        BigDecimal total = cotizacionRepository.findTotalesByCotizacion(cotizacion.getIdCotizacion())
-                .map(CotizacionRepository.TotalesCotizacionProjection::getTotal)
-                .orElse(BigDecimal.ZERO);
+        CotizacionRepository.TotalesCotizacionProjection totales = cotizacionRepository
+                .findTotalesByCotizacion(cotizacion.getIdCotizacion())
+                .orElse(null);
+        BigDecimal subtotal = totales == null ? BigDecimal.ZERO : totales.getSubtotal();
+        BigDecimal igv = totales == null ? BigDecimal.ZERO : totales.getIgv();
+        BigDecimal total = totales == null ? BigDecimal.ZERO : totales.getTotal();
         PortalCotizacionResponse.PortalCotizacionResponseBuilder builder = PortalCotizacionResponse.builder()
                 .id(cotizacion.getIdCotizacion())
                 .codigo(cotizacion.getCodigoCotizacion())
@@ -216,6 +219,8 @@ public class PortalCotizacionService {
                 .codigoEstado(cotizacion.getEstadoCotizacion() != null
                         ? cotizacion.getEstadoCotizacion().getCodigoEstado() : null)
                 .puedeDecidir(puedeDecidir(cotizacion))
+                .subtotal(subtotal)
+                .igv(igv)
                 .total(total)
                 .moneda(cotizacion.getMoneda() != null ? cotizacion.getMoneda().getCodigoMoneda() : null)
                 .numeroOcCliente(numeroOc(cotizacion.getIdCotizacion()))

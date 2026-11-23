@@ -86,7 +86,9 @@ public class RespuestaClienteService {
 
     /**
      * Lo que manda la pantalla: codigoEstado, comentario, idAdjunto, fechaRespuesta y medio.
-     * No crea la orden. ACEPTADA_CLIENTE, EN_NEGOCIACION o RECHAZADA.
+     * Guarda ACEPTADA_CLIENTE, EN_NEGOCIACION o RECHAZADA. No llama a
+     * {@link CotizacionService#registrarOrdenSiAprobada}: el controlador lo hace
+     * después de que este método retorna, para que un fallo de la orden no deshaga la aceptación.
      */
     @Transactional
     public String registrar(Long idCotizacion, RespuestaClienteRequest request) {
@@ -151,6 +153,9 @@ public class RespuestaClienteService {
 
     /**
      * Enviada o en negociación → aceptada, en negociación o rechazada.
+     * No crea la orden: el controlador llama a
+     * {@link CotizacionService#registrarOrdenSiAprobada} con el código guardado
+     * después de que este método retorna.
      * @return el seguimiento creado
      */
     @Transactional

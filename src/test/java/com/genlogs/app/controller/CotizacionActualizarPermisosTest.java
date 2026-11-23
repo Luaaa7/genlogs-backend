@@ -104,8 +104,7 @@ class CotizacionActualizarPermisosTest {
                         .with(user("vendedor").roles("ASISTENTE_LOGISTICO")))
                 .andExpect(status().isOk());
         verify(respuestas, org.mockito.Mockito.times(2)).registrar(anyLong(), any());
-        // v3.4: la respuesta del cliente ya no crea la orden; se registra después en el alta de la OC.
-        verify(servicio, never()).registrarOrdenSiAprobada(anyLong(), any());
+        verify(servicio, org.mockito.Mockito.times(2)).registrarOrdenSiAprobada(8L, "ACEPTADA_CLIENTE");
 
         for (String rol : new String[] {
                 "ASISTENTE_ADMINISTRATIVO", "CLIENTE", "GERENTE_GENERAL" }) {

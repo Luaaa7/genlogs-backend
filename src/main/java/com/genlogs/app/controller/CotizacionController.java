@@ -250,9 +250,12 @@ public class CotizacionController {
     }
 
     /**
-     * Respuesta del cliente que registra el vendedor o el jefe.
-     * codigoEstado (ACEPTADA_CLIENTE, EN_NEGOCIACION, RECHAZADA) no crea la orden.
-     * La orden la registra después el alta de orden de compra.
+     * Respuesta del cliente que registra el vendedor o el jefe
+     * (ACEPTADA_CLIENTE, EN_NEGOCIACION o RECHAZADA), por codigoEstado o por accion.
+     * La aceptación ya quedó guardada cuando vuelve el servicio. Recién ahí,
+     * igual que en el portal, se llama a registrarOrdenSiAprobada con el código
+     * guardado. EN_NEGOCIACION y RECHAZADA no crean orden. Si el alta automática
+     * falla, la aceptación se conserva y queda el alta manual.
      */
     @PreAuthorize(PermisosCotizacion.REGISTRAR_RESPUESTA)
     @PostMapping(value = "/{id}/respuesta-cliente", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -261,12 +264,14 @@ public class CotizacionController {
         if (request != null && request.getAccion() != null && !request.getAccion().isBlank()) {
             SeguimientoCotizacionResponse seguimiento = respuestaClienteService.registrarRespuesta(
                     id, request.getAccion(), request.getFechaRespuesta(), request.getMedio(), request.getNota(), null);
+            cotizacionService.registrarOrdenSiAprobada(id, seguimiento.getCodigoEstado());
             return ResponseEntity.ok(RespuestaClienteRegistradaResponse.builder()
                     .cotizacion(cotizacionService.buscarPorId(id))
                     .seguimiento(seguimiento)
                     .build());
         }
-        respuestaClienteService.registrar(id, request);
+        String codigo = respuestaClienteService.registrar(id, request);
+        cotizacionService.registrarOrdenSiAprobada(id, codigo);
         return ResponseEntity.ok(cotizacionService.buscarPorId(id));
     }
 
@@ -281,6 +286,7 @@ public class CotizacionController {
             @RequestParam(required = false) MultipartFile adjunto) {
         SeguimientoCotizacionResponse seguimiento = respuestaClienteService.registrarRespuesta(
                 id, accion, fechaRespuesta, medio, nota, adjunto);
+        cotizacionService.registrarOrdenSiAprobada(id, seguimiento.getCodigoEstado());
         return ResponseEntity.ok(RespuestaClienteRegistradaResponse.builder()
                 .cotizacion(cotizacionService.buscarPorId(id))
                 .seguimiento(seguimiento)

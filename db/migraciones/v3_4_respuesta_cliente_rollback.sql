@@ -1,7 +1,9 @@
 -- ============================================================================
--- Vuelta atrás de v3_4_respuesta_cliente.sql
--- Devuelve el código APROBADA / "Aprobada" y quita las columnas nuevas.
--- Los valores de fecha_envio, medio, nota de respuesta, ruta y adjunto se pierden.
+-- Vuelta atrás del paso 1 (v3_4_respuesta_cliente.sql).
+-- Quita las columnas y restricciones nuevas.
+-- No renombra ACEPTADA_CLIENTE, no mueve filas y no borra cotizaciones
+-- que ya estén en ACEPTADA_CLIENTE. El estado se borra solo si nadie lo usa.
+-- Los valores de fecha_envio, medio, fecha de respuesta, ruta y adjunto se pierden.
 -- ============================================================================
 
 BEGIN;
@@ -32,35 +34,6 @@ ALTER TABLE public.seguimiento_cotizacion
 
 ALTER TABLE public.cotizacion
     DROP COLUMN IF EXISTS fecha_envio;
-
-UPDATE public.estado_cotizacion
-   SET codigo_estado = 'APROBADA',
-       nombre_estado = 'Aprobada',
-       user_update = 'MIGRACION',
-       process_update = 'v3_4_respuesta_cliente_rollback',
-       date_update = CURRENT_TIMESTAMP
- WHERE codigo_estado = 'ACEPTADA_CLIENTE'
-   AND NOT EXISTS (
-       SELECT 1 FROM public.estado_cotizacion WHERE codigo_estado = 'APROBADA');
-
-UPDATE public.cotizacion c
-   SET id_estado_cotizacion = destino.id_estado_cotizacion,
-       user_update = 'MIGRACION',
-       process_update = 'v3_4_respuesta_cliente_rollback',
-       date_update = CURRENT_TIMESTAMP
-  FROM public.estado_cotizacion origen,
-       public.estado_cotizacion destino
- WHERE c.id_estado_cotizacion = origen.id_estado_cotizacion
-   AND origen.codigo_estado = 'ACEPTADA_CLIENTE'
-   AND destino.codigo_estado = 'APROBADA';
-
-UPDATE public.seguimiento_cotizacion s
-   SET id_estado_cotizacion = destino.id_estado_cotizacion
-  FROM public.estado_cotizacion origen,
-       public.estado_cotizacion destino
- WHERE s.id_estado_cotizacion = origen.id_estado_cotizacion
-   AND origen.codigo_estado = 'ACEPTADA_CLIENTE'
-   AND destino.codigo_estado = 'APROBADA';
 
 DELETE FROM public.estado_cotizacion e
  WHERE e.codigo_estado = 'ACEPTADA_CLIENTE'
