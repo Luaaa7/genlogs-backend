@@ -66,8 +66,8 @@ public class DespachoService {
         String estado = orden.getCotizacion().getEstadoCotizacion() == null
                 ? null
                 : orden.getCotizacion().getEstadoCotizacion().getCodigoEstado();
-        if (!"APROBADA".equals(estado)) {
-            throw new BusinessException("La cotización de la orden no está aprobada");
+        if (!com.genlogs.app.enums.CodigoEstadoCotizacion.esAceptacionCliente(estado)) {
+            throw new BusinessException("La cotización de la orden no está aprobada por el cliente");
         }
         if (orden.getOcConfirmadaPor() == null) {
             throw new BusinessException(OC_SIN_CONFIRMAR);

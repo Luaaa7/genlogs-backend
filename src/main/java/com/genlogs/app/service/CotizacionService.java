@@ -180,6 +180,9 @@ public class CotizacionService {
             String codigoMoneda,
             Pageable pageable) {
 
+        if (codigoEstado != null && "APROBADA".equalsIgnoreCase(codigoEstado.trim())) {
+            codigoEstado = CodigoEstadoCotizacion.ACEPTADA_CLIENTE.name();
+        }
         Page<Cotizacion> pagina = cotizacionRepository.buscarPaginado(
                 codigoEstado, idCliente, codigoMoneda, pageable);
 
@@ -397,7 +400,7 @@ public class CotizacionService {
      * No abre esa transacción: si la orden falla, la cotización sigue APROBADA.
      */
     public void registrarOrdenSiAprobada(Long idCotizacion, String codigoEstado) {
-        if (!CodigoEstadoCotizacion.APROBADA.name().equalsIgnoreCase(codigoEstado)) {
+        if (!CodigoEstadoCotizacion.esAceptacionCliente(codigoEstado)) {
             return;
         }
         try {
@@ -615,6 +618,9 @@ public class CotizacionService {
                 ReglasAprobacionCotizacion.SOLO_APROBADA_INTERNA);
         EstadoCotizacion enviada = estadoDe(CodigoEstadoCotizacion.ENVIADA);
         aplicarEstado(cotizacion, enviada, usuario, "ENVIO_COTIZACION");
+        if (cotizacion.getFechaEnvio() == null) {
+            cotizacion.setFechaEnvio(LocalDateTime.now());
+        }
         cotizacionRepository.save(cotizacion);
         registrarSeguimiento(cotizacion, enviada, usuario, "Cotización enviada a " + destinatario);
     }
@@ -1463,12 +1469,18 @@ public class CotizacionService {
         String nombreCliente = obtenerNombreCliente(c);
 
         String codigoEstado = c.getEstadoCotizacion() != null
-                ? c.getEstadoCotizacion().getCodigoEstado()
+                ? CodigoEstadoCotizacion.visible(c.getEstadoCotizacion().getCodigoEstado())
                 : null;
 
         String nombreEstado = c.getEstadoCotizacion() != null
                 ? c.getEstadoCotizacion().getNombreEstado()
                 : null;
+        if (CodigoEstadoCotizacion.ACEPTADA_CLIENTE.name().equals(codigoEstado)
+                && c.getEstadoCotizacion() != null
+                && "APROBADA".equalsIgnoreCase(c.getEstadoCotizacion().getCodigoEstado())
+                && (nombreEstado == null || "Aprobada".equalsIgnoreCase(nombreEstado.trim()))) {
+            nombreEstado = "Aceptada por el cliente";
+        }
 
         String codigoMoneda = c.getMoneda() != null
                 ? c.getMoneda().getCodigoMoneda()
@@ -1525,6 +1537,7 @@ public class CotizacionService {
                         .clienteEmail(obtenerCorreoCliente(c))
                         .fechaCotizacion(c.getFechaCotizacion())
                         .fechaValidez(c.getFechaValidez())
+                        .fechaEnvio(c.getFechaEnvio())
                         .fechaCreacion(c.getDateCreate())
                         .estado(nombreEstado)
                         .estadoCodigo(codigoEstado)
@@ -1591,9 +1604,13 @@ public class CotizacionService {
         for (int i = 0; i < seguimientos.size(); i++) {
             SeguimientoCotizacion actual = seguimientos.get(i);
 
-            String estadoAnterior = i + 1 < seguimientos.size()
+            String calculado = i + 1 < seguimientos.size()
                     ? codigoEstadoDe(seguimientos.get(i + 1))
                     : null;
+            String guardado = actual.getEstadoAnterior() != null
+                    ? CodigoEstadoCotizacion.visible(actual.getEstadoAnterior().getCodigoEstado())
+                    : null;
+            String estadoAnterior = guardado != null ? guardado : calculado;
 
             respuesta.add(
                     toSeguimientoResponse(actual, estadoAnterior));
@@ -1604,7 +1621,7 @@ public class CotizacionService {
 
     private String codigoEstadoDe(SeguimientoCotizacion seguimiento) {
         return seguimiento.getEstadoCotizacion() != null
-                ? seguimiento.getEstadoCotizacion().getCodigoEstado()
+                ? CodigoEstadoCotizacion.visible(seguimiento.getEstadoCotizacion().getCodigoEstado())
                 : null;
     }
 
@@ -1643,7 +1660,7 @@ public class CotizacionService {
             String estadoAnterior) {
 
         String codigoEstado = s.getEstadoCotizacion() != null
-                ? s.getEstadoCotizacion().getCodigoEstado()
+                ? CodigoEstadoCotizacion.visible(s.getEstadoCotizacion().getCodigoEstado())
                 : null;
 
         String nombreEstado = s.getEstadoCotizacion() != null
@@ -1672,6 +1689,10 @@ public class CotizacionService {
                 .fecha(s.getFechaEvento() != null ? s.getFechaEvento().atZone(java.time.ZoneId.systemDefault()).toInstant() : null)
                 .comentario(s.getComentario())
                 .observaciones(s.getComentario())
+                .fechaRespuesta(s.getFechaRespuesta())
+                .medio(s.getMedio())
+                .rutaAdjunto(s.getRutaAdjunto())
+                .idAdjunto(s.getAdjunto() == null ? null : s.getAdjunto().getIdAdjunto())
                 .build();
     }
 

@@ -28,6 +28,8 @@ public class PortalCotizacionResponse {
     private String codigoEstado;
     /** True solo si el cliente todavía puede aprobar o rechazar. */
     private boolean puedeDecidir;
+    private BigDecimal subtotal;
+    private BigDecimal igv;
     private BigDecimal total;
     private String moneda;
     /** N.º de la OC de la minera, solo si esta cotización ya tiene una. */

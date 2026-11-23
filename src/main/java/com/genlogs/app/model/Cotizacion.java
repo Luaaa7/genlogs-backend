@@ -2,6 +2,7 @@ package com.genlogs.app.model;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -86,6 +87,10 @@ public class Cotizacion extends Auditable {
     @Column(name = "aviso_alto_valor_enviado", nullable = false)
     @Builder.Default
     private Boolean avisoAltoValorEnviado = false;
+
+    /** Primera vez que pasó a ENVIADA (correo o marca manual). v3_4_respuesta_cliente.sql. */
+    @Column(name = "fecha_envio")
+    private LocalDateTime fechaEnvio;
 
     @Column(name = "observaciones", columnDefinition = "TEXT")
     private String observaciones;

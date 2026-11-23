@@ -241,7 +241,7 @@ class OrdenCompraLecturaTest {
     }
 
     private OrdenCompraService servicio(LectorOcPdf lectorOc) {
-        return new OrdenCompraService(ordenes, cotizaciones, null, null, usuarios, cloudinary, null, lectorOc);
+        return new OrdenCompraService(ordenes, cotizaciones, null, null, usuarios, cloudinary, null, lectorOc, null);
     }
 
     private MockMultipartFile archivo(byte[] bytes) {

@@ -48,6 +48,8 @@ public class CotizacionResponse {
 
     private LocalDate fechaCotizacion;
     private LocalDate fechaValidez;
+    /** Primera vez que quedó ENVIADA. */
+    private LocalDateTime fechaEnvio;
     /** Fecha de alta (columna date_create). */
     private LocalDateTime fechaCreacion;
 

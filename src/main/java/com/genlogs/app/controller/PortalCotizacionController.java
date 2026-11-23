@@ -44,7 +44,7 @@ public class PortalCotizacionController {
             @PathVariable Long id, @RequestBody(required = false) DecisionPortalRequest request) {
         PortalCotizacionResponse respuesta = portalCotizacionService.aprobar(id, request);
         // La aprobación ya se confirmó. La orden va en otra transacción.
-        cotizacionService.registrarOrdenSiAprobada(id, CodigoEstadoCotizacion.APROBADA.name());
+        cotizacionService.registrarOrdenSiAprobada(id, CodigoEstadoCotizacion.ACEPTADA_CLIENTE.name());
         return ResponseEntity.ok(respuesta);
     }
 

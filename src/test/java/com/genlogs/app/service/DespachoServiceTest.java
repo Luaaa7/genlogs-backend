@@ -195,6 +195,21 @@ class DespachoServiceTest {
     }
 
     @Test
+    void aceptadaPorElClienteCreaElDespachoYOtroEstadoSigueRechazado() {
+        orden.getCotizacion().getEstadoCotizacion().setCodigoEstado("ACEPTADA_CLIENTE");
+        when(detalles.findByCotizacion(3L)).thenReturn(List.of(linea(OrigenRepuesto.NACIONAL)));
+
+        var respuesta = servicio().crear(8L, inicio);
+
+        assertEquals(EtapaDespacho.REGISTRADO, respuesta.getEtapa());
+        verify(despachos).save(any());
+
+        orden.getCotizacion().getEstadoCotizacion().setCodigoEstado("ENVIADA");
+        assertTrue(assertThrows(BusinessException.class, () -> servicio().crear(8L, inicio))
+                .getMessage().contains("no está aprobada"));
+    }
+
+    @Test
     void ocConfirmadaCreaElDespachoRegistradoConOrigenYPlazo() {
         when(detalles.findByCotizacion(3L)).thenReturn(List.of(linea(OrigenRepuesto.NACIONAL)));
 

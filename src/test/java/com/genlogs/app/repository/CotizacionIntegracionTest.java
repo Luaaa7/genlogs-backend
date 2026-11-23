@@ -33,6 +33,7 @@ import com.genlogs.app.model.Pais;
 import com.genlogs.app.model.Provincia;
 import com.genlogs.app.model.Rol;
 import com.genlogs.app.model.SectorEconomico;
+import com.genlogs.app.model.SeguimientoCotizacion;
 import com.genlogs.app.model.Tercero;
 import com.genlogs.app.model.TipoDocumento;
 import com.genlogs.app.model.UnidadMedida;
@@ -102,6 +103,9 @@ class CotizacionIntegracionTest {
     @Autowired
     private UsuarioRepository usuarioRepository;
 
+    @Autowired
+    private SeguimientoCotizacionRepository seguimientoCotizacionRepository;
+
     @Test
     void listar_devuelveLosTotalesDeLaPaginaYLosAliasDelFrontend() {
         Cotizacion cotizacion = crearCotizacion("ACME S.A.C.", "COT-2026-0001");
@@ -169,6 +173,35 @@ class CotizacionIntegracionTest {
         assertEquals(1, cotizacionService.listar("BORRADOR", null, "PEN", pageable).getContent().size());
         assertEquals(0, cotizacionService.listar("APROBADA", null, "PEN", pageable).getContent().size());
         assertEquals(0, cotizacionService.listar("BORRADOR", null, "USD", pageable).getContent().size());
+    }
+
+    @Test
+    void unaCotizacionSoloEnAceptadaClienteEntraEnElConteo() {
+        Cotizacion cotizacion = crearCotizacion("ACME S.A.C.", "COT-ACEPTADA");
+        EstadoCotizacion aceptada = estado("ACEPTADA_CLIENTE", "Aceptada por el cliente", (short) 4);
+        cotizacion.setEstadoCotizacion(aceptada);
+        cotizacionRepository.saveAndFlush(cotizacion);
+
+        assertEquals(1L, cotizacionRepository.countAprobadas());
+    }
+
+    @Test
+    void elPromedioCuentaLaPrimeraRespuestaEnAceptadaClienteYNoLaQueSoloSeEnvio() {
+        Cotizacion respondida = crearCotizacion("ACME S.A.C.", "COT-RESPUESTA");
+        EstadoCotizacion enviada = estado("ENVIADA", "Enviada", (short) 2);
+        EstadoCotizacion aceptada = estado("ACEPTADA_CLIENTE", "Aceptada por el cliente", (short) 4);
+        respondida.setEstadoCotizacion(aceptada);
+        cotizacionRepository.save(respondida);
+
+        LocalDateTime envio = LocalDateTime.of(2026, 3, 1, 8, 0);
+        seguimiento(respondida, enviada, envio);
+        seguimiento(respondida, aceptada, envio.plusDays(2));
+
+        Cotizacion soloEnviada = otraCotizacion(respondida, "COT-SOLO-ENVIADA", enviada);
+        seguimiento(soloEnviada, enviada, envio.plusDays(5));
+        cotizacionRepository.flush();
+
+        assertEquals(2.0, cotizacionRepository.avgDiasRespuesta(), 0.01);
     }
 
     private Cotizacion crearCotizacion(String razonSocial, String codigo) {
@@ -270,6 +303,38 @@ class CotizacionIntegracionTest {
         }));
 
         return cotizacion;
+    }
+
+    private EstadoCotizacion estado(String codigo, String nombre, short orden) {
+        return estadoCotizacionRepository.save(auditar(new EstadoCotizacion(), e -> {
+            e.setCodigoEstado(codigo);
+            e.setNombreEstado(nombre);
+            e.setOrdenFlujo(orden);
+            e.setEsFinal(false);
+        }));
+    }
+
+    private Cotizacion otraCotizacion(Cotizacion base, String codigo, EstadoCotizacion estado) {
+        return cotizacionRepository.save(auditar(new Cotizacion(), e -> {
+            e.setCodigoCotizacion(codigo);
+            e.setCliente(base.getCliente());
+            e.setFechaCotizacion(base.getFechaCotizacion());
+            e.setFechaValidez(base.getFechaValidez());
+            e.setUsuarioVendedor(base.getUsuarioVendedor());
+            e.setEstadoCotizacion(estado);
+            e.setMoneda(base.getMoneda());
+            e.setCondicionPago(base.getCondicionPago());
+            e.setSectorEconomico(base.getSectorEconomico());
+        }));
+    }
+
+    private void seguimiento(Cotizacion cotizacion, EstadoCotizacion estado, LocalDateTime cuando) {
+        seguimientoCotizacionRepository.save(auditar(new SeguimientoCotizacion(), s -> {
+            s.setCotizacion(cotizacion);
+            s.setEstadoCotizacion(estado);
+            s.setFechaEvento(cuando);
+            s.setUsuario(cotizacion.getUsuarioVendedor());
+        }));
     }
 
     /** Los campos de auditoría son NOT NULL en la BD. */

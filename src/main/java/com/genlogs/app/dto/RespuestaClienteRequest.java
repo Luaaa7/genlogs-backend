@@ -1,5 +1,7 @@
 package com.genlogs.app.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+
 import lombok.Getter;
 import lombok.Setter;
 
@@ -11,10 +13,26 @@ import lombok.Setter;
 @Setter
 public class RespuestaClienteRequest {
 
-    /** Solo APROBADA o RECHAZADA. */
+    /** ACEPTADA_CLIENTE, EN_NEGOCIACION o RECHAZADA. El código viejo APROBADA se lee como aceptación. */
     private String codigoEstado;
     /** Cómo y cuándo respondió el cliente. */
     private String comentario;
     /** Adjunto nuevo de este registro: el correo o la OC de la minera. */
     private Long idAdjunto;
+
+    /**
+     * Forma nueva: "aceptó", "pidió_cambios" o "rechazó".
+     * Si viene, este cuerpo reemplaza a codigoEstado.
+     */
+    private String accion;
+
+    /** Día de la respuesta del cliente (aaaa-mm-dd). Obligatorio en la forma nueva. */
+    @JsonAlias({"fecha_respuesta", "fechaRespuesta"})
+    private String fechaRespuesta;
+
+    /** correo, whatsapp, llamada u otro. */
+    private String medio;
+
+    /** Nota o motivo. En la forma nueva reemplaza a comentario. */
+    private String nota;
 }
