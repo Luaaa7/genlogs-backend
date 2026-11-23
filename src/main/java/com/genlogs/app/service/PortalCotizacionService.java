@@ -257,9 +257,19 @@ public class PortalCotizacionService {
         return numero == null || numero.isBlank() ? null : numero;
     }
 
+    // Misma regla que el PDF: descripción personalizada y, si viene vacía, nombre del producto o servicio.
+    private static String nombreItem(CotizacionDetalle d) {
+        String personalizada = d.getDescripcionPersonalizada();
+        if (personalizada != null && !personalizada.isBlank()) {
+            return personalizada;
+        }
+        return d.getProducto() != null ? d.getProducto().getNombreProducto()
+                : d.getServicio() != null ? d.getServicio().getNombreServicio() : null;
+    }
+
     private static PortalCotizacionResponse.Linea linea(CotizacionDetalle detalle) {
         return PortalCotizacionResponse.Linea.builder()
-                .descripcion(detalle.getDescripcionPersonalizada())
+                .descripcion(nombreItem(detalle))
                 .cantidad(detalle.getCantidad())
                 .unidad(detalle.getUnidadMedida() != null ? detalle.getUnidadMedida().getNombreUnidad() : null)
                 .precioUnitario(detalle.getPrecioUnitario())
