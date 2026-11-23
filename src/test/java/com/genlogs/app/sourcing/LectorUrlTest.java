@@ -74,7 +74,11 @@ class LectorUrlTest {
             "1,234.56|1234.56",
             "1.234,56|1234.56",
             "US$ 25|25",
-            "S/ 1 250.90|1250.90"
+            "S/ 1 250.90|1250.90",
+            "US $12.50/piece|12.50",
+            "US $1.50 - US $2.00 /piece|1.50",
+            "$5.00 / piece (min. 10 pieces)|5.00",
+            "US $1,234.50 - US $2,000.00|1234.50"
     })
     void normalizaPrecios(String texto, String esperado) {
         assertThat(LectorUrl.normalizarPrecio(texto)).isEqualByComparingTo(esperado);
