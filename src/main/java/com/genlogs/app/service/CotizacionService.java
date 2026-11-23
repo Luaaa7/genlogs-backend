@@ -10,6 +10,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -154,6 +155,11 @@ public class CotizacionService {
     private static final String MENSAJE_MONEDA =
             "La cotización solo admite soles o dólares.";
 
+    static final String SOLO_BORRADOR_O_CAMBIOS =
+            "Solo se actualiza una cotización en borrador o cuando el cliente quiere cambios";
+
+    private static final String CARPETA_VERSIONES_PDF = "genlogs/cotizaciones/versiones";
+
     @Transactional(readOnly = true)
     public CotizacionResponse buscarPorId(Long idCotizacion) {
         return toResponseDetalle(obtenerOLanzar(idCotizacion));
@@ -295,8 +301,9 @@ public class CotizacionService {
 
         String codigoGenerado = resolverCodigoCotizacion(cotizacion);
 
-        registrarSeguimiento(
+        SeguimientoCotizacion creada = registrarSeguimiento(
                 cotizacion, estadoBorrador, vendedor, "Cotización creada");
+        archivarPdfActual(cotizacion, creada);
 
         return toResponseDetalle(cotizacion, codigoGenerado);
     }
@@ -308,10 +315,11 @@ public class CotizacionService {
     @Transactional
     public CotizacionResponse actualizar(Long idCotizacion, CotizacionRequest request) {
         Cotizacion cotizacion = obtenerOLanzar(idCotizacion);
-        String codigoEstado = cotizacion.getEstadoCotizacion().getCodigoEstado();
-        if (!CodigoEstadoCotizacion.BORRADOR.name().equalsIgnoreCase(codigoEstado)) {
-            throw new BusinessException("Solo se actualiza una cotización en borrador");
+        if (!puedeEditar(cotizacion)) {
+            throw new BusinessException(SOLO_BORRADOR_O_CAMBIOS);
         }
+        boolean porCambiosDelCliente = CodigoEstadoCotizacion.EN_NEGOCIACION.name()
+                .equalsIgnoreCase(cotizacion.getEstadoCotizacion().getCodigoEstado());
 
         Long idCliente = resolverIdCliente(request);
         Integer idMoneda = resolverIdMoneda(request);
@@ -335,6 +343,9 @@ public class CotizacionService {
 
         conservarTipoCambio(cotizacion, moneda, request);
         Usuario usuario = usuarioActual();
+        if (porCambiosDelCliente) {
+            cotizacion.setEstadoCotizacion(estadoDe(CodigoEstadoCotizacion.PENDIENTE_APROBACION));
+        }
         cotizacion.setCliente(cliente);
         cotizacion.setContacto(contacto);
         cotizacion.setMoneda(moneda);
@@ -347,8 +358,12 @@ public class CotizacionService {
         cotizacionRepository.save(cotizacion);
 
         reemplazarLineas(cotizacion, lineas, usuario.getNombreUsuario());
-        registrarSeguimiento(cotizacion, cotizacion.getEstadoCotizacion(), usuario,
-                "Cotización actualizada tras devolución");
+        String comentario = porCambiosDelCliente
+                ? "Cotización actualizada tras la solicitud de cambios"
+                : "Cotización actualizada tras devolución";
+        SeguimientoCotizacion guardada = registrarSeguimiento(
+                cotizacion, cotizacion.getEstadoCotizacion(), usuario, comentario);
+        archivarPdfActual(cotizacion, guardada);
         return toResponseDetalle(cotizacion);
     }
 
@@ -591,7 +606,7 @@ public class CotizacionService {
 
             transactionTemplate.executeWithoutResult(status ->
                     marcarComoEnviadaSiBorrador(
-                            idCotizacion, usuario, destinatarioLimpio));
+                            idCotizacion, usuario, destinatarioLimpio, datos.pdf()));
         }
 
         return EnviarCotizacionResponse.builder()
@@ -610,6 +625,14 @@ public class CotizacionService {
             Long idCotizacion,
             Usuario usuario,
             String destinatario) {
+        marcarComoEnviadaSiBorrador(idCotizacion, usuario, destinatario, null);
+    }
+
+    public void marcarComoEnviadaSiBorrador(
+            Long idCotizacion,
+            Usuario usuario,
+            String destinatario,
+            byte[] pdfEnviado) {
 
         Cotizacion cotizacion = obtenerOLanzar(idCotizacion);
         ReglasAprobacionCotizacion.exigir(
@@ -622,7 +645,11 @@ public class CotizacionService {
             cotizacion.setFechaEnvio(LocalDateTime.now());
         }
         cotizacionRepository.save(cotizacion);
-        registrarSeguimiento(cotizacion, enviada, usuario, "Cotización enviada a " + destinatario);
+        SeguimientoCotizacion enviadaFila = registrarSeguimiento(
+                cotizacion, enviada, usuario, "Cotización enviada a " + destinatario);
+        if (pdfEnviado != null) {
+            archivarPdfEntregado(cotizacion, enviadaFila, pdfEnviado);
+        }
     }
 
     @Transactional(readOnly = true)
@@ -973,7 +1000,7 @@ public class CotizacionService {
     // Seguimiento y auditoría
     // ------------------------------------------------------------
 
-    private void registrarSeguimiento(
+    private SeguimientoCotizacion registrarSeguimiento(
             Cotizacion cotizacion,
             EstadoCotizacion estado,
             Usuario usuario,
@@ -997,16 +1024,16 @@ public class CotizacionService {
         if (delTrigger != null) {
             if (comentario != null && !comentario.isBlank()) {
                 delTrigger.setComentario(comentario);
-                seguimientoCotizacionRepository.save(delTrigger);
+                return seguimientoCotizacionRepository.save(delTrigger);
             }
 
-            return;
+            return delTrigger;
         }
 
-        insertarSeguimiento(cotizacion, estado, usuario, comentario);
+        return insertarSeguimiento(cotizacion, estado, usuario, comentario);
     }
 
-    private void insertarSeguimiento(
+    private SeguimientoCotizacion insertarSeguimiento(
             Cotizacion cotizacion,
             EstadoCotizacion estado,
             Usuario usuario,
@@ -1023,7 +1050,65 @@ public class CotizacionService {
         seguimiento.setUserCreate(usuario.getNombreUsuario());
         seguimiento.setProcessCreate("SEGUIMIENTO_COTIZACION");
 
-        seguimientoCotizacionRepository.save(seguimiento);
+        return seguimientoCotizacionRepository.save(seguimiento);
+    }
+
+    /**
+     * Arma el PDF de las líneas actuales y deja la URL en la fila, si todavía
+     * no tiene una. Un fallo de Cloudinary o del PDF no deshace el guardado.
+     */
+    private void archivarPdfActual(Cotizacion cotizacion, SeguimientoCotizacion fila) {
+        if (versionYaArchivada(fila)) {
+            return;
+        }
+        try {
+            archivarPdfEntregado(cotizacion, fila, descargarPdf(cotizacion.getIdCotizacion()));
+        } catch (RuntimeException e) {
+            log.error("No se pudo guardar el PDF de la versión de la cotización {}",
+                    cotizacion.getIdCotizacion(), e);
+        }
+    }
+
+    /** Sube el mismo PDF que ya se adjuntó al correo. No arma otro. */
+    private void archivarPdfEntregado(Cotizacion cotizacion, SeguimientoCotizacion fila, byte[] pdf) {
+        if (versionYaArchivada(fila)) {
+            return;
+        }
+        try {
+            String url = cloudinaryService.subirPdf(pdf, CARPETA_VERSIONES_PDF, nombreArchivoPdf(cotizacion));
+            fila.setRutaVersionPdf(url);
+            seguimientoCotizacionRepository.save(fila);
+        } catch (RuntimeException e) {
+            log.error("No se pudo guardar el PDF de la versión de la cotización {}",
+                    cotizacion.getIdCotizacion(), e);
+        }
+    }
+
+    private static boolean versionYaArchivada(SeguimientoCotizacion fila) {
+        return fila == null
+                || (fila.getRutaVersionPdf() != null && !fila.getRutaVersionPdf().isBlank());
+    }
+
+    private boolean puedeEditar(Cotizacion cotizacion) {
+        if (cotizacion.getEstadoCotizacion() == null) {
+            return false;
+        }
+        String codigo = cotizacion.getEstadoCotizacion().getCodigoEstado();
+        if (CodigoEstadoCotizacion.BORRADOR.name().equalsIgnoreCase(codigo)) {
+            return true;
+        }
+        if (!CodigoEstadoCotizacion.EN_NEGOCIACION.name().equalsIgnoreCase(codigo)) {
+            return false;
+        }
+        return seguimientoCotizacionRepository.findByCotizacion(cotizacion.getIdCotizacion()).stream()
+                .filter(s -> s.getEstadoCotizacion() != null
+                        && CodigoEstadoCotizacion.EN_NEGOCIACION.name()
+                                .equalsIgnoreCase(s.getEstadoCotizacion().getCodigoEstado()))
+                .max(Comparator
+                        .comparing(SeguimientoCotizacion::getFechaEvento, Comparator.nullsFirst(Comparator.naturalOrder()))
+                        .thenComparing(s -> s.getIdSeguimiento() == null ? 0L : s.getIdSeguimiento()))
+                .map(s -> (s.getMedio() != null && !s.getMedio().isBlank()) || s.getFechaRespuesta() != null)
+                .orElse(false);
     }
 
     private Cotizacion obtenerOLanzar(Long idCotizacion) {
@@ -1560,7 +1645,8 @@ public class CotizacionService {
                                         ? c.getMoneda().getNombreMoneda()
                                         : null)
                         .observaciones(c.getObservaciones())
-                        .tipoCambioUsado(c.getTipoCambioUsado());
+                        .tipoCambioUsado(c.getTipoCambioUsado())
+                        .puedeEditar(conDetalle && puedeEditar(c));
 
         // Hoy la cotización no guarda margen ni precio de proveedor (null).
         // Este es el único sitio que puede copiarlos al JSON.
@@ -1692,6 +1778,7 @@ public class CotizacionService {
                 .fechaRespuesta(s.getFechaRespuesta())
                 .medio(s.getMedio())
                 .rutaAdjunto(s.getRutaAdjunto())
+                .rutaVersionPdf(s.getRutaVersionPdf())
                 .idAdjunto(s.getAdjunto() == null ? null : s.getAdjunto().getIdAdjunto())
                 .build();
     }

@@ -87,6 +87,12 @@ public class CotizacionResponse {
     private BigDecimal tipoCambioUsado;
 
     /**
+     * True en el detalle si está en BORRADOR, o en EN_NEGOCIACION porque el
+     * cliente pidió cambios. El listado lo manda en false.
+     */
+    private boolean puedeEditar;
+
+    /**
      * Margen y precio de proveedor. Solo los arma {@code VisibilidadMargen}
      * para Gerente, Jefe y Asistente Logístico. Null no sale en el JSON.
      */

@@ -2,6 +2,7 @@ package com.genlogs.app.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
@@ -12,6 +13,7 @@ import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -213,8 +215,70 @@ class CotizacionActualizacionTest {
         verify(detalles, org.mockito.Mockito.atLeastOnce()).save(lineas.capture());
         assertEquals("Filtro nuevo", lineas.getAllValues().get(lineas.getAllValues().size() - 1)
                 .getDescripcionPersonalizada());
+        assertEquals("BORRADOR", cotizacion.getEstadoCotizacion().getCodigoEstado());
+        assertTrue(respuesta.isPuedeEditar());
         verify(cotizaciones, never()).save(org.mockito.ArgumentMatchers.argThat(
                 guardada -> guardada != cotizacion));
+    }
+
+    @Test
+    void putEnNegociacionPorCambiosPasaAPendienteYNoCambiaElCodigo() {
+        Cotizacion cotizacion = cotizacion("EN_NEGOCIACION", false);
+        listo(cotizacion);
+        SeguimientoCotizacion vieja = seguimientoNegociacion(cotizacion.getEstadoCotizacion(), "whatsapp", null);
+        vieja.setRutaVersionPdf("https://cdn.example/v1.pdf");
+        when(seguimientos.findByCotizacion(15L)).thenReturn(List.of(vieja));
+        when(seguimientos.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(estados.findByCodigoEstado("PENDIENTE_APROBACION"))
+                .thenReturn(Optional.of(estado("PENDIENTE_APROBACION", 4, false)));
+        when(pdf.generarPdfCotizacion(any())).thenReturn(new byte[] { 1, 2, 3 });
+        when(cloudinary.subirPdf(any(), anyString(), anyString())).thenReturn("https://cdn.example/v2.pdf");
+
+        CotizacionResponse respuesta = servicio.actualizar(15L, pedido());
+
+        assertEquals(15L, respuesta.getIdCotizacion());
+        assertEquals("COT-15", cotizacion.getCodigoCotizacion());
+        assertEquals("PENDIENTE_APROBACION", cotizacion.getEstadoCotizacion().getCodigoEstado());
+        assertEquals("ACTUALIZAR_COTIZACION", cotizacion.getProcessUpdate());
+        assertEquals(false, respuesta.isPuedeEditar());
+        assertEquals("https://cdn.example/v1.pdf", vieja.getRutaVersionPdf());
+        ArgumentCaptor<SeguimientoCotizacion> filas = ArgumentCaptor.forClass(SeguimientoCotizacion.class);
+        verify(seguimientos, org.mockito.Mockito.atLeastOnce()).save(filas.capture());
+        SeguimientoCotizacion nueva = filas.getAllValues().get(filas.getAllValues().size() - 1);
+        assertEquals("Cotización actualizada tras la solicitud de cambios", nueva.getComentario());
+        assertEquals("https://cdn.example/v2.pdf", nueva.getRutaVersionPdf());
+        assertEquals(null, nueva.getRutaAdjunto());
+        assertEquals(null, nueva.getAdjunto());
+    }
+
+    @Test
+    void putEnNegociacionSinRespuestaDelClienteNoTocaNada() {
+        Cotizacion cotizacion = cotizacion("EN_NEGOCIACION", false);
+        SeguimientoCotizacion paseDelJefe = seguimientoNegociacion(cotizacion.getEstadoCotizacion(), null, null);
+        when(cotizaciones.findById(15L)).thenReturn(Optional.of(cotizacion));
+        when(seguimientos.findByCotizacion(15L)).thenReturn(List.of(paseDelJefe));
+
+        BusinessException error = assertThrows(BusinessException.class, () -> servicio.actualizar(15L, pedido()));
+
+        assertEquals(CotizacionService.SOLO_BORRADOR_O_CAMBIOS, error.getMessage());
+        assertEquals("EN_NEGOCIACION", cotizacion.getEstadoCotizacion().getCodigoEstado());
+        verify(cotizaciones, never()).save(any());
+        verify(detalles, never()).save(any());
+        verify(seguimientos, never()).save(any());
+    }
+
+    @Test
+    void putEnviadaNoCambiaLineas() {
+        Cotizacion cotizacion = cotizacion("ENVIADA", false);
+        when(cotizaciones.findById(15L)).thenReturn(Optional.of(cotizacion));
+
+        BusinessException error = assertThrows(BusinessException.class, () -> servicio.actualizar(15L, pedido()));
+
+        assertEquals(CotizacionService.SOLO_BORRADOR_O_CAMBIOS, error.getMessage());
+        assertEquals("ENVIADA", cotizacion.getEstadoCotizacion().getCodigoEstado());
+        verify(cotizaciones, never()).save(any());
+        verify(detalles, never()).save(any());
+        verify(seguimientos, never()).save(any());
     }
 
     @Test
@@ -303,7 +367,7 @@ class CotizacionActualizacionTest {
         when(cotizaciones.findById(15L)).thenReturn(Optional.of(cotizacion("PENDIENTE_APROBACION", false)));
         BusinessException pendiente = assertThrows(BusinessException.class,
                 () -> servicio.actualizar(15L, pedido()));
-        assertEquals("Solo se actualiza una cotización en borrador", pendiente.getMessage());
+        assertEquals(CotizacionService.SOLO_BORRADOR_O_CAMBIOS, pendiente.getMessage());
 
         when(cotizaciones.findById(15L)).thenReturn(Optional.of(cotizacion("ENVIADA", false)));
         assertThrows(BusinessException.class, () -> servicio.actualizar(15L, pedido()));
@@ -470,6 +534,18 @@ class CotizacionActualizacionTest {
         estado.setNombreEstado(codigo);
         estado.setEsFinal(fin);
         return estado;
+    }
+
+    private static SeguimientoCotizacion seguimientoNegociacion(
+            EstadoCotizacion estado, String medio, LocalDate fechaRespuesta) {
+        SeguimientoCotizacion seguimiento = new SeguimientoCotizacion();
+        seguimiento.setIdSeguimiento(4L);
+        seguimiento.setEstadoCotizacion(estado);
+        seguimiento.setMedio(medio);
+        seguimiento.setFechaRespuesta(fechaRespuesta);
+        seguimiento.setFechaEvento(LocalDateTime.of(2026, 11, 2, 9, 0));
+        seguimiento.setComentario("El cliente pidió cambios");
+        return seguimiento;
     }
 
     private static CotizacionRequest pedido() {

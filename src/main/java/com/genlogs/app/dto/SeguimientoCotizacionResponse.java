@@ -72,6 +72,9 @@ public class SeguimientoCotizacionResponse {
     /** Ruta o URL del adjunto de evidencia. */
     private String rutaAdjunto;
 
+    /** URL del PDF de esta versión. Nula si el archivado falló o el evento no tiene PDF. */
+    private String rutaVersionPdf;
+
     /** id del adjunto de evidencia (adjunto_cotizacion), si lo hay. */
     private Long idAdjunto;
 }

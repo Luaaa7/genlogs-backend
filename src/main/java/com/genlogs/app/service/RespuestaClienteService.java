@@ -357,6 +357,7 @@ public class RespuestaClienteService {
                 .fechaRespuesta(s.getFechaRespuesta())
                 .medio(s.getMedio())
                 .rutaAdjunto(s.getRutaAdjunto())
+                .rutaVersionPdf(s.getRutaVersionPdf())
                 .idAdjunto(s.getAdjunto() == null ? null : s.getAdjunto().getIdAdjunto())
                 .build();
     }
