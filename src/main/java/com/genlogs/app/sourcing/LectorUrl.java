@@ -107,7 +107,7 @@ public class LectorUrl {
      * pegan en un solo número inválido y el precio no se pierde.
      */
     private static final Pattern PRIMER_PRECIO =
-            Pattern.compile("\\d{1,3}(?:[ \\u00A0\\u202F]\\d{3})*(?:[.,]\\d+)*|\\d+(?:[.,]\\d+)*");
+            Pattern.compile("\\d{1,3}(?:[ \\u00A0\\u202F]\\d{3})+(?:[.,]\\d+)*|\\d+(?:[.,]\\d+)*");
 
     /** "1,234.56" → 1234.56 · "1.234,56" → 1234.56 · "18,50" → 18.50 · "US$ 25" → 25 */
     static BigDecimal normalizarPrecio(String texto) {
