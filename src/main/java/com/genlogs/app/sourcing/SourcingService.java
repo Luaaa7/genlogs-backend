@@ -186,7 +186,7 @@ public class SourcingService {
                 }
                 omitidas.remove(codigo);
                 sinLector.remove(codigo);
-                for (ResultadoBusqueda ficha : resultados) {
+                for (ResultadoBusqueda ficha : NormalizadorFicha.sinRepetidos(resultados)) {
                     nuevos.add(aHistorial(item, codigo, textoConsulta, consulta, ficha, usuario, monedas));
                     descripciones.add(ficha.descripcion());
                 }
