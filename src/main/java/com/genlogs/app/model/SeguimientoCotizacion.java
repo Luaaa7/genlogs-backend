@@ -65,6 +65,10 @@ public class SeguimientoCotizacion extends Auditable {
     @Column(name = "ruta_adjunto", columnDefinition = "TEXT")
     private String rutaAdjunto;
 
+    /** URL del PDF de la cotización tal como quedó en este evento. Nula si aún no se archivó. */
+    @Column(name = "ruta_version_pdf", columnDefinition = "TEXT")
+    private String rutaVersionPdf;
+
     /** Adjunto de evidencia de la respuesta (correo u OC de la minera), si lo hay. */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "id_adjunto")

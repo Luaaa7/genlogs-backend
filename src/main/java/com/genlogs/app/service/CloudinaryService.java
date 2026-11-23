@@ -54,6 +54,33 @@ public class CloudinaryService {
         return subir(archivo, carpeta, TIPO_DOCUMENTO);
     }
 
+    /** Sube un PDF ya armado a la carpeta indicada y devuelve su URL https. */
+    public String subirPdf(byte[] pdf, String carpeta, String nombreArchivo) {
+        if (pdf == null || pdf.length == 0) {
+            throw new BusinessException("El archivo está vacío o no es válido");
+        }
+        if (!estaConfigurado()) {
+            throw new BusinessException(
+                    "El servicio de almacenamiento de archivos no está configurado");
+        }
+        try {
+            Map<String, Object> opciones = new java.util.HashMap<>();
+            opciones.put("folder", carpeta);
+            opciones.put("resource_type", TIPO_DOCUMENTO);
+            opciones.put("public_id", nombreConExtension(nombreArchivo));
+            Map<?, ?> resultado = cloudinary.uploader().upload(pdf, opciones);
+            Object secureUrl = resultado.get("secure_url");
+            if (!(secureUrl instanceof String url) || url.isBlank()) {
+                throw new BusinessException(
+                        "Cloudinary no devolvió una URL válida para el archivo");
+            }
+            return url;
+        } catch (IOException e) {
+            log.error("Error al subir el PDF a Cloudinary. Carpeta: {}", carpeta, e);
+            throw new BusinessException("No se pudo subir el archivo a Cloudinary");
+        }
+    }
+
     /** Elimina de Cloudinary el archivo al que apunta la URL guardada en la BD. */
     public void eliminarPorUrl(String urlCloudinary, String resourceType) {
         if (urlCloudinary == null || urlCloudinary.isBlank()) {
