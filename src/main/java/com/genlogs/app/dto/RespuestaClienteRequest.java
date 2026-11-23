@@ -13,7 +13,7 @@ import lombok.Setter;
 @Setter
 public class RespuestaClienteRequest {
 
-    /** Solo APROBADA o RECHAZADA. */
+    /** ACEPTADA_CLIENTE, EN_NEGOCIACION o RECHAZADA. El código viejo APROBADA se lee como aceptación. */
     private String codigoEstado;
     /** Cómo y cuándo respondió el cliente. */
     private String comentario;
