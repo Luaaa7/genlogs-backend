@@ -57,6 +57,14 @@ public class CotizacionDetalle extends Auditable {
     
     @Column(name = "precio_unitario", nullable = false, precision = 14, scale = 4)
     private BigDecimal precioUnitario;
+
+    /** Costo unitario en la moneda de la cotización. Nulo en líneas anteriores a v3_4. */
+    @Column(name = "costo_unitario", precision = 14, scale = 4)
+    private BigDecimal costoUnitario;
+
+    /** Margen con el que se calculó el precio, en porcentaje. Nulo si no se informó. */
+    @Column(name = "margen_porcentaje", precision = 6, scale = 2)
+    private BigDecimal margenPorcentaje;
     
     @Column(name = "descuento_unitario", nullable = false, precision = 14, scale = 4)
     @Builder.Default

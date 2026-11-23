@@ -39,6 +39,10 @@ public class CotizacionDetalleResponse {
     private String descripcion;
     private BigDecimal cantidad;
     private BigDecimal precioUnitario;
+    /** Costo unitario. Null si no se guardó o si el rol no ve márgenes. */
+    private BigDecimal costoUnitario;
+    /** Margen en porcentaje. Null si no se guardó o si el rol no ve márgenes. */
+    private BigDecimal margenPorcentaje;
     private BigDecimal descuentoUnitario;
     private BigDecimal importeLinea;
     /** Alias de importeLinea. */

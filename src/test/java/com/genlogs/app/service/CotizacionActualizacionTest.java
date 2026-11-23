@@ -1,6 +1,7 @@
 package com.genlogs.app.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -282,6 +283,40 @@ class CotizacionActualizacionTest {
     }
 
     @Test
+    void putConservaCostoYMargenYGuardaLosNuevosSiElRequestLosCambia() {
+        Cotizacion cotizacion = cotizacion("BORRADOR", false);
+        listo(cotizacion);
+        CotizacionRequest pedido = pedidoConCosto(new BigDecimal("100"), new BigDecimal("20"), new BigDecimal("150"));
+
+        servicio.actualizar(15L, pedido);
+
+        CotizacionDetalle primera = ultimaLineaNueva();
+        assertEquals(0, new BigDecimal("100").compareTo(primera.getCostoUnitario()));
+        assertEquals(0, new BigDecimal("20").compareTo(primera.getMargenPorcentaje()));
+        assertEquals(0, new BigDecimal("150").compareTo(primera.getPrecioUnitario()));
+
+        servicio.actualizar(15L, pedidoConCosto(new BigDecimal("80"), new BigDecimal("30"), new BigDecimal("200")));
+
+        CotizacionDetalle segunda = ultimaLineaNueva();
+        assertEquals(0, new BigDecimal("80").compareTo(segunda.getCostoUnitario()));
+        assertEquals(0, new BigDecimal("30").compareTo(segunda.getMargenPorcentaje()));
+        assertEquals(0, new BigDecimal("200").compareTo(segunda.getPrecioUnitario()));
+    }
+
+    @Test
+    void putSinCostoNiMargenLosDejaEnNull() {
+        Cotizacion cotizacion = cotizacion("BORRADOR", false);
+        listo(cotizacion);
+
+        servicio.actualizar(15L, pedido());
+
+        CotizacionDetalle linea = ultimaLineaNueva();
+        assertNull(linea.getCostoUnitario());
+        assertNull(linea.getMargenPorcentaje());
+        assertEquals(0, new BigDecimal("20").compareTo(linea.getPrecioUnitario()));
+    }
+
+    @Test
     void putConservaElCambioGuardado() {
         Cotizacion cotizacion = cotizacion("BORRADOR", false);
         listo(cotizacion);
@@ -546,6 +581,23 @@ class CotizacionActualizacionTest {
         seguimiento.setFechaEvento(LocalDateTime.of(2026, 11, 2, 9, 0));
         seguimiento.setComentario("El cliente pidió cambios");
         return seguimiento;
+    }
+
+    private CotizacionDetalle ultimaLineaNueva() {
+        ArgumentCaptor<CotizacionDetalle> lineas = ArgumentCaptor.forClass(CotizacionDetalle.class);
+        verify(detalles, org.mockito.Mockito.atLeastOnce()).save(lineas.capture());
+        List<CotizacionDetalle> nuevas = lineas.getAllValues().stream()
+                .filter(linea -> !"I".equals(linea.getStatus()))
+                .toList();
+        return nuevas.get(nuevas.size() - 1);
+    }
+
+    private static CotizacionRequest pedidoConCosto(BigDecimal costo, BigDecimal margen, BigDecimal precio) {
+        CotizacionRequest pedido = pedido();
+        pedido.getLineas().get(0).setCostoUnitario(costo);
+        pedido.getLineas().get(0).setMargenPorcentaje(margen);
+        pedido.getLineas().get(0).setPrecioUnitario(precio);
+        return pedido;
     }
 
     private static CotizacionRequest pedido() {

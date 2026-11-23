@@ -1,6 +1,7 @@
 package com.genlogs.app.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -43,6 +44,7 @@ import com.genlogs.app.model.CondicionPago;
 import com.genlogs.app.model.EstadoCotizacion;
 import com.genlogs.app.model.Moneda;
 import com.genlogs.app.model.Cotizacion;
+import com.genlogs.app.model.CotizacionDetalle;
 import com.genlogs.app.model.Tercero;
 import com.genlogs.app.model.TipoCambio;
 import com.genlogs.app.model.UnidadMedida;
@@ -199,6 +201,67 @@ class CotizacionAltaTipoCambioTest {
                 LocalDate.of(2026, 11, 16),
                 LocalDate.of(2026, 11, 15),
                 LocalDate.of(2026, 11, 16)), dias.getAllValues());
+    }
+
+    @Test
+    void altaGuardaCostoMargenYElPrecioDelRequest() {
+        CotizacionRequest pedido = pedido();
+        pedido.getLineas().get(0).setPrecioUnitario(new BigDecimal("150.00"));
+        pedido.getLineas().get(0).setCostoUnitario(new BigDecimal("100"));
+        pedido.getLineas().get(0).setMargenPorcentaje(new BigDecimal("20"));
+
+        servicio.crear(pedido);
+
+        ArgumentCaptor<CotizacionDetalle> lineas = ArgumentCaptor.forClass(CotizacionDetalle.class);
+        verify(detalles).save(lineas.capture());
+        assertEquals(0, new BigDecimal("100").compareTo(lineas.getValue().getCostoUnitario()));
+        assertEquals(0, new BigDecimal("20").compareTo(lineas.getValue().getMargenPorcentaje()));
+        assertEquals(0, new BigDecimal("150.00").compareTo(lineas.getValue().getPrecioUnitario()));
+    }
+
+    @Test
+    void altaSinCostoNiMargenLosDejaEnNull() {
+        servicio.crear(pedido());
+
+        ArgumentCaptor<CotizacionDetalle> lineas = ArgumentCaptor.forClass(CotizacionDetalle.class);
+        verify(detalles).save(lineas.capture());
+        assertNull(lineas.getValue().getCostoUnitario());
+        assertNull(lineas.getValue().getMargenPorcentaje());
+    }
+
+    @Test
+    void costoNegativoOMargenFueraDeRangoNoGuarda() {
+        CotizacionRequest costo = pedido();
+        costo.getLineas().get(0).setCostoUnitario(new BigDecimal("-1"));
+        assertEquals("El costo unitario no puede ser negativo",
+                assertThrows(BusinessException.class, () -> servicio.crear(costo)).getMessage());
+
+        CotizacionRequest margen = pedido();
+        margen.getLineas().get(0).setMargenPorcentaje(new BigDecimal("90.01"));
+        assertEquals("El margen debe estar entre 0 y 90",
+                assertThrows(BusinessException.class, () -> servicio.crear(margen)).getMessage());
+        verify(cotizaciones, never()).save(any());
+        verify(detalles, never()).save(any());
+    }
+
+    @Test
+    void duplicarCopiaCostoYMargenDeCadaLinea() {
+        when(cotizaciones.findById(20L)).thenReturn(Optional.of(original()));
+        CotizacionDetalle origen = new CotizacionDetalle();
+        origen.setCantidad(BigDecimal.ONE);
+        origen.setPrecioUnitario(new BigDecimal("150"));
+        origen.setCostoUnitario(new BigDecimal("100"));
+        origen.setMargenPorcentaje(new BigDecimal("20"));
+        origen.setDescuentoUnitario(BigDecimal.ZERO);
+        when(detalles.findByCotizacion(20L)).thenReturn(List.of(origen));
+
+        servicio.duplicar(20L);
+
+        ArgumentCaptor<CotizacionDetalle> copias = ArgumentCaptor.forClass(CotizacionDetalle.class);
+        verify(detalles).save(copias.capture());
+        assertEquals(0, new BigDecimal("100").compareTo(copias.getValue().getCostoUnitario()));
+        assertEquals(0, new BigDecimal("20").compareTo(copias.getValue().getMargenPorcentaje()));
+        assertEquals(0, new BigDecimal("150").compareTo(copias.getValue().getPrecioUnitario()));
     }
 
     @Test
