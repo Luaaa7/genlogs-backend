@@ -80,6 +80,30 @@ final class NormalizadorFicha {
         return List.copyOf(out);
     }
 
+    /**
+     * Resultados de una API (eBay Browse) sin el mismo producto repetido: misma clave de enlace que
+     * {@link #normalizar}, así un artículo que llega dos veces con otro rastreo cuenta una sola vez.
+     * Respeta el orden y no recorta (el tope de {@link #MAX_FICHAS} lo pone cada fuente).
+     */
+    static List<ResultadoBusqueda> sinRepetidos(List<ResultadoBusqueda> resultados) {
+        if (resultados == null || resultados.isEmpty()) {
+            return List.of();
+        }
+        List<ResultadoBusqueda> out = new ArrayList<>();
+        Set<String> vistos = new LinkedHashSet<>();
+        for (ResultadoBusqueda r : resultados) {
+            if (r == null) {
+                continue;
+            }
+            String enlace = texto(r.urlReferencia());
+            String clave = enlace != null ? claveEnlace(enlace) : r.titulo() + "|" + r.precio();
+            if (vistos.add(clave)) {
+                out.add(r);
+            }
+        }
+        return List.copyOf(out);
+    }
+
     /** Vacío o no numérico → null. Nunca BigDecimal.ZERO. */
     static BigDecimal precio(String texto) {
         return LectorUrl.normalizarPrecio(texto);

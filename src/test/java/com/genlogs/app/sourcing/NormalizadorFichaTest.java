@@ -112,4 +112,20 @@ class NormalizadorFichaTest {
                 .isEqualTo(NormalizadorFicha.claveEnlace("https://www.amazon.com/dp/B000123/ref=sr_1_1"))
                 .isEqualTo("amazon.com/dp/B000123");
     }
+
+    @Test
+    void sinRepetidos_quitaElMismoProductoDeUnaApiAunqueCambieElRastreo() {
+        List<ResultadoBusqueda> r = NormalizadorFicha.sinRepetidos(List.of(
+                new ResultadoBusqueda("Filtro", null, null, null, "USD", "https://www.ebay.com/itm/123?_trksid=a", null),
+                new ResultadoBusqueda("Filtro", null, null, null, "USD", "https://ebay.com/itm/123/?mkcid=1", null),
+                new ResultadoBusqueda("Otro", null, null, null, "USD", "https://www.ebay.com/itm/456", null)));
+
+        assertThat(r).extracting(ResultadoBusqueda::titulo).containsExactly("Filtro", "Otro");
+    }
+
+    @Test
+    void sinRepetidos_vacioONull_devuelveListaVacia() {
+        assertThat(NormalizadorFicha.sinRepetidos(null)).isEmpty();
+        assertThat(NormalizadorFicha.sinRepetidos(List.of())).isEmpty();
+    }
 }
