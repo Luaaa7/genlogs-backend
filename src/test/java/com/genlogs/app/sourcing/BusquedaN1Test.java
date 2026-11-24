@@ -47,7 +47,6 @@ class BusquedaN1Test {
     private HistorialSourcingRepository historialRepo;
     private SourcingService sourcing;
     private FuenteBusquedaConfig a;
-    private FuenteBusquedaConfig b;
     private FuenteBusquedaConfig c;
 
     @BeforeEach
@@ -68,7 +67,6 @@ class BusquedaN1Test {
         when(parametros.buscar(ClavesParametro.BUSQUEDA_REUSO_DIAS)).thenReturn(Optional.empty());
 
         a = fuente(CodigoFuente.EBAY, true, EstadoFuente.ACTIVA, 50);
-        b = fuente(CodigoFuente.AMAZON, false, EstadoFuente.ACTIVA, 50);
         c = fuente(CodigoFuente.MERCADO_LIBRE, true, EstadoFuente.ACTIVA, 50);
 
         when(fuenteRepo.findByActivaTrueAndStatusOrderByIdFuente("A")).thenReturn(List.of(a, c));

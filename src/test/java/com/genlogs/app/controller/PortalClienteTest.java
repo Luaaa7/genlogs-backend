@@ -12,7 +12,6 @@ import static org.hamcrest.Matchers.hasItem;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -91,8 +90,6 @@ import com.genlogs.app.repository.UsuarioRepository;
 class PortalClienteTest {
 
     private static final AtomicInteger SECUENCIA = new AtomicInteger(200);
-    private static final String MENSAJE_REGISTRO =
-            "Registro completado. Ya puedes usar el portal.";
 
     private static final Pattern INICIALES = Pattern.compile("^[A-Z]{2,3}$");
 

@@ -67,6 +67,6 @@ class OrdenCompraAltaUnicaTest {
     }
 
     private OrdenCompraService servicio() {
-        return new OrdenCompraService(ordenes, cotizaciones, null, null, null, null, null, null, null);
+        return new OrdenCompraService(ordenes, cotizaciones, null, null, null, null, null, null, null, null);
     }
 }

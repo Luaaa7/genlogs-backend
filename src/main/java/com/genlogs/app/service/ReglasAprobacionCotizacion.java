@@ -22,7 +22,6 @@ public final class ReglasAprobacionCotizacion {
             "Indica el motivo para anular la cotización";
 
     /**
-     * TODO equipo: el Word dice "pasar a ANULADA con motivo" y no lista el estado de origen.
      * true = desde cualquier estado que no sea final. El final lo rechaza
      * CotizacionService.cambiarEstado con esFinal. Para acotarlo, pasar esto a false.
      */
