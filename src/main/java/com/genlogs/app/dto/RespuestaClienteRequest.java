@@ -33,6 +33,10 @@ public class RespuestaClienteRequest {
     /** correo, whatsapp, llamada u otro. */
     private String medio;
 
+    /** Solo si medio es "otro": cuál fue (máx. 60 caracteres). Opcional. */
+    @JsonAlias({"medio_detalle", "medioDetalle"})
+    private String medioDetalle;
+
     /** Nota o motivo. En la forma nueva reemplaza a comentario. */
     private String nota;
 }

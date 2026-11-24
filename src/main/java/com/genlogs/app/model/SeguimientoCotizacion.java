@@ -61,6 +61,10 @@ public class SeguimientoCotizacion extends Auditable {
     @Column(name = "medio", length = 20)
     private String medio;
 
+    /** Detalle cuando el medio es "otro" (ej. Teams, reunión presencial). Nulo en los demás casos. */
+    @Column(name = "medio_detalle", length = 60)
+    private String medioDetalle;
+
     /** URL del archivo de evidencia, si se adjuntó. */
     @Column(name = "ruta_adjunto", columnDefinition = "TEXT")
     private String rutaAdjunto;
