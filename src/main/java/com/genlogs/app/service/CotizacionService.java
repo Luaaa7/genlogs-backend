@@ -774,6 +774,7 @@ public class CotizacionService {
                     .margenPorcentaje(lineaOriginal.getMargenPorcentaje())
                     .descuentoUnitario(lineaOriginal.getDescuentoUnitario())
                     .origen(lineaOriginal.getOrigen())
+                    .idSourcing(lineaOriginal.getIdSourcing())
                     .build();
 
             lineaCopia.setUserCreate(usuario.getNombreUsuario());
@@ -907,6 +908,12 @@ public class CotizacionService {
                 .build();
 
         aplicarOrigen(linea, req, false);
+        if (req.getIdSourcing() != null) {
+            if (entityManager.find(com.genlogs.app.sourcing.HistorialSourcing.class, req.getIdSourcing()) == null) {
+                throw new ResourceNotFoundException("No existe la referencia " + req.getIdSourcing());
+            }
+            linea.setIdSourcing(req.getIdSourcing());
+        }
         linea.setUserCreate(usuario);
         linea.setProcessCreate("ALTA_LINEA_COTIZACION");
 
@@ -1986,6 +1993,7 @@ public class CotizacionService {
                 .importeLinea(importe)
                 .subtotal(importe)
                 .origen(d.getOrigen())
+                .idSourcing(d.getIdSourcing())
                 .build();
     }
 

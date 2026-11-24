@@ -18,6 +18,7 @@ import com.genlogs.app.sourcing.dto.ReferenciaResponse;
 import com.genlogs.app.sourcing.dto.ResultadoBusquedaResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -26,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.text.Normalizer;
 
 /**
  * BPMN 9-B · Fuentes activas del 9-A vía 9-B.1. Si una tienda no se leyó por scraping
@@ -37,6 +39,11 @@ import java.util.*;
 public class SourcingService {
 
     static final int DIAS_REUSO_POR_DEFECTO = 7;
+    static final int LIMITE_BUSCADOR_DEFECTO = 20;
+    static final int LIMITE_BUSCADOR_MAXIMO = 50;
+    /** Acentos que se ignoran al buscar en el historial. */
+    static final String ACENTOS = "áàäâãéèëêíìïîóòöôõúùüûñ";
+    static final String SIN_ACENTOS = "aaaaaeeeeiiiiooooouuuun";
 
     private final HistorialSourcingRepository historialRepository;
     private final SolicitudItemRepository solicitudItemRepository;
@@ -219,6 +226,31 @@ public class SourcingService {
         return lista.stream().map(ReferenciaResponse::de).toList();
     }
 
+    /**
+     * Sin {@code q} se comporta como {@link #listar(Long, String)}.
+     * Con {@code q} busca en título, N.º de parte y marca (sin mayúsculas ni acentos).
+     */
+    @Transactional(readOnly = true)
+    public List<ReferenciaResponse> listar(Long idSolicitudItem, String numeroParte,
+                                            String q, Boolean soloElegibles, Integer limite) {
+        if (q == null) {
+            return listar(idSolicitudItem, numeroParte);
+        }
+        int tope = limite == null ? LIMITE_BUSCADOR_DEFECTO : limite;
+        if (tope < 1) {
+            throw new BusinessException("El límite tiene que ser al menos 1");
+        }
+        if (tope > LIMITE_BUSCADOR_MAXIMO) {
+            tope = LIMITE_BUSCADOR_MAXIMO;
+        }
+        return historialRepository.buscarPorTexto(
+                        patronBusqueda(q), ACENTOS, SIN_ACENTOS, Boolean.TRUE.equals(soloElegibles),
+                        PageRequest.of(0, tope))
+                .stream()
+                .map(ReferenciaResponse::de)
+                .toList();
+    }
+
     @Transactional
     public ReferenciaResponse cambiarEstado(Long idSourcing, EstadoSourcing nuevo) {
         if (nuevo == null || !nuevo.puedeMarcarseManualmente()) {
@@ -230,6 +262,40 @@ public class SourcingService {
             throw new BusinessException("La referencia ya se convirtió en producto y no puede cambiar de estado");
         }
         h.setEstado(nuevo);
+        if (nuevo == EstadoSourcing.UTIL) {
+            h.setMarcadaUtilDesde(OrigenMarcaUtil.BUSQUEDA);
+            h.setMarcadaUtilPor(usuarioActual());
+            h.setMarcadaUtilEn(LocalDateTime.now(clock));
+        } else if (nuevo == EstadoSourcing.DESCARTADO) {
+            h.setMarcadaUtilDesde(null);
+            h.setMarcadaUtilPor(null);
+            h.setMarcadaUtilEn(null);
+        }
+        return ReferenciaResponse.de(historialRepository.save(h));
+    }
+
+    /**
+     * La cotización elige una referencia. Solo esa fila cambia (R1).
+     * Una descartada no se puede elegir (R2). El origen queda en COTIZACION (R3).
+     */
+    @Transactional
+    public ReferenciaResponse elegirDesdeCotizacion(Long idSourcing, Long idSolicitudItem) {
+        HistorialSourcing h = historialRepository.findById(idSourcing)
+                .orElseThrow(() -> new ResourceNotFoundException("No existe la referencia " + idSourcing));
+        if (h.getEstado() == EstadoSourcing.DESCARTADO) {
+            throw new BusinessException("No se puede elegir una referencia descartada");
+        }
+        if (h.getEstado() == EstadoSourcing.CAPTURADO) {
+            h.setEstado(EstadoSourcing.UTIL);
+            h.setMarcadaUtilDesde(OrigenMarcaUtil.COTIZACION);
+            h.setMarcadaUtilPor(usuarioActual());
+            h.setMarcadaUtilEn(LocalDateTime.now(clock));
+        }
+        if (idSolicitudItem != null && h.getSolicitudItem() == null) {
+            h.setSolicitudItem(solicitudItemRepository.findById(idSolicitudItem)
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "No existe el ítem de solicitud " + idSolicitudItem)));
+        }
         return ReferenciaResponse.de(historialRepository.save(h));
     }
 
@@ -298,6 +364,20 @@ public class SourcingService {
         if (s == null) return null;
         String t = s.trim();
         return t.isEmpty() ? null : t;
+    }
+
+    /** Mínimo 2 caracteres. El patrón ya no distingue mayúsculas ni acentos y no trae comodines libres. */
+    static String patronBusqueda(String q) {
+        String limpio = sinAcentos(q).trim().toLowerCase(Locale.ROOT);
+        if (limpio.length() < 2) {
+            throw new BusinessException("Escribe al menos 2 caracteres para buscar");
+        }
+        return "%" + limpio.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+    }
+
+    private static String sinAcentos(String texto) {
+        String normal = Normalizer.normalize(texto, Normalizer.Form.NFD);
+        return normal.replaceAll("\\p{M}", "");
     }
 
     private static String recortar(String s, int max) {

@@ -79,4 +79,23 @@ class SourcingSeguridadTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{\"numeroParte\":\"\"}"))
                 .andExpect(status().isBadRequest());
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"JEFE_ADMINISTRATIVO", "GERENTE_GENERAL", "CONTADOR_GENERAL", "CLIENTE"})
+    void soloElAsistenteEligeDesdeLaCotizacion(String rol) throws Exception {
+        mockMvc.perform(post("/api/sourcing/1/elegir-desde-cotizacion")
+                        .with(user("u").roles(rol))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void elAsistentePasaLaSeguridadAlElegir() throws Exception {
+        mockMvc.perform(post("/api/sourcing/999999/elegir-desde-cotizacion")
+                        .with(user("asistente").roles("ASISTENTE_LOGISTICO"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isNotFound());
+    }
 }

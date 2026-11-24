@@ -96,6 +96,18 @@ public class HistorialSourcing {
     @Column(name = "id_producto")
     private Long idProducto;
 
+    /** BUSQUEDA o COTIZACION. Nulo si nunca se marcó ÚTIL, o si luego se descartó. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "marcada_util_desde", length = 12)
+    private OrigenMarcaUtil marcadaUtilDesde;
+
+    @Column(name = "marcada_util_en")
+    private LocalDateTime marcadaUtilEn;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "marcada_util_por")
+    private Usuario marcadaUtilPor;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "creado_por")
     private Usuario creadoPor;
