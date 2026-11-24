@@ -153,7 +153,7 @@ class MatrizRolesTest {
                 // ---- Comprobantes y cobranza: registra el Contador; anula el Jefe (BE-A) ----
                 caso("Comprobantes", "PATCH", "/api/facturacion/" + id + "/pago",
                         "{\"montoPagado\":1,\"fechaPago\":\"2026-11-01\",\"medioPago\":\"TRANSFERENCIA\"}",
-                        "CONTADOR_GENERAL"),
+                        "CONTADOR_GENERAL", "JEFE_ADMINISTRATIVO"),
                 caso("Comprobantes", "PATCH", "/api/facturacion/" + id + "/estado", "{\"codigoEstado\":\"ANULADA\"}",
                         "JEFE_ADMINISTRATIVO"),
                 // S2: ver comprobantes, sin Supervisor SST ni Asistente Logístico.
