@@ -124,7 +124,12 @@ public class PasswordResetService {
         verificarUsuarioHabilitado(resetToken.getUsuario());
 
         long segundos = Math.max(0, Duration.between(LocalDateTime.now(), resetToken.getExpiresAt()).getSeconds());
-        return new TokenResetInfoResponse(segundos);
+        return new TokenResetInfoResponse(segundos, esCliente(resetToken.getUsuario()));
+    }
+
+    /** v3.4: la cuenta es del portal del cliente (rol CLIENTE). */
+    static boolean esCliente(Usuario usuario) {
+        return usuario.getRol() != null && "CLIENTE".equalsIgnoreCase(usuario.getRol().getNombreRol());
     }
 
     @Transactional
