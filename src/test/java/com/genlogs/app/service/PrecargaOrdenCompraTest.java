@@ -80,7 +80,7 @@ class PrecargaOrdenCompraTest {
     }
 
     private OrdenCompraService servicio() {
-        return new OrdenCompraService(ordenes, cotizaciones, null, null, null, null, null, null, detalles);
+        return new OrdenCompraService(ordenes, cotizaciones, null, null, null, null, null, null, detalles, null);
     }
 
     private static Cotizacion cotizacion(String estadoCodigo, String monedaCodigo, BigDecimal tipoCambio) {

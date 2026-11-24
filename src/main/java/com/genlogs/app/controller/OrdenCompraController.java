@@ -21,6 +21,7 @@ import com.genlogs.app.dto.OrdenCompraRequest;
 import com.genlogs.app.dto.OrdenCompraResponse;
 import com.genlogs.app.dto.PaginaResponse;
 import com.genlogs.app.dto.PrecargaOrdenCompraResponse;
+import com.genlogs.app.dto.SeguimientoOrdenCompraResponse;
 import com.genlogs.app.service.OrdenCompraService;
 import com.genlogs.app.service.PermisosOrdenCompra;
 import com.genlogs.app.service.FacturacionService;
@@ -62,6 +63,13 @@ public class OrdenCompraController {
     @GetMapping("/{id}")
     public ResponseEntity<OrdenCompraResponse> buscarPorId(@PathVariable Long id) {
         return ResponseEntity.ok(ordenCompraService.buscarPorId(id));
+    }
+
+    /** Historial de la orden: creación, cambios de estado, PDF y OC del cliente. */
+    @PreAuthorize(PermisosOrdenCompra.VER)
+    @GetMapping("/{id}/seguimiento")
+    public ResponseEntity<List<SeguimientoOrdenCompraResponse>> seguimiento(@PathVariable Long id) {
+        return ResponseEntity.ok(ordenCompraService.seguimiento(id));
     }
 
     @PreAuthorize(PermisosOrdenCompra.VER)

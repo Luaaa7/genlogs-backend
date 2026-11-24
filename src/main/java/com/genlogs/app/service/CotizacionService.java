@@ -1366,7 +1366,6 @@ public class CotizacionService {
             throw new BusinessException("Indica el tipo de cambio y su fecha");
         }
         if (!traeValor) {
-            // TODO quitar cuando el frontend envíe el cambio propuesto
             log.warn("Alta USD sin tipo de cambio propuesto; se usa el vigente de forma transitoria");
             return tipoCambioCotizacion.vigente();
         }

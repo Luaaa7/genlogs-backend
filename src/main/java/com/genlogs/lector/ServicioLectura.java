@@ -23,7 +23,7 @@ import java.util.concurrent.*;
 public final class ServicioLectura implements AutoCloseable {
     @FunctionalInterface public interface Motor { Respuesta ejecutar(String operacion, Peticion peticion); }
     private static final int MAX_BODY = 512 * 1024;
-    private static final ObjectMapper JSON = new ObjectMapper().setSerializationInclusion(JsonInclude.Include.NON_NULL);
+        private static final ObjectMapper JSON = new ObjectMapper().setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL);
     private final HttpServer server;
     private final ExecutorService handlers = Executors.newFixedThreadPool(4);
     private final ExecutorService workers = Executors.newFixedThreadPool(2);

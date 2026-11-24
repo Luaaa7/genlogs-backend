@@ -14,14 +14,13 @@ import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.*;
-import java.util.concurrent.Flow;
 
 /** P2: integración optativa, sin cambiar los lectores existentes ni el interruptor de búsqueda. */
 @Component
 public class LectorRemotoClient {
     private static final int MAX_RESPUESTA = 2 * 1024 * 1024;
     private final HttpClient http;
-    private final ObjectMapper json = new ObjectMapper().setSerializationInclusion(JsonInclude.Include.NON_NULL);
+        private final ObjectMapper json = new ObjectMapper().setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL);
     private final URI base;
     private final String token;
     private final long timeoutMs;

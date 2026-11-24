@@ -23,6 +23,7 @@ import com.genlogs.app.dto.OrdenCompraRequest;
 import com.genlogs.app.dto.PaginaResponse;
 import com.genlogs.app.dto.PrecargaOrdenCompraResponse;
 import com.genlogs.app.dto.OrdenCompraResponse;
+import com.genlogs.app.dto.SeguimientoOrdenCompraResponse;
 import com.genlogs.app.enums.CodigoEstadoCotizacion;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.EstadoNoPermitidoException;
@@ -57,6 +58,7 @@ public class OrdenCompraService {
     private final FacturacionRepository facturacionRepository;
     private final LectorOcPdf lectorOcPdf;
     private final CotizacionDetalleRepository cotizacionDetalleRepository;
+    private final SeguimientoOrdenCompraService seguimientos;
 
     @Transactional(readOnly = true)
     public PaginaResponse<OrdenCompraResponse> listar(String estadoCodigo, Long idCotizacion, int page, int size) {
@@ -89,6 +91,13 @@ public class OrdenCompraService {
         return ordenes.stream()
                 .map(oc -> aRespuesta(oc, totales.get(oc.getCotizacion().getIdCotizacion())))
                 .collect(Collectors.toList());
+    }
+
+    /** Historial de la orden, del más reciente al más antiguo. */
+    @Transactional(readOnly = true)
+    public List<SeguimientoOrdenCompraResponse> seguimiento(Long idOrdenCompra) {
+        obtenerOLanzar(idOrdenCompra);
+        return seguimientos.listar(idOrdenCompra);
     }
 
     @Transactional
@@ -128,6 +137,8 @@ public class OrdenCompraService {
         ordenCompra.setProcessCreate("ALTA_ORDEN_COMPRA");
 
         ordenCompra = ordenCompraRepository.save(ordenCompra);
+        registrarSeguimiento(ordenCompra, null, usuario, "ORDEN_CREADA",
+                "Orden registrada desde la cotización " + cotizacion.getCodigoCotizacion() + ".");
 
         return toResponse(ordenCompra);
     }
@@ -263,7 +274,11 @@ public class OrdenCompraService {
                 .build();
         ordenCompra.setUserCreate(usuario.getNombreUsuario());
         ordenCompra.setProcessCreate("ALTA_AUTOMATICA_ORDEN_COMPRA");
-        return toResponse(ordenCompraRepository.save(ordenCompra));
+        ordenCompra = ordenCompraRepository.save(ordenCompra);
+        registrarSeguimiento(ordenCompra, null, usuario, "ORDEN_CREADA",
+                "Orden abierta automáticamente al aceptar el cliente la cotización "
+                        + cotizacion.getCodigoCotizacion() + ".");
+        return toResponse(ordenCompra);
     }
 
     /** Siguiente número con el formato de las órdenes (0031-10): correlativo de 4 dígitos + "-10". */
@@ -307,6 +322,7 @@ public class OrdenCompraService {
                     "Esta orden ya tiene una factura. Para cambiar su estado, primero anula la factura.");
         }
 
+        EstadoOrdenCompra estadoAnterior = ordenCompra.getEstadoOrdenCompra();
         ordenCompra.setEstadoOrdenCompra(nuevoEstado);
         if (request.getObservaciones() != null) {
             ordenCompra.setObservaciones(request.getObservaciones());
@@ -318,6 +334,9 @@ public class OrdenCompraService {
         ordenCompra.setDateUpdate(LocalDateTime.now());
 
         ordenCompra = ordenCompraRepository.save(ordenCompra);
+        if (!estadoAnterior.getCodigoEstado().equals(nuevoEstado.getCodigoEstado())) {
+            registrarSeguimiento(ordenCompra, estadoAnterior, usuario, "CAMBIO_ESTADO", request.getObservaciones());
+        }
         return toResponse(ordenCompra);
     }
 
@@ -369,6 +388,8 @@ public class OrdenCompraService {
         ordenCompra.setProcessUpdate("ADJUNTAR_ARCHIVO_ORDEN_COMPRA");
         ordenCompra.setDateUpdate(LocalDateTime.now());
         ordenCompra = ordenCompraRepository.save(ordenCompra);
+        registrarSeguimiento(ordenCompra, null, usuario, "ARCHIVO_OC",
+                leida.hayAlgo() ? "Se subió el PDF de la OC y se leyeron datos." : "Se subió el PDF de la OC.");
         return toResponse(ordenCompra);
     }
 
@@ -394,10 +415,21 @@ public class OrdenCompraService {
         ordenCompra.setProcessUpdate("CONFIRMAR_OC_CLIENTE");
         ordenCompra.setDateUpdate(LocalDateTime.now());
         ordenCompra = ordenCompraRepository.save(ordenCompra);
+        registrarSeguimiento(ordenCompra, null, usuario, "OC_CLIENTE",
+                "OC del cliente " + ordenCompra.getNumeroOcCliente() + " · monto " + request.getMonto()
+                        + (request.getMoneda() != null ? " " + request.getMoneda().toUpperCase(Locale.ROOT) : "") + ".");
         return toResponse(ordenCompra);
     }
 
     // ------------------------------------------------------------------
+
+    /** Anota un evento en el seguimiento de la orden. */
+    private void registrarSeguimiento(OrdenCompra orden, EstadoOrdenCompra anterior, Usuario usuario, String tipo, String comentario) {
+        if (seguimientos == null) {
+            return;
+        }
+        seguimientos.registrar(orden, anterior, usuario, tipo, comentario);
+    }
 
     private OrdenCompra obtenerOLanzar(Long idOrdenCompra) {
         return ordenCompraRepository.findById(idOrdenCompra)

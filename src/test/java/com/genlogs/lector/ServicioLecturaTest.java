@@ -3,7 +3,6 @@ package com.genlogs.lector;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.genlogs.app.sourcing.lector.ContratoLector.*;
 import com.genlogs.app.sourcing.lector.LectorRemotoClient;
-import com.genlogs.app.sourcing.lector.LectorRemotoException;
 import org.junit.jupiter.api.Test;
 import java.net.*;
 import java.net.http.*;
@@ -14,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ServicioLecturaTest {
     private static final String TOKEN = "test-internal-token-at-least-32-characters";
-    private static final ObjectMapper JSON = new ObjectMapper().setSerializationInclusion(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL);
+    private static final ObjectMapper JSON = new ObjectMapper().setDefaultPropertyInclusion(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL);
     private final HttpClient http = HttpClient.newHttpClient();
     private HttpResponse<String> post(ServicioLectura service, String path, String token, String body) throws Exception {
         return http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + service.port() + path))
