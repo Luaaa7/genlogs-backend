@@ -60,6 +60,8 @@ public class RespuestaClienteService {
     static final String FECHA_INVALIDA = "La fecha de respuesta no es válida. Usa el formato aaaa-mm-dd";
     static final String FECHA_FUTURA = "La fecha de respuesta no puede ser futura";
     static final String MEDIO_INVALIDO = "Indica el medio: correo, whatsapp, llamada u otro";
+    static final int MAX_DETALLE_MEDIO = 60;
+    static final String DETALLE_MEDIO_LARGO = "El detalle del medio no puede superar 60 caracteres";
     static final String EVIDENCIA_ACEPTACION =
             "Para registrar que el cliente aceptó, escribe una nota o adjunta la evidencia";
     static final String MOTIVO_CAMBIOS = "Indica el motivo del cambio que pidió el cliente";
@@ -96,6 +98,7 @@ public class RespuestaClienteService {
         CodigoEstadoCotizacion destino = destino(request);
         LocalDate dia = fecha(request == null ? null : request.getFechaRespuesta());
         String medioNormal = medio(request == null ? null : request.getMedio());
+        String detalleMedio = detalleMedio(medioNormal, request == null ? null : request.getMedioDetalle());
         String texto = request == null || request.getComentario() == null ? "" : request.getComentario().trim();
         Long idAdjunto = request == null ? null : request.getIdAdjunto();
         exigirTexto(destino, texto, idAdjunto);
@@ -115,7 +118,7 @@ public class RespuestaClienteService {
         EstadoCotizacion nuevo = estadoDe(destino);
         aplicar(cotizacion, nuevo, usuario, PROCESO_RESPUESTA);
         cotizacionRepository.save(cotizacion);
-        guardarSeguimiento(cotizacion, anterior, nuevo, usuario, texto, dia, medioNormal,
+        guardarSeguimiento(cotizacion, anterior, nuevo, usuario, texto, dia, medioNormal, detalleMedio,
                 adjunto == null ? null : adjunto.getUrlArchivo(), adjunto, PROCESO_RESPUESTA);
         return destino.name();
     }
@@ -194,7 +197,7 @@ public class RespuestaClienteService {
         aplicar(cotizacion, nuevo, usuario, PROCESO_RESPUESTA);
         cotizacionRepository.save(cotizacion);
         SeguimientoCotizacion seguimiento = guardarSeguimiento(
-                cotizacion, anterior, nuevo, usuario, texto, fecha, medioNormal, ruta, null, PROCESO_RESPUESTA);
+                cotizacion, anterior, nuevo, usuario, texto, fecha, medioNormal, null, ruta, null, PROCESO_RESPUESTA);
         return aRespuesta(seguimiento, anterior, nuevo, usuario);
     }
 
@@ -274,6 +277,7 @@ public class RespuestaClienteService {
             String nota,
             LocalDate fechaRespuesta,
             String medio,
+            String medioDetalle,
             String ruta,
             AdjuntoCotizacion adjunto,
             String proceso) {
@@ -293,6 +297,7 @@ public class RespuestaClienteService {
         fila.setComentario(nota == null || nota.isBlank() ? null : nota);
         fila.setFechaRespuesta(fechaRespuesta);
         fila.setMedio(medio);
+        fila.setMedioDetalle(medioDetalle);
         fila.setRutaAdjunto(ruta);
         fila.setAdjunto(adjunto);
         if (fila.getFechaEvento() == null) {
@@ -356,6 +361,7 @@ public class RespuestaClienteService {
                 .observaciones(s.getComentario())
                 .fechaRespuesta(s.getFechaRespuesta())
                 .medio(s.getMedio())
+                .medioDetalle(s.getMedioDetalle())
                 .rutaAdjunto(s.getRutaAdjunto())
                 .rutaVersionPdf(s.getRutaVersionPdf())
                 .idAdjunto(s.getAdjunto() == null ? null : s.getAdjunto().getIdAdjunto())
@@ -425,6 +431,21 @@ public class RespuestaClienteService {
             return limpio;
         }
         throw new BusinessException(MEDIO_INVALIDO);
+    }
+
+    /** El detalle solo vale cuando el medio es "otro"; vacío se guarda como nulo. */
+    static String detalleMedio(String medio, String texto) {
+        if (!"otro".equals(medio) || texto == null) {
+            return null;
+        }
+        String limpio = texto.trim();
+        if (limpio.isEmpty()) {
+            return null;
+        }
+        if (limpio.length() > MAX_DETALLE_MEDIO) {
+            throw new BusinessException(DETALLE_MEDIO_LARGO);
+        }
+        return limpio;
     }
 
     private static String sinAcentos(String texto) {

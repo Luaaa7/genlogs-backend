@@ -1,4 +1,3 @@
-
 package com.genlogs.app.dto;
 
 import java.time.Instant;
@@ -68,6 +67,9 @@ public class SeguimientoCotizacionResponse {
 
     /** correo, whatsapp, llamada u otro. */
     private String medio;
+
+    /** Detalle del medio cuando es "otro". */
+    private String medioDetalle;
 
     /** Ruta o URL del adjunto de evidencia. */
     private String rutaAdjunto;

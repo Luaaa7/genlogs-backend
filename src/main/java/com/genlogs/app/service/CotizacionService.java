@@ -1788,6 +1788,7 @@ public class CotizacionService {
                 .observaciones(s.getComentario())
                 .fechaRespuesta(s.getFechaRespuesta())
                 .medio(s.getMedio())
+                .medioDetalle(s.getMedioDetalle())
                 .rutaAdjunto(s.getRutaAdjunto())
                 .rutaVersionPdf(s.getRutaVersionPdf())
                 .idAdjunto(s.getAdjunto() == null ? null : s.getAdjunto().getIdAdjunto())
