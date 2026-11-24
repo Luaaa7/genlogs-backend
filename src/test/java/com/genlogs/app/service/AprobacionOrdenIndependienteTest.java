@@ -404,6 +404,18 @@ public class AprobacionOrdenIndependienteTest {
         if (idCotizacion == null) {
             return;
         }
+
+        entityManager.createNativeQuery("""
+                DELETE FROM seguimiento_orden_compra
+                WHERE id_orden_compra IN (
+                    SELECT id_orden_compra
+                    FROM orden_compra
+                    WHERE id_cotizacion = :id
+                )
+                """)
+                .setParameter("id", idCotizacion)
+                .executeUpdate();
+
         entityManager.createQuery("delete from OrdenCompra o where o.cotizacion.idCotizacion = :id")
                 .setParameter("id", idCotizacion).executeUpdate();
         entityManager.createQuery("delete from SeguimientoCotizacion s where s.cotizacion.idCotizacion = :id")
