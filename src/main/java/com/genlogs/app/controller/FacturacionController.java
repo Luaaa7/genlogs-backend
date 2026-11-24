@@ -114,7 +114,7 @@ public class FacturacionController {
         return ResponseEntity.ok(facturacionService.cambiarEstado(id, request));
     }
 
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR','CONTADOR_GENERAL')")
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR','JEFE_ADMINISTRATIVO','CONTADOR_GENERAL')")
     @PatchMapping("/{id}/pago")
     public ResponseEntity<FacturacionResponse> registrarPago(
             @PathVariable Long id, @Valid @RequestBody RegistrarPagoRequest request) {
