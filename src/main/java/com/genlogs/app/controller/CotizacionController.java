@@ -1,4 +1,4 @@
-package com.genlogs.app.controller;
+﻿package com.genlogs.app.controller;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -18,7 +18,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -33,15 +32,12 @@ import com.genlogs.app.dto.CotizacionRequest;
 import com.genlogs.app.dto.CotizacionResponse;
 import com.genlogs.app.dto.EnviarCotizacionRequest;
 import com.genlogs.app.dto.EnviarCotizacionResponse;
-import com.genlogs.app.dto.RespuestaClienteRegistradaResponse;
-import com.genlogs.app.dto.RespuestaClienteRequest;
 import com.genlogs.app.dto.EstadisticasCotizacionResponse;
 import com.genlogs.app.dto.PaginaResponse;
 import com.genlogs.app.dto.SeguimientoCotizacionResponse;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.service.CotizacionService;
 import com.genlogs.app.service.PermisosCotizacion;
-import com.genlogs.app.service.RespuestaClienteService;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -52,7 +48,6 @@ import lombok.RequiredArgsConstructor;
 public class CotizacionController {
 
     private final CotizacionService cotizacionService;
-    private final RespuestaClienteService respuestaClienteService;
 
     /**
      * Lista blanca de campos de ordenamiento del listado.
@@ -69,7 +64,7 @@ public class CotizacionController {
 
     static {
         CAMPOS_ORDENAMIENTO.put("fechaCotizacion", "fechaCotizacion");
-        // Alias histórico del frontend: la entidad NO tiene "fechaCreacion"
+        // Alias histÃ³rico del frontend: la entidad NO tiene "fechaCreacion"
         // (la fecha de alta es Auditable.dateCreate, columna date_create).
         CAMPOS_ORDENAMIENTO.put("fechaCreacion", "fechaCotizacion");
         CAMPOS_ORDENAMIENTO.put("dateCreate", "dateCreate");
@@ -81,7 +76,7 @@ public class CotizacionController {
 
     /**
      * Listado paginado con filtros, consumido por CotizacionesListPage.tsx
-     * (cotizacionesApi.listarCotizaciones). Los nombres de parámetros
+     * (cotizacionesApi.listarCotizaciones). Los nombres de parÃ¡metros
      * (estadoCotizacion, clienteId, moneda, page, size, sortBy, sortDir)
      * coinciden con CotizacionesFilterParams del frontend.
      */
@@ -101,8 +96,8 @@ public class CotizacionController {
     }
 
     /**
-     * Traduce el sortBy del frontend a un atributo válido de la entidad
-     * Cotizacion y valida la dirección. Un campo o una dirección no válidos
+     * Traduce el sortBy del frontend a un atributo vÃ¡lido de la entidad
+     * Cotizacion y valida la direcciÃ³n. Un campo o una direcciÃ³n no vÃ¡lidos
      * devuelven 400 (BusinessException) en lugar de reventar con 500 al
      * construir la consulta.
      */
@@ -110,7 +105,7 @@ public class CotizacionController {
         String clave = sortBy == null ? "" : sortBy.trim();
         String atributo = CAMPOS_ORDENAMIENTO.get(clave);
         if (atributo == null) {
-            throw new BusinessException("Campo de ordenamiento inválido: '" + sortBy + "'. Campos permitidos: "
+            throw new BusinessException("Campo de ordenamiento invÃ¡lido: '" + sortBy + "'. Campos permitidos: "
                     + String.join(", ", CAMPOS_ORDENAMIENTO.keySet()));
         }
 
@@ -121,11 +116,11 @@ public class CotizacionController {
         } else if ("DESC".equals(direccion)) {
             direction = Sort.Direction.DESC;
         } else {
-            throw new BusinessException("Dirección de ordenamiento inválida: '" + sortDir + "'. Use ASC o DESC.");
+            throw new BusinessException("DirecciÃ³n de ordenamiento invÃ¡lida: '" + sortDir + "'. Use ASC o DESC.");
         }
 
-        // fechaCotizacion es solo fecha (sin hora): si varias caen el mismo día, desempata
-        // por la hora real de creación y luego por id, para que lo último salga primero.
+        // fechaCotizacion es solo fecha (sin hora): si varias caen el mismo dÃ­a, desempata
+        // por la hora real de creaciÃ³n y luego por id, para que lo Ãºltimo salga primero.
         Sort sort = Sort.by(direction, atributo);
         if (!"dateCreate".equals(atributo)) {
             sort = sort.and(Sort.by(direction, "dateCreate"));
@@ -179,10 +174,10 @@ public class CotizacionController {
     }
 
     /**
-     * Estadísticas agregadas para CotizacionesListPage.tsx
+     * EstadÃ­sticas agregadas para CotizacionesListPage.tsx
      * (cotizacionesApi.obtenerEstadisticas). Nota: se declara antes de
-     * "/{id}" solo por orden de lectura — Spring ya prioriza el segmento
-     * literal "estadisticas" sobre la variable {id}, así que no hay riesgo
+     * "/{id}" solo por orden de lectura â€” Spring ya prioriza el segmento
+     * literal "estadisticas" sobre la variable {id}, asÃ­ que no hay riesgo
      * de que "estadisticas" se intente parsear como Long.
      */
     @PreAuthorize(PermisosCotizacion.VER)
@@ -197,20 +192,13 @@ public class CotizacionController {
         return ResponseEntity.status(HttpStatus.CREATED).body(cotizacionService.crear(request));
     }
 
-    @PreAuthorize(PermisosCotizacion.CREAR)
-    @PutMapping("/{id}")
-    public ResponseEntity<CotizacionResponse> actualizar(
-            @PathVariable Long id, @Valid @RequestBody CotizacionRequest request) {
-        return ResponseEntity.ok(cotizacionService.actualizar(id, request));
-    }
-
     @PreAuthorize(PermisosCotizacion.APROBAR)
     @PatchMapping("/{id}/estado")
     public ResponseEntity<CotizacionResponse> cambiarEstado(
             @PathVariable Long id, @Valid @RequestBody CambiarEstadoCotizacionRequest request) {
         CotizacionResponse respuesta = cotizacionService.cambiarEstado(id, request);
-        // Aprobada => se registra sola su orden de compra. Va después de guardar el estado
-        // (otra transacción): si la orden fallara, la aprobación igual queda.
+        // Aprobada => se registra sola su orden de compra. Va despuÃ©s de guardar el estado
+        // (otra transacciÃ³n): si la orden fallara, la aprobaciÃ³n igual queda.
         cotizacionService.registrarOrdenSiAprobada(id, respuesta.getEstadoCodigo());
         return ResponseEntity.ok(respuesta);
     }
@@ -246,61 +234,6 @@ public class CotizacionController {
     public ResponseEntity<Void> eliminarAdjunto(@PathVariable Long idCotizacion, @PathVariable Long idAdjunto) {
         cotizacionService.eliminarAdjunto(idCotizacion, idAdjunto);
         return ResponseEntity.noContent().build();
-    }
-
-    /**
-     * Envía el correo de la cotización y, si sale, la deja en ENVIADA.
-     * Solo desde "Aprobada por el Jefe".
-     */
-    @PreAuthorize(PermisosCotizacion.REGISTRAR_RESPUESTA)
-    @PostMapping("/{id}/marcar-enviada")
-    public ResponseEntity<CotizacionResponse> marcarEnviada(@PathVariable Long id) {
-        respuestaClienteService.marcarEnviada(id);
-        return ResponseEntity.ok(cotizacionService.buscarPorId(id));
-    }
-
-    /**
-     * Respuesta del cliente que registra el vendedor o el jefe
-     * (ACEPTADA_CLIENTE, EN_NEGOCIACION o RECHAZADA), por codigoEstado o por accion.
-     * La aceptación ya quedó guardada cuando vuelve el servicio. Recién ahí,
-     * igual que en el portal, se llama a registrarOrdenSiAprobada con el código
-     * guardado. EN_NEGOCIACION y RECHAZADA no crean orden. Si el alta automática
-     * falla, la aceptación se conserva y queda el alta manual.
-     */
-    @PreAuthorize(PermisosCotizacion.REGISTRAR_RESPUESTA)
-    @PostMapping(value = "/{id}/respuesta-cliente", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> registrarRespuestaCliente(
-            @PathVariable Long id, @RequestBody RespuestaClienteRequest request) {
-        if (request != null && request.getAccion() != null && !request.getAccion().isBlank()) {
-            SeguimientoCotizacionResponse seguimiento = respuestaClienteService.registrarRespuesta(
-                    id, request.getAccion(), request.getFechaRespuesta(), request.getMedio(), request.getNota(), null);
-            cotizacionService.registrarOrdenSiAprobada(id, seguimiento.getCodigoEstado());
-            return ResponseEntity.ok(RespuestaClienteRegistradaResponse.builder()
-                    .cotizacion(cotizacionService.buscarPorId(id))
-                    .seguimiento(seguimiento)
-                    .build());
-        }
-        String codigo = respuestaClienteService.registrar(id, request);
-        cotizacionService.registrarOrdenSiAprobada(id, codigo);
-        return ResponseEntity.ok(cotizacionService.buscarPorId(id));
-    }
-
-    @PreAuthorize(PermisosCotizacion.REGISTRAR_RESPUESTA)
-    @PostMapping(value = "/{id}/respuesta-cliente", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<RespuestaClienteRegistradaResponse> registrarRespuestaClienteConAdjunto(
-            @PathVariable Long id,
-            @RequestParam String accion,
-            @RequestParam("fecha_respuesta") String fechaRespuesta,
-            @RequestParam String medio,
-            @RequestParam(required = false) String nota,
-            @RequestParam(required = false) MultipartFile adjunto) {
-        SeguimientoCotizacionResponse seguimiento = respuestaClienteService.registrarRespuesta(
-                id, accion, fechaRespuesta, medio, nota, adjunto);
-        cotizacionService.registrarOrdenSiAprobada(id, seguimiento.getCodigoEstado());
-        return ResponseEntity.ok(RespuestaClienteRegistradaResponse.builder()
-                .cotizacion(cotizacionService.buscarPorId(id))
-                .seguimiento(seguimiento)
-                .build());
     }
 
     @PreAuthorize(PermisosCotizacion.CREAR)
