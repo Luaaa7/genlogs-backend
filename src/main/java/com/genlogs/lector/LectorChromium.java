@@ -112,8 +112,12 @@ public final class LectorChromium implements ServicioLectura.Motor {
         URI original = URI.create(req.url()), form = URI.create(action), actual = URI.create(page.url());
         if (!original.getAuthority().equals(form.getAuthority()) || !original.getAuthority().equals(actual.getAuthority())
                 || !"https".equals(form.getScheme())) return estado(Estado.URL_NO_PERMITIDA);
-        context.setDefaultTimeout(restante(deadline));
-        page.locator("css=" + texto(login, "usuario")).fill(req.credenciales().usuario());
+        if (continuar == null) {
+            // Ingreso de una sola pantalla. Con CONTINUAR el usuario ya se escribió en la primera pantalla y en la
+            // segunda esa casilla suele desaparecer (eBay, Amazon): volver a llenarla agotaría el tiempo.
+            context.setDefaultTimeout(restante(deadline));
+            page.locator("css=" + texto(login, "usuario")).fill(req.credenciales().usuario());
+        }
         context.setDefaultTimeout(restante(deadline));
         page.locator("css=" + texto(login, "clave")).fill(req.credenciales().clave());
         context.setDefaultTimeout(restante(deadline));
