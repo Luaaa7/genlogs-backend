@@ -92,24 +92,43 @@ public final class LectorChromium implements ServicioLectura.Motor {
     }
 
     /**
-     * Ingreso de la tienda. Si se agota el tiempo, deja en el registro del servicio el paso donde se quedó
-     * (solo el nombre del paso y la fuente: nunca selectores con datos, usuarios ni claves).
+     * Ingreso de la tienda. Si se agota el tiempo, deja en el registro del servicio el paso donde se quedó y
+     * qué página veía el navegador (título, dirección sin parámetros y cuántas casillas visibles). Nunca
+     * registra selectores con datos, usuarios ni claves.
      */
     private Respuesta iniciarSesion(Page page, BrowserContext context, Peticion req, long deadline) throws Exception {
         String[] paso = {"abrir la página"};
+        long hastaAbrir = transcurridoMs(deadline);
         try {
             return iniciarSesionPaso(page, context, req, deadline, paso);
         } catch (TimeoutError e) {
-            registrarTiempoAgotado(req, paso[0]);
+            registrarTiempoAgotado(page, req, paso[0], hastaAbrir);
             throw e;
         } catch (LectorRemotoException e) {
-            if (e.getEstado() == Estado.TIEMPO_AGOTADO) registrarTiempoAgotado(req, paso[0]);
+            if (e.getEstado() == Estado.TIEMPO_AGOTADO) registrarTiempoAgotado(page, req, paso[0], hastaAbrir);
             throw e;
         }
     }
 
-    private static void registrarTiempoAgotado(Peticion req, String paso) {
-        System.out.println("Ingreso " + req.fuente() + ": se agotó el tiempo en el paso «" + paso + "»");
+    private long transcurridoMs(long deadline) {
+        return timeoutMs - Math.max(0, (deadline - System.nanoTime()) / 1_000_000);
+    }
+
+    private void registrarTiempoAgotado(Page page, Peticion req, String paso, long hastaAbrir) {
+        String titulo = "?", sitio = "?";
+        long visibles = -1;
+        try {
+            titulo = page.title();
+            if (titulo.length() > 80) titulo = titulo.substring(0, 80);
+            URI url = URI.create(page.url());
+            sitio = url.getHost() + url.getPath();
+            visibles = ((Number) page.evaluate("() => [...document.querySelectorAll('input')].filter(e => e.getClientRects().length > 0).length")).longValue();
+        } catch (RuntimeException ignorado) {
+            // La página ya no responde: se registra lo que se alcanzó a saber.
+        }
+        System.out.println("Ingreso " + req.fuente() + ": se agotó el tiempo en el paso «" + paso + "»"
+                + " | abrir la página tardó " + hastaAbrir + " ms de " + timeoutMs + " ms"
+                + " | página: «" + titulo + "» " + sitio + " | casillas visibles: " + visibles);
     }
 
     private Respuesta iniciarSesionPaso(Page page, BrowserContext context, Peticion req, long deadline, String[] paso) throws Exception {
