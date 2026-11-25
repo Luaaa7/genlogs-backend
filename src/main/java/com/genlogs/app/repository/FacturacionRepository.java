@@ -34,7 +34,7 @@ public interface FacturacionRepository extends JpaRepository<Facturacion, Long> 
     @Query("SELECT f.numeroComprobante FROM Facturacion f WHERE f.serieComprobante = :serie")
     List<String> numerosPorSerie(@Param("serie") String serie);
 
-    @Query("SELECT f FROM Facturacion f WHERE f.ordenCompra.cotizacion.cliente.idCliente = :idCliente AND f.status = 'A' ORDER BY f.fechaEmision DESC")
+    @Query("SELECT f FROM Facturacion f WHERE f.ordenCompra.cotizacion.cliente.idCliente = :idCliente AND f.status = 'A' ORDER BY f.dateCreate DESC, f.idFacturacion DESC")
     List<Facturacion> findByCliente(@Param("idCliente") Long idCliente);
 
     /** Comprobantes del periodo (módulo de Reportes): filtro en la BD. */
@@ -46,7 +46,7 @@ public interface FacturacionRepository extends JpaRepository<Facturacion, Long> 
             + "AND (:codigoEstado = '' OR f.estadoFacturacion.codigoEstado = :codigoEstado) "
             + "AND (:codigoTipo = '' OR f.tipoComprobante.codigoTipo = :codigoTipo) "
             + "AND (:idOrdenCompra = 0L OR f.ordenCompra.idOrdenCompra = :idOrdenCompra) "
-            + "ORDER BY f.fechaEmision DESC, f.idFacturacion DESC",
+            + "ORDER BY f.dateCreate DESC, f.idFacturacion DESC",
             countQuery = "SELECT COUNT(f) FROM Facturacion f WHERE f.status = 'A' "
             + "AND (:codigoEstado = '' OR f.estadoFacturacion.codigoEstado = :codigoEstado) "
             + "AND (:codigoTipo = '' OR f.tipoComprobante.codigoTipo = :codigoTipo) "
