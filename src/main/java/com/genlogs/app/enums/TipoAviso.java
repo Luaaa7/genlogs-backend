@@ -29,5 +29,7 @@ public enum TipoAviso {
     FUENTE_CON_ERROR,
     /** v3.4: Factiliza rechazó la clave (plan vencido, sin consultas o token inválido). Al Jefe, una vez al día. */
     FACTILIZA_SIN_PLAN,
+    /** v3.4 (BPMN 4.1): el cliente pagó un comprobante en línea, o el pago necesita revisión. Al Jefe y al Contador. */
+    PAGO_EN_LINEA,
     GENERAL
 }
