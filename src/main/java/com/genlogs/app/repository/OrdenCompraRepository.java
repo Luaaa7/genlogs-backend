@@ -29,7 +29,7 @@ public interface OrdenCompraRepository extends JpaRepository<OrdenCompra, Long> 
     @org.springframework.data.jpa.repository.Query("SELECT o.numeroOrdenCompra FROM OrdenCompra o")
     List<String> todosLosNumeros();
 
-    @Query("SELECT oc FROM OrdenCompra oc WHERE oc.cotizacion.cliente.idCliente = :idCliente AND oc.status = 'A' ORDER BY oc.fechaRecepcion DESC")
+    @Query("SELECT oc FROM OrdenCompra oc WHERE oc.cotizacion.cliente.idCliente = :idCliente AND oc.status = 'A' ORDER BY oc.dateCreate DESC, oc.idOrdenCompra DESC")
     List<OrdenCompra> findByCliente(@Param("idCliente") Long idCliente);
 
     /** Órdenes de compra del periodo (módulo de Reportes): filtro en la BD. */
@@ -40,7 +40,7 @@ public interface OrdenCompraRepository extends JpaRepository<OrdenCompra, Long> 
     @Query(value = "SELECT oc FROM OrdenCompra oc WHERE oc.status = 'A' "
             + "AND (:codigoEstado = '' OR oc.estadoOrdenCompra.codigoEstado = :codigoEstado) "
             + "AND (:idCotizacion = 0L OR oc.cotizacion.idCotizacion = :idCotizacion) "
-            + "ORDER BY oc.fechaRecepcion DESC, oc.idOrdenCompra DESC",
+            + "ORDER BY oc.dateCreate DESC, oc.idOrdenCompra DESC",
             countQuery = "SELECT COUNT(oc) FROM OrdenCompra oc WHERE oc.status = 'A' "
             + "AND (:codigoEstado = '' OR oc.estadoOrdenCompra.codigoEstado = :codigoEstado) "
             + "AND (:idCotizacion = 0L OR oc.cotizacion.idCotizacion = :idCotizacion)")
