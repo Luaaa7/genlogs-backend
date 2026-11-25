@@ -1,4 +1,4 @@
-﻿package com.genlogs.app.controller;
+package com.genlogs.app.controller;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -64,7 +64,7 @@ public class CotizacionController {
 
     static {
         CAMPOS_ORDENAMIENTO.put("fechaCotizacion", "fechaCotizacion");
-        // Alias histÃ³rico del frontend: la entidad NO tiene "fechaCreacion"
+        // Alias histórico del frontend: la entidad NO tiene "fechaCreacion"
         // (la fecha de alta es Auditable.dateCreate, columna date_create).
         CAMPOS_ORDENAMIENTO.put("fechaCreacion", "fechaCotizacion");
         CAMPOS_ORDENAMIENTO.put("dateCreate", "dateCreate");
@@ -76,7 +76,7 @@ public class CotizacionController {
 
     /**
      * Listado paginado con filtros, consumido por CotizacionesListPage.tsx
-     * (cotizacionesApi.listarCotizaciones). Los nombres de parÃ¡metros
+     * (cotizacionesApi.listarCotizaciones). Los nombres de parámetros
      * (estadoCotizacion, clienteId, moneda, page, size, sortBy, sortDir)
      * coinciden con CotizacionesFilterParams del frontend.
      */
@@ -96,8 +96,8 @@ public class CotizacionController {
     }
 
     /**
-     * Traduce el sortBy del frontend a un atributo vÃ¡lido de la entidad
-     * Cotizacion y valida la direcciÃ³n. Un campo o una direcciÃ³n no vÃ¡lidos
+     * Traduce el sortBy del frontend a un atributo válido de la entidad
+     * Cotizacion y valida la dirección. Un campo o una dirección no válidos
      * devuelven 400 (BusinessException) en lugar de reventar con 500 al
      * construir la consulta.
      */
@@ -105,7 +105,7 @@ public class CotizacionController {
         String clave = sortBy == null ? "" : sortBy.trim();
         String atributo = CAMPOS_ORDENAMIENTO.get(clave);
         if (atributo == null) {
-            throw new BusinessException("Campo de ordenamiento invÃ¡lido: '" + sortBy + "'. Campos permitidos: "
+            throw new BusinessException("Campo de ordenamiento inválido: '" + sortBy + "'. Campos permitidos: "
                     + String.join(", ", CAMPOS_ORDENAMIENTO.keySet()));
         }
 
@@ -116,11 +116,11 @@ public class CotizacionController {
         } else if ("DESC".equals(direccion)) {
             direction = Sort.Direction.DESC;
         } else {
-            throw new BusinessException("DirecciÃ³n de ordenamiento invÃ¡lida: '" + sortDir + "'. Use ASC o DESC.");
+            throw new BusinessException("Dirección de ordenamiento inválida: '" + sortDir + "'. Use ASC o DESC.");
         }
 
-        // fechaCotizacion es solo fecha (sin hora): si varias caen el mismo dÃ­a, desempata
-        // por la hora real de creaciÃ³n y luego por id, para que lo Ãºltimo salga primero.
+        // fechaCotizacion es solo fecha (sin hora): si varias caen el mismo día, desempata
+        // por la hora real de creación y luego por id, para que lo último salga primero.
         Sort sort = Sort.by(direction, atributo);
         if (!"dateCreate".equals(atributo)) {
             sort = sort.and(Sort.by(direction, "dateCreate"));
@@ -174,10 +174,10 @@ public class CotizacionController {
     }
 
     /**
-     * EstadÃ­sticas agregadas para CotizacionesListPage.tsx
+     * Estadísticas agregadas para CotizacionesListPage.tsx
      * (cotizacionesApi.obtenerEstadisticas). Nota: se declara antes de
-     * "/{id}" solo por orden de lectura â€” Spring ya prioriza el segmento
-     * literal "estadisticas" sobre la variable {id}, asÃ­ que no hay riesgo
+     * "/{id}" solo por orden de lectura — Spring ya prioriza el segmento
+     * literal "estadisticas" sobre la variable {id}, así que no hay riesgo
      * de que "estadisticas" se intente parsear como Long.
      */
     @PreAuthorize(PermisosCotizacion.VER)
@@ -197,8 +197,8 @@ public class CotizacionController {
     public ResponseEntity<CotizacionResponse> cambiarEstado(
             @PathVariable Long id, @Valid @RequestBody CambiarEstadoCotizacionRequest request) {
         CotizacionResponse respuesta = cotizacionService.cambiarEstado(id, request);
-        // Aprobada => se registra sola su orden de compra. Va despuÃ©s de guardar el estado
-        // (otra transacciÃ³n): si la orden fallara, la aprobaciÃ³n igual queda.
+        // Aprobada => se registra sola su orden de compra. Va después de guardar el estado
+        // (otra transacción): si la orden fallara, la aprobación igual queda.
         cotizacionService.registrarOrdenSiAprobada(id, respuesta.getEstadoCodigo());
         return ResponseEntity.ok(respuesta);
     }
