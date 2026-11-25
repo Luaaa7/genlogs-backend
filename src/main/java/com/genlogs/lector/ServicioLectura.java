@@ -35,7 +35,7 @@ public final class ServicioLectura implements AutoCloseable {
 
     public ServicioLectura(InetSocketAddress bind, String token, long timeoutMs, Motor motor) throws IOException {
         if (token == null || token.length() < 32 || token.contains("\n") || token.contains("\r")) throw new IllegalArgumentException("Token interno inválido");
-        if (timeoutMs < 100 || timeoutMs > 45000) throw new IllegalArgumentException("Tiempo fuera de rango");
+        if (timeoutMs < 100 || timeoutMs > 90000) throw new IllegalArgumentException("Tiempo fuera de rango");
         this.tokenDigest = digest("Bearer " + token); this.motor = motor; this.timeoutMs = timeoutMs;
         server = HttpServer.create(bind, 16);
         server.setExecutor(handlers); server.createContext("/", this::handle);
