@@ -91,7 +91,28 @@ public final class LectorChromium implements ServicioLectura.Motor {
         return Playwright.create(new Playwright.CreateOptions().setEnv(environment));
     }
 
+    /**
+     * Ingreso de la tienda. Si se agota el tiempo, deja en el registro del servicio el paso donde se quedó
+     * (solo el nombre del paso y la fuente: nunca selectores con datos, usuarios ni claves).
+     */
     private Respuesta iniciarSesion(Page page, BrowserContext context, Peticion req, long deadline) throws Exception {
+        String[] paso = {"abrir la página"};
+        try {
+            return iniciarSesionPaso(page, context, req, deadline, paso);
+        } catch (TimeoutError e) {
+            registrarTiempoAgotado(req, paso[0]);
+            throw e;
+        } catch (LectorRemotoException e) {
+            if (e.getEstado() == Estado.TIEMPO_AGOTADO) registrarTiempoAgotado(req, paso[0]);
+            throw e;
+        }
+    }
+
+    private static void registrarTiempoAgotado(Peticion req, String paso) {
+        System.out.println("Ingreso " + req.fuente() + ": se agotó el tiempo en el paso «" + paso + "»");
+    }
+
+    private Respuesta iniciarSesionPaso(Page page, BrowserContext context, Peticion req, long deadline, String[] paso) throws Exception {
         Map<String, Object> login = campo(req.reglas(), "login");
         String continuar = texto(login, "continuar");
         if (continuar != null) {
@@ -101,13 +122,17 @@ public final class LectorChromium implements ServicioLectura.Motor {
             if (!"https".equalsIgnoreCase(pagina.getScheme()) || !pedida.getAuthority().equals(pagina.getAuthority())) {
                 return estado(Estado.URL_NO_PERMITIDA);
             }
+            paso[0] = "escribir el usuario (USUARIO)";
             context.setDefaultTimeout(restante(deadline));
             page.locator("css=" + texto(login, "usuario")).fill(req.credenciales().usuario());
+            paso[0] = "pulsar CONTINUAR";
             context.setDefaultTimeout(restante(deadline));
             page.locator("css=" + continuar).click();
+            paso[0] = "esperar que aparezca la clave (CLAVE)";
             context.setDefaultTimeout(restante(deadline));
             page.locator("css=" + texto(login, "clave")).waitFor();
         }
+        paso[0] = "ubicar la casilla de la clave (CLAVE)";
         String action = (String) page.locator("css=" + texto(login, "clave")).evaluate("el => el.form?.action || location.href");
         URI original = URI.create(req.url()), form = URI.create(action), actual = URI.create(page.url());
         if (!original.getAuthority().equals(form.getAuthority()) || !original.getAuthority().equals(actual.getAuthority())
@@ -115,13 +140,17 @@ public final class LectorChromium implements ServicioLectura.Motor {
         if (continuar == null) {
             // Ingreso de una sola pantalla. Con CONTINUAR el usuario ya se escribió en la primera pantalla y en la
             // segunda esa casilla suele desaparecer (eBay, Amazon): volver a llenarla agotaría el tiempo.
+            paso[0] = "escribir el usuario (USUARIO)";
             context.setDefaultTimeout(restante(deadline));
             page.locator("css=" + texto(login, "usuario")).fill(req.credenciales().usuario());
         }
+        paso[0] = "escribir la clave (CLAVE)";
         context.setDefaultTimeout(restante(deadline));
         page.locator("css=" + texto(login, "clave")).fill(req.credenciales().clave());
+        paso[0] = "pulsar ENVIAR";
         context.setDefaultTimeout(restante(deadline));
         page.locator("css=" + texto(login, "enviar")).click();
+        paso[0] = "esperar la señal de sesión iniciada (EXITO)";
         esperar(page, req.reglas(), texto(login, "exito"), deadline);
         ValidacionLectura.url(page.url(), req.fuente());
         Estado estado = detectar(page, req.reglas(), 200);
