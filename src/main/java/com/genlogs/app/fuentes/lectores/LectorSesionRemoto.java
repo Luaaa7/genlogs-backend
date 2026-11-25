@@ -51,7 +51,7 @@ public class LectorSesionRemoto implements LectorSesion {
                     + "&openid.mode=checkid_setup"
                     + "&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select"
                     + "&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0",
-            CodigoFuente.ALIEXPRESS, "https://login.aliexpress.com/",
+            CodigoFuente.ALIEXPRESS, "https://www.aliexpress.com/p/ug-login-page/login.html",
             CodigoFuente.ALIBABA, "https://login.alibaba.com/");
 
     static final Map<CodigoFuente, String> TIENDA = Map.of(
