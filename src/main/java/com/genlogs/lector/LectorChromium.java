@@ -38,6 +38,7 @@ public final class LectorChromium implements ServicioLectura.Motor {
                          .setTimeout(restante(deadline)).setProxy(new Proxy(proxy.url()))
                          .setArgs(List.of("--proxy-bypass-list=<-loopback>", "--disable-quic",
                                  "--force-webrtc-ip-handling-policy=disable_non_proxied_udp", "--disable-dev-shm-usage")))) {
+                System.out.println("Lector " + operacion + " " + req.fuente() + ": navegador listo a los " + transcurridoMs(deadline) + " ms");
                 Browser.NewContextOptions options = new Browser.NewContextOptions()
                         .setServiceWorkers(ServiceWorkerPolicy.BLOCK).setAcceptDownloads(false);
                 if (req.sesion() != null) options.setStorageState(req.sesion().storageState().toString());
@@ -46,6 +47,9 @@ public final class LectorChromium implements ServicioLectura.Motor {
                     context.routeWebSocket(Pattern.compile(".*"), socket -> socket.close());
                     context.route("**/*", route -> {
                         try {
+                            // Imágenes, medios y tipografías no se necesitan: el lector lee el HTML, y así la página carga más rápido.
+                            String tipo = route.request().resourceType();
+                            if ("image".equals(tipo) || "media".equals(tipo) || "font".equals(tipo)) { route.abort(); return; }
                             URI uri = URI.create(route.request().url());
                             if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getUserInfo() != null
                                     || (uri.getPort() != -1 && uri.getPort() != 443)) route.abort();
@@ -56,6 +60,7 @@ public final class LectorChromium implements ServicioLectura.Motor {
                     Page page = context.newPage();
                     Response response = page.navigate(req.url(), new Page.NavigateOptions()
                             .setTimeout(restante(deadline)).setWaitUntil(WaitUntilState.DOMCONTENTLOADED));
+                    System.out.println("Lector " + operacion + " " + req.fuente() + ": página abierta a los " + transcurridoMs(deadline) + " ms");
                     ValidacionLectura.url(page.url(), req.fuente());
                     Estado estado = detectar(page, req.reglas(), response == null ? 200 : response.status());
                     if (estado != null) return estado(estado);
@@ -75,8 +80,14 @@ public final class LectorChromium implements ServicioLectura.Motor {
                     return new Respuesta(Estado.OK, resultados, null);
                 }
             }
-        } catch (LectorRemotoException e) { return estado(e.getEstado()); }
-        catch (TimeoutError e) { return estado(Estado.TIEMPO_AGOTADO); }
+        } catch (LectorRemotoException e) {
+            if (e.getEstado() == Estado.TIEMPO_AGOTADO) System.out.println("Lector " + operacion + " " + req.fuente() + ": tiempo agotado a los " + transcurridoMs(deadline) + " ms");
+            return estado(e.getEstado());
+        }
+        catch (TimeoutError e) {
+            System.out.println("Lector " + operacion + " " + req.fuente() + ": tiempo agotado a los " + transcurridoMs(deadline) + " ms");
+            return estado(Estado.TIEMPO_AGOTADO);
+        }
         catch (Exception e) {
             // Playwright errors may contain secrets: do not attach/log the exception or its message.
             boolean selector = e.getMessage() != null && (e.getMessage().contains("selector") || e.getMessage().contains("querySelector"));
