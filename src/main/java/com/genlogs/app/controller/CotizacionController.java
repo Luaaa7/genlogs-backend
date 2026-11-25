@@ -124,7 +124,16 @@ public class CotizacionController {
             throw new BusinessException("Dirección de ordenamiento inválida: '" + sortDir + "'. Use ASC o DESC.");
         }
 
-        return Sort.by(direction, atributo);
+        // fechaCotizacion es solo fecha (sin hora): si varias caen el mismo día, desempata
+        // por la hora real de creación y luego por id, para que lo último salga primero.
+        Sort sort = Sort.by(direction, atributo);
+        if (!"dateCreate".equals(atributo)) {
+            sort = sort.and(Sort.by(direction, "dateCreate"));
+        }
+        if (!"idCotizacion".equals(atributo)) {
+            sort = sort.and(Sort.by(direction, "idCotizacion"));
+        }
+        return sort;
     }
 
     @PreAuthorize(PermisosCotizacion.VER)
@@ -146,7 +155,8 @@ public class CotizacionController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         Pageable pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100),
-                Sort.by("fechaCotizacion").descending());
+                Sort.by("fechaCotizacion").descending().and(Sort.by("dateCreate").descending())
+                        .and(Sort.by("idCotizacion").descending()));
         return ResponseEntity.ok(cotizacionService.listar(null, idCliente, null, pageable));
     }
 
