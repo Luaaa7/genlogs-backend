@@ -405,7 +405,37 @@ public class FacturacionService {
     @Transactional
     public FacturacionResponse registrarPago(Long idFacturacion, RegistrarPagoRequest request) {
         Facturacion facturacion = obtenerOLanzar(idFacturacion);
+        aplicarPago(facturacion, request);
+        actualizarAuditoria(facturacion, "REGISTRO_PAGO_FACTURACION");
 
+        facturacion = facturacionRepository.save(facturacion);
+        return toResponse(facturacion);
+    }
+
+    /**
+     * Pago en línea (BPMN 4.1): lo registra el sistema cuando Mercado Pago confirma, sin sesión
+     * de usuario. Mismas reglas que {@link #registrarPago}; solo cambia quién queda en la auditoría.
+     */
+    @Transactional
+    public FacturacionResponse registrarPagoDelSistema(Long idFacturacion, RegistrarPagoRequest request,
+            String usuario, String proceso) {
+        Facturacion facturacion = obtenerOLanzar(idFacturacion);
+        aplicarPago(facturacion, request);
+        facturacion.setUserUpdate(usuario);
+        facturacion.setProcessUpdate(proceso);
+        facturacion.setDateUpdate(LocalDateTime.now());
+
+        facturacion = facturacionRepository.save(facturacion);
+        return toResponse(facturacion);
+    }
+
+    /** Total del comprobante con IGV (el mismo que muestra la lista), para calcular el saldo. */
+    public BigDecimal totalDe(Facturacion facturacion) {
+        return calcularTotal(facturacion);
+    }
+
+    /** Suma el pago, lo anota en las observaciones y pasa a PARCIAL o PAGADA. No guarda. */
+    private void aplicarPago(Facturacion facturacion, RegistrarPagoRequest request) {
         BigDecimal total = calcularTotal(facturacion);
         BigDecimal nuevoPagado = facturacion.getMontoPagado().add(request.getMontoPagado());
 
@@ -424,11 +454,6 @@ public class FacturacionService {
             estadoFacturacionRepository.findByCodigoEstado("PARCIAL")
                     .ifPresent(facturacion::setEstadoFacturacion);
         }
-
-        actualizarAuditoria(facturacion, "REGISTRO_PAGO_FACTURACION");
-
-        facturacion = facturacionRepository.save(facturacion);
-        return toResponse(facturacion);
     }
 
     /**
