@@ -79,11 +79,25 @@ public class ReclamoService {
         return seguimientos(idReclamo);
     }
 
-    /** Usuarios activos que pueden ser responsables (para el selector del frontend). */
+    /**
+     * v3.4: roles del personal de GENLOGS que atienden reclamos. Son los que pueden cambiar el estado y
+     * anotar el seguimiento (matriz de permisos: crear o aprobar). Nunca un cliente, ni un rol que no
+     * entra al módulo (Contador, Supervisor SST) o que solo lo ve (Asistente Administrativo).
+     */
+    static final java.util.Set<String> ROLES_RESPONSABLES =
+            java.util.Set.of("GERENTE_GENERAL", "JEFE_ADMINISTRATIVO", "ASISTENTE_LOGISTICO");
+
+    static boolean puedeAtender(Usuario usuario) {
+        return usuario.getRol() != null && usuario.getRol().getNombreRol() != null
+                && ROLES_RESPONSABLES.contains(usuario.getRol().getNombreRol().trim().toUpperCase(java.util.Locale.ROOT));
+    }
+
+    /** Personal activo que puede ser responsable (para el selector del frontend). Sin clientes. */
     @Transactional(readOnly = true)
     public List<java.util.Map<String, Object>> listarResponsables() {
         return usuarioRepository.findAll().stream()
                 .filter(u -> "A".equals(u.getStatus()) && !Boolean.TRUE.equals(u.getBloqueado()))
+                .filter(ReclamoService::puedeAtender)
                 .sorted(java.util.Comparator.comparing(Usuario::getNombres, String.CASE_INSENSITIVE_ORDER))
                 .map(u -> java.util.Map.<String, Object>of("idUsuario", u.getIdUsuario(), "nombres", u.getNombres()))
                 .toList();
@@ -364,6 +378,13 @@ public class ReclamoService {
         if (request.getIdUsuarioResponsable() != null) {
             responsable = usuarioRepository.findByIdUsuarioAndStatus(request.getIdUsuarioResponsable(), "A")
                     .orElseThrow(() -> new ResourceNotFoundException("Usuario responsable no encontrado"));
+            // Se revisa solo al asignar a alguien nuevo: un reclamo antiguo se puede editar sin cambiarle el responsable.
+            boolean mismo = reclamo.getResponsable() != null
+                    && reclamo.getResponsable().getIdUsuario().equals(responsable.getIdUsuario());
+            if (!mismo && !puedeAtender(responsable)) {
+                throw new BusinessException("El responsable debe ser del personal que atiende reclamos:"
+                        + " Gerente General, Jefe Administrativo o Asistente Logístico.");
+            }
         }
 
         reclamo.setCliente(cliente);
