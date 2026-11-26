@@ -33,5 +33,9 @@ public enum TipoAviso {
     PAGO_EN_LINEA,
     /** Entró una solicitud nueva del cliente: aviso a los Asistentes Logísticos. */
     SOLICITUD_NUEVA,
+    /** El Jefe aprobó la cotización: aviso a quien la preparó. */
+    COTIZACION_APROBADA,
+    /** El Jefe devolvió la cotización para corregir: aviso a quien la preparó. */
+    COTIZACION_DEVUELTA,
     GENERAL
 }
