@@ -131,6 +131,24 @@ public final class LectorChromium implements ServicioLectura.Motor {
                 && uri.getHost() != null && ValidacionLectura.dominio(uri.getHost().toLowerCase(java.util.Locale.ROOT), fuente);
     }
 
+    /**
+     * Pulsa el botón. Si algo lo tapa (AliExpress abre bajo la casilla del usuario una lista de correos sugeridos que
+     * cubre el botón CONTINUAR), cierra esa lista como lo haría una persona —Escape y luego Tab en la casilla— y reintenta.
+     */
+    private static void pulsarLiberando(Page page, String casillaUsuario, String boton, long deadline) {
+        String[] cierres = {"Escape", "Tab"};
+        for (int i = 0; i <= cierres.length; i++) {
+            double espera = i < cierres.length ? Math.min(5000, restante(deadline)) : restante(deadline);
+            try {
+                page.locator("css=" + boton).click(new Locator.ClickOptions().setTimeout(espera));
+                return;
+            } catch (TimeoutError e) {
+                if (i == cierres.length) throw e;
+                page.locator("css=" + casillaUsuario).press(cierres[i]);
+            }
+        }
+    }
+
     private void registrarTiempoAgotado(Page page, Peticion req, String paso, long hastaAbrir) {
         String titulo = "?", sitio = "?", botones = "?";
         long visibles = -1;
@@ -164,7 +182,7 @@ public final class LectorChromium implements ServicioLectura.Motor {
             page.locator("css=" + texto(login, "usuario")).fill(req.credenciales().usuario());
             paso[0] = "pulsar CONTINUAR";
             context.setDefaultTimeout(restante(deadline));
-            page.locator("css=" + continuar).click();
+            pulsarLiberando(page, texto(login, "usuario"), continuar, deadline);
             paso[0] = "esperar que aparezca la clave (CLAVE)";
             context.setDefaultTimeout(restante(deadline));
             page.locator("css=" + texto(login, "clave")).waitFor();
