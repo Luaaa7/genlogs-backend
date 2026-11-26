@@ -146,7 +146,50 @@ class ReclamoIntegracionTest {
         assertEquals(1, reclamoService.listar(null, null, null, null, null, 0, 20).getTotalElements());
     }
 
+    @Test
+    void soloElPersonalQueAtiendeReclamosPuedeSerResponsable() {
+        Usuario cliente = usuarioConRol("CLIENTE", "cliente.demo", "Cliente Demo");
+        Usuario contador = usuarioConRol("CONTADOR_GENERAL", "contador.demo", "Contador Demo");
+        Usuario logistico = usuarioConRol("ASISTENTE_LOGISTICO", "logistico.demo", "Logístico Demo");
+
+        List<Object> ids = reclamoService.listarResponsables().stream().map(m -> m.get("idUsuario")).toList();
+        assertTrue(ids.contains(usuario.getIdUsuario()), "el Jefe Administrativo atiende reclamos");
+        assertTrue(ids.contains(logistico.getIdUsuario()), "el Asistente Logístico atiende reclamos");
+        assertFalse(ids.contains(cliente.getIdUsuario()), "un cliente nunca es responsable");
+        assertFalse(ids.contains(contador.getIdUsuario()), "el Contador no entra al módulo de reclamos");
+
+        ReclamoRequest conCliente = incidencia("Asignado a un cliente");
+        conCliente.setIdUsuarioResponsable(cliente.getIdUsuario());
+        BusinessException error = assertThrows(BusinessException.class, () -> reclamoService.crear(conCliente));
+        assertTrue(error.getMessage().contains("personal que atiende reclamos"));
+
+        ReclamoRequest conLogistico = incidencia("Asignado al logístico");
+        conLogistico.setIdUsuarioResponsable(logistico.getIdUsuario());
+        assertEquals(logistico.getIdUsuario(), reclamoService.crear(conLogistico).getIdUsuarioResponsable());
+    }
+
     // ------------------------------------------------------------------
+
+    private Usuario usuarioConRol(String nombreRol, String nombreUsuario, String nombres) {
+        Rol rol = rolRepository.findAll().stream().filter(r -> nombreRol.equals(r.getNombreRol())).findFirst().orElseGet(() -> {
+            Rol nuevo = new Rol();
+            nuevo.setNombreRol(nombreRol);
+            nuevo.setDescripcion(nombreRol);
+            auditar(nuevo);
+            return rolRepository.save(nuevo);
+        });
+        Usuario u = new Usuario();
+        u.setRol(rol);
+        u.setNombreUsuario(nombreUsuario);
+        u.setNombres(nombres);
+        u.setCorreo(nombreUsuario + "@genlogs.pe");
+        u.setPasswordHash("{noop}demo");
+        u.setIniciales("XX");
+        u.setBloqueado(false);
+        u.setIntentosFallidos((short) 0);
+        auditar(u);
+        return usuarioRepository.save(u);
+    }
 
     private ReclamoRequest incidencia(String asunto) {
         ReclamoRequest r = new ReclamoRequest();
