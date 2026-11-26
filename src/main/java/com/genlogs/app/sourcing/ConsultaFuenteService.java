@@ -90,6 +90,7 @@ public class ConsultaFuenteService {
 
         List<SelectorFuenteDto> selectores = selectoresDe(codigo);
         ResultadoLectura lectura = invocarBuscar(codigo, fuente.getUrlBase(), sesion.get(), consulta, selectores);
+        if (lectura.tipo() == ResultadoLectura.Tipo.OCUPADO) return aplicar(fuente, consulta, lectura);
         if (lectura.tipo() == ResultadoLectura.Tipo.NO_CONECTADO) {
             return ConsultaFuente.de(nombre, EstadoConsultaFuente.NO_CONECTADO,
                     lectura.mensaje() != null ? lectura.mensaje() : LectorFuenteNoConectado.MENSAJE, List.of());
@@ -171,6 +172,8 @@ public class ConsultaFuenteService {
                     lectura.mensaje() != null ? lectura.mensaje() : LectorFuenteNoConectado.MENSAJE, List.of());
             case BLOQUEADA -> ConsultaFuente.de(nombre, EstadoConsultaFuente.BLOQUEADA,
                     lectura.mensaje() != null ? lectura.mensaje() : "La tienda bloqueó la consulta.", List.of());
+            // El lector no llegó a consultar la tienda. El error se limita a esta solicitud.
+            case OCUPADO -> ConsultaFuente.de(nombre, EstadoConsultaFuente.CON_ERROR, lectura.mensaje(), List.of());
             case VERIFICACION -> {
                 String motivo = lectura.mensaje() != null ? lectura.mensaje()
                         : "La tienda pidió un código o CAPTCHA al buscar.";

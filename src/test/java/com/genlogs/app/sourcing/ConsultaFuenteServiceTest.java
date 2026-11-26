@@ -89,6 +89,20 @@ class ConsultaFuenteServiceTest {
     }
 
     @Test
+    void lectorOcupadoNoMarcaLaFuenteConErrorNiConsumeCuota() {
+        ebay.setLimiteDiario(1);
+        when(lector.buscar(any(), any(), any(), any(), any())).thenReturn(
+                ResultadoLectura.ocupado("El lector está ocupado."), ResultadoLectura.sinResultados());
+
+        var ocupada = servicio.consultar(ebay, consulta);
+        assertThat(ocupada.motivo()).isEqualTo("El lector está ocupado.");
+        assertThat(ebay.getEstado()).isEqualTo(EstadoFuente.ACTIVA);
+        verify(fuenteRepo, never()).save(any());
+        verify(avisos, never()).avisarSiCorresponde(any(), any(), any());
+        assertThat(servicio.consultar(ebay, consulta).estado()).isEqualTo(EstadoConsultaFuente.SIN_RESULTADOS);
+    }
+
+    @Test
     void sinCuota_omiteYNoLee() {
         ebay.setLimiteDiario(1);
         when(lector.buscar(any(), any(), any(), any(), any())).thenReturn(ResultadoLectura.ok(List.of(

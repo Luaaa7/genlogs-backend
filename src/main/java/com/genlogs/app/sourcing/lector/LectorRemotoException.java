@@ -12,6 +12,7 @@ public class LectorRemotoException extends RuntimeException {
             case BLOQUEO -> "La tienda bloqueó la lectura.";
             case SESION_VENCIDA -> "La sesión de la fuente venció; debe renovarse.";
             case TIEMPO_AGOTADO -> "Se agotó el tiempo máximo del lector.";
+            case OCUPADO -> "El lector está procesando otra operación. Espera a que termine antes de volver a intentar.";
             case NO_CONFIGURADO -> "El servicio de lectura no está configurado.";
             case NO_AUTORIZADO -> "El token interno del lector fue rechazado.";
             case URL_NO_PERMITIDA -> "La URL no está permitida para esta fuente.";

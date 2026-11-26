@@ -97,7 +97,8 @@ public final class PuenteLector {
             case VERIFICACION -> ResultadoLectura.verificacion(mensaje);
             case BLOQUEO -> ResultadoLectura.bloqueada(mensaje);
             case NO_CONFIGURADO -> ResultadoLectura.noConectado(mensaje);
-            case TIEMPO_AGOTADO, SIN_RESPUESTA, OCUPADO, INTERRUMPIDO -> ResultadoLectura.error(mensaje, true);
+            case OCUPADO -> ResultadoLectura.ocupado(mensaje);
+            case TIEMPO_AGOTADO, SIN_RESPUESTA, INTERRUMPIDO -> ResultadoLectura.error(mensaje, true);
             default -> ResultadoLectura.error(mensaje, false);
         };
     }

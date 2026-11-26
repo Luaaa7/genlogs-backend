@@ -111,6 +111,7 @@ public class LectorSesionRemoto implements LectorSesion {
                     Map.of("login", login), null, new ContratoLector.Credenciales(usuario, clave), null));
         } catch (LectorRemotoException e) {
             String mensaje = tienda + ": " + e.getMessage();
+            if (e.getEstado() == ContratoLector.Estado.OCUPADO) return ResultadoSesion.ocupado(mensaje);
             return e.getEstado() == ContratoLector.Estado.VERIFICACION
                     ? ResultadoSesion.verificacion(mensaje)
                     : ResultadoSesion.error(mensaje);
