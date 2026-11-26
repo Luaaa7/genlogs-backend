@@ -40,6 +40,8 @@ public final class ServicioLectura implements AutoCloseable {
         server = HttpServer.create(bind, 16);
         server.setExecutor(handlers); server.createContext("/", this::handle);
     }
+    /** Pequeño margen sobre el plazo del motor: así el motor alcanza a registrar en qué paso se agotó antes de ser cancelado. */
+    private long margenMs() { return Math.min(3000, Math.max(10, timeoutMs / 10)); }
     public void start() { server.start(); }
     public int port() { return server.getAddress().getPort(); }
     private void handle(HttpExchange exchange) throws IOException {
@@ -76,10 +78,11 @@ public final class ServicioLectura implements AutoCloseable {
                 future = workers.submit(() -> { try { return motor.ejecutar(operation, request); } finally { slots.release(); } });
             } catch (RejectedExecutionException e) { slots.release(); send(exchange, 503, LectorChromium.estado(Estado.OCUPADO)); return; }
             try {
-                Respuesta response = future.get(timeoutMs, TimeUnit.MILLISECONDS);
+                Respuesta response = future.get(timeoutMs + margenMs(), TimeUnit.MILLISECONDS);
                 send(exchange, status(response.estado()), response);
             } catch (TimeoutException e) {
                 // The worker retains its slot until it closes Chromium, preventing resource accumulation.
+                System.out.println("Lector " + operation + " " + request.fuente() + ": el navegador no terminó dentro del plazo del servicio (" + (timeoutMs + margenMs()) + " ms)");
                 future.cancel(true); send(exchange, 504, LectorChromium.estado(Estado.TIEMPO_AGOTADO));
             } catch (InterruptedException e) {
                 future.cancel(true); Thread.currentThread().interrupt(); send(exchange, 502, LectorChromium.estado(Estado.SIN_RESPUESTA));
