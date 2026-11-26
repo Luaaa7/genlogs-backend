@@ -20,13 +20,8 @@ import com.genlogs.app.sourcing.lector.ContratoLector;
 import com.genlogs.app.sourcing.lector.LectorRemotoClient;
 
 /**
- * ME (v3.3) · Lector de eBay para el despachador multifuente (BPMN 9-B.1).
- *
- * <p>Recibe la sesión ya lista y los selectores de fuente_selector, arma la URL de
- * búsqueda de eBay, llama al servicio de lectura y devuelve un {@link ResultadoLectura}.
- * No pide sesión, no marca estados y no guarda nada: eso lo hace ConsultaFuenteService.</p>
- *
- * <p>EbayFuente (Browse API) no se toca: sigue como respaldo de FuenteBusqueda.</p>
+ * ME (v3.3) - Lector de eBay. Si SERPAPI_KEY esta configurada, la busqueda va por SerpApi.
+ * Si no, usa el servicio de lectura como antes. EbayFuente (Browse API) no se toca.
  */
 @Component
 public class EbayLector implements LectorFuenteEspecifico {
@@ -36,22 +31,13 @@ public class EbayLector implements LectorFuenteEspecifico {
     static final String MONEDA = "USD";
     static final String SEPARADOR_DECIMAL = ".";
     static final int MAX_RESULTADOS = 8;
-    /** Bloque que muestra eBay cuando la búsqueda no encuentra nada ("No se ha encontrado ninguna coincidencia exacta"). */
     static final String SIN_RESULTADOS = ".srp-save-null-search";
-    /**
-     * Página "El acceso al sitio web está bloqueado" (ebay.com/splashui/mitigation?page=drop).
-     * Tomado del HTML real (16/11/2026): el título va en div.pgHeading > h1 y la búsqueda no lo usa.
-     */
     static final String BLOQUEO = ".pgHeading > h1";
-    /**
-     * Página de verificación de eBay (splashui/challenge, "Checking your browser").
-     * Por confirmar con un captcha real: eBay no deja abrirla directo. El servicio de lectura
-     * además detecta por su cuenta reCAPTCHA, hCaptcha y títulos con "captcha".
-     */
     static final String VERIFICACION = "#captcha_loading, #captcha_form, form[action*=captcha]";
 
     private final LectorRemotoClient cliente;
     private final Clock reloj;
+    private SerpApiCliente serpApi;
 
     @Autowired
     public EbayLector(LectorRemotoClient cliente) {
@@ -61,6 +47,11 @@ public class EbayLector implements LectorFuenteEspecifico {
     EbayLector(LectorRemotoClient cliente, Clock reloj) {
         this.cliente = cliente;
         this.reloj = reloj;
+    }
+
+    @Autowired(required = false)
+    public void setSerpApi(SerpApiCliente serpApi) {
+        this.serpApi = serpApi;
     }
 
     @Override
@@ -78,13 +69,15 @@ public class EbayLector implements LectorFuenteEspecifico {
         if (texto == null) {
             return ResultadoLectura.sinResultados();
         }
+        if (serpApi != null && serpApi.configurado()) {
+            return serpApi.buscar(CodigoFuente.EBAY, texto);
+        }
         Map<String, Object> reglas = ReglasParaLector.de(selectores, PaginaSelector.BUSQUEDA,
                 MONEDA, SEPARADOR_DECIMAL);
         if (!ReglasParaLector.sirveParaBuscar(reglas)) {
-            return ResultadoLectura.error("eBay no tiene reglas de búsqueda completas: faltan ITEM, NOMBRE,"
-                    + " PRECIO o ENLACE en Configuración > Fuentes.", false);
+            return ResultadoLectura.error("eBay no tiene reglas de busqueda completas: faltan ITEM, NOMBRE,"
+                    + " PRECIO o ENLACE en Configuracion > Fuentes.", false);
         }
-        // Sin esto, una búsqueda sin resultados se tomaría como reglas rotas (CON_ERROR y aviso al Jefe).
         reglas.put("sinResultados", SIN_RESULTADOS);
         agregarAvisos(reglas);
         String url = urlBusqueda(urlBase, texto);
@@ -105,7 +98,7 @@ public class EbayLector implements LectorFuenteEspecifico {
                 MONEDA, SEPARADOR_DECIMAL);
         if (!ReglasParaLector.sirveParaFicha(reglas)) {
             return ResultadoLectura.error("eBay no tiene reglas de ficha completas: faltan NOMBRE o PRECIO"
-                    + " en Configuración > Fuentes.", false);
+                    + " en Configuracion > Fuentes.", false);
         }
         agregarAvisos(reglas);
         String limpia = url.trim();
@@ -113,16 +106,11 @@ public class EbayLector implements LectorFuenteEspecifico {
                 new ContratoLector.Peticion(CodigoFuente.EBAY.name(), limpia, reglas, s, null, 1)));
     }
 
-    /**
-     * Para que el servicio de lectura distinga un captcha (REQUIERE_VERIFICACION) o un bloqueo
-     * (BLOQUEADA) de eBay de una página sin resultados o con reglas rotas.
-     */
     static void agregarAvisos(Map<String, Object> reglas) {
         reglas.put("verificacion", VERIFICACION);
         reglas.put("bloqueo", BLOQUEO);
     }
 
-    /** https://www.ebay.com/sch/i.html?_nkw=CAT+1R-0750 (la base sale de fuente_busqueda.url_base). */
     static String urlBusqueda(String urlBase, String texto) {
         String base = urlBase == null || urlBase.isBlank() ? URL_BASE : urlBase.trim();
         while (base.endsWith("/")) {

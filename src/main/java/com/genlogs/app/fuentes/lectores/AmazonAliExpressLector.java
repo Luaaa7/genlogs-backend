@@ -20,34 +20,23 @@ import com.genlogs.app.sourcing.lector.ContratoLector;
 import com.genlogs.app.sourcing.lector.LectorRemotoClient;
 
 /**
- * ME (v3.3) · Lector de Amazon y AliExpress para el despachador multifuente (BPMN 9-B.1).
- *
- * <p>Recibe la sesión ya lista y los selectores de fuente_selector, arma la URL de
- * búsqueda de la tienda, llama al servicio de lectura y devuelve un {@link ResultadoLectura}.
- * No pide sesión, no marca estados y no guarda nada: eso lo hace ConsultaFuenteService.</p>
+ * ME (v3.3) - Lector de Amazon y AliExpress. Amazon usa SerpApi si SERPAPI_KEY esta configurada.
+ * AliExpress, y Amazon sin clave, usan el servicio de lectura como antes.
  */
 @Component
 public class AmazonAliExpressLector implements LectorFuenteEspecifico {
 
     static final String URL_AMAZON = "https://www.amazon.com";
     static final String URL_ALIEXPRESS = "https://www.aliexpress.com";
-    /**
-     * Respaldo cuando la página no trae moneda. Con la sesión en Perú, Amazon muestra PEN
-     * y AliExpress muestra S/; fuera de Perú, AliExpress muestra US $. El decimal es el punto.
-     */
     static final String MONEDA = "USD";
     static final String SEPARADOR_DECIMAL = ".";
     static final int MAX_RESULTADOS = 8;
-    /** Bloque del aviso de búsqueda vacía. .s-no-outline también envuelve enlaces de una búsqueda con productos. */
     static final String SIN_RESULTADOS_AMAZON = "[data-csa-c-content-id=\"messaging-messages-no-results\"]";
-    /**
-     * Revisado en la búsqueda de «oil filter» y en una de texto inventado: no aparece.
-     * Esa segunda página no está vacía. Una extracción rota sigue en error.
-     */
     static final String SIN_RESULTADOS_ALIEXPRESS = ".search-no-result";
 
     private final LectorRemotoClient cliente;
     private final Clock reloj;
+    private SerpApiCliente serpApi;
 
     @Autowired
     public AmazonAliExpressLector(LectorRemotoClient cliente) {
@@ -57,6 +46,11 @@ public class AmazonAliExpressLector implements LectorFuenteEspecifico {
     AmazonAliExpressLector(LectorRemotoClient cliente, Clock reloj) {
         this.cliente = cliente;
         this.reloj = reloj;
+    }
+
+    @Autowired(required = false)
+    public void setSerpApi(SerpApiCliente serpApi) {
+        this.serpApi = serpApi;
     }
 
     @Override
@@ -74,14 +68,16 @@ public class AmazonAliExpressLector implements LectorFuenteEspecifico {
         if (texto == null) {
             return ResultadoLectura.sinResultados();
         }
+        if (codigo == CodigoFuente.AMAZON && serpApi != null && serpApi.configurado()) {
+            return serpApi.buscar(CodigoFuente.AMAZON, texto);
+        }
         String tienda = tienda(codigo);
         Map<String, Object> reglas = ReglasParaLector.de(selectores, PaginaSelector.BUSQUEDA,
                 MONEDA, SEPARADOR_DECIMAL);
         if (!ReglasParaLector.sirveParaBuscar(reglas)) {
-            return ResultadoLectura.error(tienda + " no tiene reglas de búsqueda completas: faltan ITEM, NOMBRE,"
-                    + " PRECIO o ENLACE en Configuración > Fuentes.", false);
+            return ResultadoLectura.error(tienda + " no tiene reglas de busqueda completas: faltan ITEM, NOMBRE,"
+                    + " PRECIO o ENLACE en Configuracion > Fuentes.", false);
         }
-        // Sin esto, una búsqueda sin resultados se tomaría como reglas rotas (CON_ERROR y aviso al Jefe).
         reglas.put("sinResultados", sinResultados(codigo));
         String url = urlBusqueda(codigo, urlBase, texto);
         return PuenteLector.leer(tienda, sesion, reloj, s -> cliente.buscar(
@@ -102,14 +98,13 @@ public class AmazonAliExpressLector implements LectorFuenteEspecifico {
                 MONEDA, SEPARADOR_DECIMAL);
         if (!ReglasParaLector.sirveParaFicha(reglas)) {
             return ResultadoLectura.error(tienda + " no tiene reglas de ficha completas: faltan NOMBRE o PRECIO"
-                    + " en Configuración > Fuentes.", false);
+                    + " en Configuracion > Fuentes.", false);
         }
         String limpia = url.trim();
         return PuenteLector.leer(tienda, sesion, reloj, s -> cliente.leerFicha(
                 new ContratoLector.Peticion(codigo.name(), limpia, reglas, s, null, 1)));
     }
 
-    /** Amazon: /s?k=. AliExpress: /wholesale?SearchText=. La base sale de fuente_busqueda.url_base. */
     static String urlBusqueda(CodigoFuente codigo, String urlBase, String texto) {
         String defecto = codigo == CodigoFuente.AMAZON ? URL_AMAZON : URL_ALIEXPRESS;
         String base = urlBase == null || urlBase.isBlank() ? defecto : urlBase.trim();
