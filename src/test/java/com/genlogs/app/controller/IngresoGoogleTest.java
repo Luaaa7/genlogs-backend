@@ -345,6 +345,122 @@ class IngresoGoogleTest {
         }));
     }
 
+    @Test
+    void completarEmpresaConDniCreaPersonaNaturalSinConsultarFactiliza() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        String dni = String.format("%08d", 70000000 + n);
+        tipoDni();
+        Usuario google = usuario("d." + n, "d" + n + "@gmail.com", null, rolCliente(), "A");
+
+        mockMvc.perform(post("/api/portal/empresa").with(user("d." + n).roles("CLIENTE"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"tipoDocumento":"DNI","ruc":"%s","nombreContacto":"Rosa Quispe Mamani","telefono":"999111222"}
+                                """.formatted(dni)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pendiente").value(false));
+
+        Cliente creado = clienteRepository.findByNumeroDocumento(dni).orElseThrow();
+        assertEquals("DNI", creado.getTercero().getTipoDocumento().getCodigoTipo());
+        assertEquals("Rosa Quispe Mamani", creado.getTercero().getRazonSocial());
+        assertNull(creado.getTercero().getDistrito());
+        assertEquals("ACTIVO", creado.getSituacion());
+        Usuario actualizado = usuarioRepository.findById(google.getIdUsuario()).orElseThrow();
+        assertEquals(creado.getIdCliente(), actualizado.getCliente().getIdCliente());
+        assertEquals("A", actualizado.getStatus().trim());
+        verify(factilizaService, never()).consultarPorNumero(anyString());
+
+        mockMvc.perform(get("/api/portal/cuenta").with(user("d." + n).roles("CLIENTE")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.perfilCompleto").value(true))
+                .andExpect(jsonPath("$.empresa").value("Rosa Quispe Mamani"));
+        mockMvc.perform(post("/api/portal/solicitudes").with(user("d." + n).roles("CLIENTE"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"asunto\":\"Filtros\",\"descripcion\":\"Necesito filtros de aceite\"}"))
+                .andExpect(status().isCreated());
+        mockMvc.perform(get("/api/portal/pedidos").with(user("d." + n).roles("CLIENTE")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void completarEmpresaConDniInvalidoOSinTipoSeRechaza() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        tipoDni();
+        usuario("x." + n, "x" + n + "@gmail.com", null, rolCliente(), "A");
+
+        // DNI con 7 dígitos.
+        mockMvc.perform(post("/api/portal/empresa").with(user("x." + n).roles("CLIENTE"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tipoDocumento\":\"DNI\",\"ruc\":\"1234567\",\"nombreContacto\":\"Rosa Quispe\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(containsString("DNI")));
+        // Un RUC no vale como DNI.
+        mockMvc.perform(post("/api/portal/empresa").with(user("x." + n).roles("CLIENTE"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tipoDocumento\":\"DNI\",\"ruc\":\"20123456789\",\"nombreContacto\":\"Rosa Quispe\"}"))
+                .andExpect(status().isBadRequest());
+        // Un DNI sin tipo se trata como RUC y se rechaza.
+        mockMvc.perform(post("/api/portal/empresa").with(user("x." + n).roles("CLIENTE"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"ruc\":\"12345678\",\"razonSocial\":\"Rosa\",\"nombreContacto\":\"Rosa Quispe\"}"))
+                .andExpect(status().isBadRequest());
+        // Tipo desconocido.
+        mockMvc.perform(post("/api/portal/empresa").with(user("x." + n).roles("CLIENTE"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tipoDocumento\":\"CE\",\"ruc\":\"12345678\",\"nombreContacto\":\"Rosa Quispe\"}"))
+                .andExpect(status().isBadRequest());
+        // RUC sin razon social sigue siendo obligatoria.
+        mockMvc.perform(post("/api/portal/empresa").with(user("x." + n).roles("CLIENTE"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"ruc\":\"20123456789\",\"nombreContacto\":\"Rosa Quispe\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(containsString("razón social")));
+        verify(factilizaService, never()).consultarPorNumero(anyString());
+        assertNull(usuarioRepository.findByNombreUsuario("x." + n).orElseThrow().getCliente());
+    }
+
+    @Test
+    void completarEmpresaConDniQueYaEsClienteQuedaPendiente() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        String dni = String.format("%08d", 71000000 + n);
+        TipoDocumento tipo = tipoDni();
+        Tercero tercero = terceroRepository.save(auditar(new Tercero(), e -> {
+            e.setTipoDocumento(tipo);
+            e.setNumeroDocumento(dni);
+            e.setRazonSocial("Persona Existente");
+        }));
+        clienteRepository.save(auditar(new Cliente(), e -> {
+            e.setTercero(tercero);
+            e.setSectorEconomico(sectorEconomicoRepository.save(auditar(new SectorEconomico(), s -> s.setNombreSector("Sector " + n))));
+            e.setSituacion("ACTIVO");
+        }));
+        Usuario nuevo = usuario("p." + n, "p" + n + "@gmail.com", null, rolCliente(), "A");
+
+        mockMvc.perform(post("/api/portal/empresa").with(user("p." + n).roles("CLIENTE"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tipoDocumento\":\"DNI\",\"ruc\":\"" + dni + "\",\"nombreContacto\":\"Otra Persona\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pendiente").value(true));
+
+        Usuario actualizado = usuarioRepository.findById(nuevo.getIdUsuario()).orElseThrow();
+        assertEquals("I", actualizado.getStatus().trim());
+        verify(notificacionService).avisarRol(eq(RolSistema.JEFE_ADMINISTRATIVO), eq(TipoAviso.ACCESO_PORTAL_PENDIENTE),
+                anyString(), contains("DNI " + dni), eq("/usuarios"), eq(true));
+        verify(factilizaService, never()).consultarPorNumero(anyString());
+    }
+
+    private TipoDocumento tipoDni() {
+        return tipoDocumentoRepository.findAll().stream()
+                .filter(t -> "DNI".equals(t.getCodigoTipo()))
+                .findFirst()
+                .orElseGet(() -> tipoDocumentoRepository.save(auditar(new TipoDocumento(), e -> {
+                    e.setCodigoTipo("DNI");
+                    e.setNombreTipo("DNI");
+                    e.setLongitudDocumento((short) 8);
+                    e.setSoloNumerico(true);
+                })));
+    }
+
     private TipoDocumento tipoRuc() {
         return tipoDocumentoRepository.findAll().stream()
                 .filter(t -> "RUC".equals(t.getCodigoTipo()))

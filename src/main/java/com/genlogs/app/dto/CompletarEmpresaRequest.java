@@ -1,6 +1,7 @@
 package com.genlogs.app.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
@@ -10,11 +11,15 @@ import lombok.Setter;
 @Setter
 public class CompletarEmpresaRequest {
 
-    @NotBlank(message = "El RUC es obligatorio")
-    @Size(max = 20, message = "El RUC es demasiado largo")
+    /** "RUC" (por defecto) o "DNI" (persona natural, sin razón social). */
+    @Pattern(regexp = "(?i)^(RUC|DNI)$", message = "El tipo de documento debe ser RUC o DNI")
+    private String tipoDocumento;
+
+    @NotBlank(message = "El documento es obligatorio")
+    @Size(max = 20, message = "El documento es demasiado largo")
     private String ruc;
 
-    @NotBlank(message = "La razón social es obligatoria")
+    /** Obligatoria con RUC; con DNI se usa el nombre de contacto (lo valida el servicio). */
     @Size(max = 200, message = "La razón social es demasiado larga")
     private String razonSocial;
 

@@ -302,6 +302,59 @@ class PortalClienteTest {
     }
 
     @Test
+    void registroConDniCreaPersonaNaturalSinRazonSocialNiFactiliza() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        String dni = String.format("%08d", 72000000 + n);
+        rolCliente();
+        tipoDni();
+        String cuerpo = """
+                {"tipoDocumento":"DNI","documento":"%s","nombreContacto":"Luis Rojas Vega",
+                 "correo":"luis%s@persona.pe","password":"Clave1234"}
+                """.formatted(dni, n);
+
+        mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").isNotEmpty());
+
+        Cliente nuevo = clienteRepository.findByNumeroDocumento(dni).orElseThrow();
+        assertEquals("DNI", nuevo.getTercero().getTipoDocumento().getCodigoTipo());
+        assertEquals("Luis Rojas Vega", nuevo.getTercero().getRazonSocial());
+        assertEquals("ACTIVO", nuevo.getSituacion());
+        Usuario creado = usuarioRepository.findByCorreoIgnoreCaseAndStatus("luis" + n + "@persona.pe", "A").orElseThrow();
+        assertEquals(nuevo.getIdCliente(), creado.getCliente().getIdCliente());
+        verify(factilizaService, never()).consultarPorNumero(anyString());
+    }
+
+    @Test
+    void registroConDniRechazaNumeroMalFormado() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        rolCliente();
+        tipoDni();
+        String cuerpo = """
+                {"tipoDocumento":"DNI","documento":"1234567A","nombreContacto":"Luis Rojas",
+                 "correo":"malo%s@persona.pe","password":"Clave1234"}
+                """.formatted(n);
+        mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(containsString("DNI")));
+        assertFalse(usuarioRepository.existsByCorreoIgnoreCase("malo" + n + "@persona.pe"));
+    }
+
+    @Test
+    void registroConRucSinRazonSocialSeRechaza() throws Exception {
+        int n = SECUENCIA.incrementAndGet();
+        rolCliente();
+        String cuerpo = """
+                {"documento":"20123456789","nombreContacto":"Luis Rojas",
+                 "correo":"sinrazon%s@persona.pe","password":"Clave1234"}
+                """.formatted(n);
+        mockMvc.perform(post("/api/portal/registro").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(containsString("razón social")));
+        verify(factilizaService, never()).consultarPorNumero(anyString());
+    }
+
+    @Test
     void registroRechazaRucInvalidoONoValidadoSinCrearNada() throws Exception {
         int n = SECUENCIA.incrementAndGet();
         rolCliente();
@@ -753,6 +806,18 @@ class PortalClienteTest {
             e.setIntentosFallidos((short) 0);
             e.setStatus("A");
         }));
+    }
+
+    private TipoDocumento tipoDni() {
+        return tipoDocumentoRepository.findAll().stream()
+                .filter(t -> "DNI".equals(t.getCodigoTipo()))
+                .findFirst()
+                .orElseGet(() -> tipoDocumentoRepository.save(auditar(new TipoDocumento(), e -> {
+                    e.setCodigoTipo("DNI");
+                    e.setNombreTipo("DNI");
+                    e.setLongitudDocumento((short) 8);
+                    e.setSoloNumerico(true);
+                })));
     }
 
     private TipoDocumento tipoRuc() {

@@ -67,6 +67,7 @@ import com.genlogs.app.repository.SolicitudCotizacionRepository;
 import com.genlogs.app.repository.TerceroRepository;
 import com.genlogs.app.repository.TipoDocumentoRepository;
 import com.genlogs.app.repository.UsuarioRepository;
+import com.genlogs.app.util.DatosTercero;
 
 import lombok.RequiredArgsConstructor;
 
@@ -81,6 +82,8 @@ public class PortalClienteService {
     private static final int MAX_NOMBRE_USUARIO = 50;
     /** RUC de empresa (20) o de persona con negocio (10), igual que FactilizaService. */
     private static final Pattern RUC_VALIDO = Pattern.compile("^(10|20)\\d{9}$");
+    /** DNI de persona natural: 8 dígitos. Con DNI se emite boleta y no se pide orden de compra. */
+    private static final Pattern DNI_VALIDO = Pattern.compile("^\\d{8}$");
     private static final String SECTOR_CAPTACION = "MINERIA";
     /** Marca del usuario que pidió acceso a una empresa que ya es cliente (lo usa UsuarioService.activar). */
     public static final String PROCESO_PENDIENTE = "REGISTRO_PORTAL_PENDIENTE";
@@ -181,11 +184,18 @@ public class PortalClienteService {
      */
     @Transactional
     public RegistroClienteResponse registrar(RegistroClienteRequest request) {
+        boolean dni = esDni(request.getTipoDocumento());
         String ruc = soloDigitos(request.getDocumento());
         String correo = request.getCorreo().trim();
-        if (!RUC_VALIDO.matcher(ruc).matches()) {
-            throw new BusinessException(
-                    "Para registrarte necesitamos tu RUC. Si eres persona natural, usa el RUC que empieza con 10.");
+        String titular = nombreTitular(dni, request.getRazonSocial(), request.getNombreContacto());
+        if (dni) {
+            exigirDniValido(ruc);
+        } else {
+            if (!RUC_VALIDO.matcher(ruc).matches()) {
+                throw new BusinessException(
+                        "Para registrarte necesitamos tu RUC. Si eres persona natural, usa el RUC que empieza con 10.");
+            }
+            exigirRazonSocial(titular);
         }
         if (usuarioRepository.existsByCorreoIgnoreCase(correo)) {
             throw new BusinessException("Ese correo ya tiene una cuenta. Ingresa al portal con tu correo y contraseña.");
@@ -198,7 +208,7 @@ public class PortalClienteService {
         Cliente existente = clienteRepository.findByNumeroDocumento(ruc).orElse(null);
         boolean empresaNueva = existente == null;
         Cliente cliente = empresaNueva
-                ? altaNueva(ruc, correo, request.getRazonSocial(), request.getTelefono())
+                ? altaNueva(dni, ruc, correo, titular, request.getTelefono())
                 : existente;
         if (!"ACTIVO".equals(cliente.getSituacion())) {
             throw new BusinessException("Tu empresa no tiene el acceso al portal habilitado. Escríbenos para ayudarte.");
@@ -214,7 +224,7 @@ public class PortalClienteService {
         usuario.setNombreUsuario(nombreUsuario);
         usuario.setNombres(request.getNombreContacto().trim());
         usuario.setCorreo(correo);
-        usuario.setIniciales(iniciales(request.getNombreContacto(), request.getRazonSocial()));
+        usuario.setIniciales(iniciales(request.getNombreContacto(), titular));
         usuario.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         usuario.setBloqueado(false);
         usuario.setIntentosFallidos((short) 0);
@@ -240,11 +250,13 @@ public class PortalClienteService {
     private void avisarAccesoPendiente(Cliente cliente, Usuario nuevo) {
         String empresa = cliente.getTercero().getRazonSocial();
         String ruc = cliente.getTercero().getNumeroDocumento();
+        TipoDocumento tipo = cliente.getTercero().getTipoDocumento();
+        String etiqueta = tipo == null || tipo.getCodigoTipo() == null ? "RUC" : tipo.getCodigoTipo().trim();
         try {
             notificacionService.avisarRol(RolSistema.JEFE_ADMINISTRATIVO, TipoAviso.ACCESO_PORTAL_PENDIENTE,
                     "Acceso al portal pendiente",
                     nuevo.getNombres() + " (" + nuevo.getCorreo() + ") pidió acceso al portal para "
-                            + empresa + " (RUC " + ruc + "). Revísalo y actívalo en Usuarios si corresponde.",
+                            + empresa + " (" + etiqueta + " " + ruc + "). Revísalo y actívalo en Usuarios si corresponde.",
                     "/usuarios", true);
         } catch (RuntimeException ex) {
             log.warn("No se pudo avisar el acceso pendiente del usuario {}: {}", nuevo.getIdUsuario(), ex.getMessage());
@@ -252,9 +264,61 @@ public class PortalClienteService {
     }
 
     /** RUC que no está en la base: el límite de intentos y, después, Factiliza. */
-    private Cliente altaNueva(String ruc, String correo, String razonSocialEscrita, String telefono) {
-        limitadorRegistro.verificar(ruc, correo);
-        return altaClienteDesdeRuc(ruc, razonSocialEscrita, telefono, correo);
+    private Cliente altaNueva(boolean dni, String numero, String correo, String titular, String telefono) {
+        limitadorRegistro.verificar(numero, correo);
+        return dni
+                ? altaClienteDni(numero, titular, telefono, correo)
+                : altaClienteDesdeRuc(numero, titular, telefono, correo);
+    }
+
+    /**
+     * Persona natural con DNI: no hay consulta a SUNAT ni domicilio fiscal, así que el tercero se crea
+     * sin distrito (tercero.id_distrito admite null) y con su nombre completo como titular. Se registra
+     * con tipo de documento DNI, igual que en el Panel Interno, para que se le emita boleta.
+     */
+    private Cliente altaClienteDni(String dni, String nombreTitular, String telefono, String correo) {
+        TipoDocumento tipoDni = tipoDocumentoRepository.findByCodigoTipo("DNI")
+                .orElseThrow(() -> new BusinessException("El registro no está disponible en este momento. Inténtalo más tarde."));
+        DatosTercero.validarDocumento(tipoDni, dni);
+
+        Tercero tercero = new Tercero();
+        tercero.setTipoDocumento(tipoDni);
+        tercero.setNumeroDocumento(dni);
+        DatosTercero.aplicarNombre(tercero, tipoDni, recortar(nombreTitular, 200), null, null, null);
+        tercero.setTelefono(vacioComoNull(telefono));
+        tercero.setCorreo(correo.trim());
+        auditarAlta(tercero);
+        tercero = terceroRepository.save(tercero);
+
+        Cliente cliente = new Cliente();
+        cliente.setTercero(tercero);
+        cliente.setSectorEconomico(sectorDeCaptacion());
+        cliente.setSituacion("ACTIVO");
+        auditarAlta(cliente);
+        log.info("Cliente persona natural nuevo desde el registro del portal");
+        return clienteRepository.save(cliente);
+    }
+
+    private static boolean esDni(String tipoDocumento) {
+        return tipoDocumento != null && "DNI".equalsIgnoreCase(tipoDocumento.trim());
+    }
+
+    /** Con DNI el titular es la persona de contacto; con RUC, la razón social. */
+    private static String nombreTitular(boolean dni, String razonSocial, String nombreContacto) {
+        String nombre = dni ? nombreContacto : razonSocial;
+        return nombre == null ? "" : nombre.trim();
+    }
+
+    private static void exigirDniValido(String dni) {
+        if (!DNI_VALIDO.matcher(dni).matches()) {
+            throw new BusinessException("Necesitamos tu DNI de 8 dígitos.");
+        }
+    }
+
+    private static void exigirRazonSocial(String razonSocial) {
+        if (razonSocial.isBlank()) {
+            throw new BusinessException("La razón social es obligatoria");
+        }
     }
 
     private static final String SIN_VALIDACION_RUC = "No pudimos validar tu RUC. Inténtalo de nuevo en unos minutos.";
@@ -367,15 +431,22 @@ public class PortalClienteService {
         if (usuario.getCliente() != null) {
             throw new EstadoNoPermitidoException("Tu cuenta ya tiene los datos de tu empresa.");
         }
+        boolean dni = esDni(request.getTipoDocumento());
         String ruc = soloDigitos(request.getRuc());
-        if (!RUC_VALIDO.matcher(ruc).matches()) {
-            throw new BusinessException(
-                    "Necesitamos el RUC de tu empresa (11 dígitos, empieza con 10 o 20). Si eres persona natural, usa tu RUC 10.");
+        String titular = nombreTitular(dni, request.getRazonSocial(), request.getNombreContacto());
+        if (dni) {
+            exigirDniValido(ruc);
+        } else {
+            if (!RUC_VALIDO.matcher(ruc).matches()) {
+                throw new BusinessException(
+                        "Necesitamos el RUC de tu empresa (11 dígitos, empieza con 10 o 20). Si eres persona natural, usa tu DNI o tu RUC 10.");
+            }
+            exigirRazonSocial(titular);
         }
         Cliente existente = clienteRepository.findByNumeroDocumento(ruc).orElse(null);
         boolean empresaNueva = existente == null;
         Cliente cliente = empresaNueva
-                ? altaNueva(ruc, usuario.getCorreo(), request.getRazonSocial(), request.getTelefono())
+                ? altaNueva(dni, ruc, usuario.getCorreo(), titular, request.getTelefono())
                 : existente;
         if (!"ACTIVO".equals(cliente.getSituacion())) {
             throw new BusinessException("Tu empresa no tiene el acceso al portal habilitado. Escríbenos para ayudarte.");
