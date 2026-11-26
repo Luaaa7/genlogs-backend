@@ -31,5 +31,7 @@ public enum TipoAviso {
     FACTILIZA_SIN_PLAN,
     /** v3.4 (BPMN 4.1): el cliente pagó un comprobante en línea, o el pago necesita revisión. Al Jefe y al Contador. */
     PAGO_EN_LINEA,
+    /** Entró una solicitud nueva del cliente: aviso a los Asistentes Logísticos. */
+    SOLICITUD_NUEVA,
     GENERAL
 }
