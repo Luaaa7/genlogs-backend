@@ -21,6 +21,8 @@ import com.genlogs.app.dto.SolicitudRequest;
 import com.genlogs.app.enums.CanalSolicitud;
 import com.genlogs.app.enums.EstadoPublicacion;
 import com.genlogs.app.enums.EstadoSolicitud;
+import com.genlogs.app.enums.RolSistema;
+import com.genlogs.app.enums.TipoAviso;
 import com.genlogs.app.enums.TipoEventoSolicitud;
 import com.genlogs.app.enums.TipoPlazo;
 import com.genlogs.app.exception.BusinessException;
@@ -68,6 +70,7 @@ public class SolicitudService {
     private final LimitadorSolicitudes limitador;
     private final CloudinaryService cloudinaryService;
     private final AcuseSolicitudCorreo acuse;
+    private final NotificacionService notificaciones;
 
     @Transactional
     public SolicitudCreadaResponse crear(SolicitudRequest request) {
@@ -117,6 +120,8 @@ public class SolicitudService {
                 "Canal " + request.getCanal().name() + ", plazo " + tipoPlazo.name()
                         + ", " + request.getItems().size() + " repuesto(s)");
 
+        avisarAlEquipo(guardada);
+
         if (request.getCanal() == CanalSolicitud.LANDING || request.getCanal() == CanalSolicitud.VITRINA) {
             try {
                 acuse.enviar(usuario.getCorreo(), usuario.getNombres(), guardada.getCodigoSolicitud());
@@ -127,6 +132,17 @@ public class SolicitudService {
 
         return new SolicitudCreadaResponse(guardada.getIdSolicitud(), guardada.getCodigoSolicitud(),
                 EstadoSolicitud.PENDIENTE);
+    }
+
+    /** Aviso en la campanita de los Asistentes Logísticos. Si falla, la solicitud ya quedó guardada. */
+    private void avisarAlEquipo(SolicitudCotizacion solicitud) {
+        try {
+            notificaciones.avisarRol(RolSistema.ASISTENTE_LOGISTICO, TipoAviso.SOLICITUD_NUEVA,
+                    "Nueva solicitud " + solicitud.getCodigoSolicitud(), solicitud.getAsunto(),
+                    "/solicitudes/" + solicitud.getIdSolicitud(), false);
+        } catch (RuntimeException e) {
+            log.warn("No se pudo avisar de la solicitud nueva");
+        }
     }
 
     /** Sube la foto o el plano de un repuesto y devuelve la URL para mandarla en urlFoto. */
