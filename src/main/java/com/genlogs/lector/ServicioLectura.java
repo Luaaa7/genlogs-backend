@@ -11,6 +11,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Set;
 import java.util.concurrent.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * P1: proceso Java separado; no es un bean Spring ni abre endpoints en el backend.
@@ -22,6 +24,7 @@ import java.util.concurrent.*;
  */
 public final class ServicioLectura implements AutoCloseable {
     @FunctionalInterface public interface Motor { Respuesta ejecutar(String operacion, Peticion peticion); }
+    private static final Logger log = LoggerFactory.getLogger(ServicioLectura.class);
     private static final int MAX_BODY = 512 * 1024;
     // Cada operación abre Chromium. Dos procesos pueden agotar el plan de 512 MiB.
     private static final int MAX_LECTURAS_SIMULTANEAS = 1;
@@ -102,8 +105,8 @@ public final class ServicioLectura implements AutoCloseable {
         int codigo = status(response.estado());
         if ("sesion".equals(operacion)) {
             long ms = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - inicio);
-            System.out.println("Lector sesion " + request.fuente() + ": resultado=" + response.estado()
-                    + " HTTP=" + codigo + " duración=" + ms + " ms");
+            log.info("Lector sesion {}: resultado={} HTTP={} duración={} ms",
+                    request.fuente(), response.estado(), codigo, ms);
         }
         send(exchange, codigo, response);
     }

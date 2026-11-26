@@ -15,9 +15,12 @@ import java.time.Instant;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** P1: un Playwright y un contexto efímero por llamada, siempre en el mismo hilo. */
 public final class LectorChromium implements ServicioLectura.Motor {
+    private static final Logger log = LoggerFactory.getLogger(LectorChromium.class);
     private static final String CAPTCHA = "iframe[src*=recaptcha], iframe[src*=hcaptcha], #captchacharacters, #captcha, input[autocomplete=one-time-code], #auth-mfa-otpcode, #auth-captcha-guess";
     private static final String VERIFICACION_AMAZON = "/ap/cvf/";
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -167,7 +170,7 @@ public final class LectorChromium implements ServicioLectura.Motor {
                                 ', nombrePassword=' + visibles.some(el => el.name === 'password');
                         }
                         """, null, new Locator.EvaluateOptions().setTimeout(500)));
-                System.out.println("Ingreso AMAZON: campos al fallar en «" + paso + "» | " + campos);
+                log.info("Ingreso AMAZON: campos al fallar en «{}» | {}", paso, campos);
             }
             titulo = page.title();
             if (titulo.length() > 80) titulo = titulo.substring(0, 80);
@@ -204,7 +207,8 @@ public final class LectorChromium implements ServicioLectura.Motor {
             pulsarLiberando(page, texto(login, "usuario"), continuar, deadline);
             paso[0] = "esperar que aparezca la clave (CLAVE)";
             if ("AMAZON".equals(req.fuente())) {
-                System.out.println("Ingreso AMAZON: CONTINUAR completado; esperando CLAVE a los " + transcurridoMs(deadline) + " ms");
+                log.info("Ingreso AMAZON: CONTINUAR completado; esperando CLAVE a los {} ms",
+                        transcurridoMs(deadline));
             }
             Locator siguiente = claveVisible.or(page.locator("css=" + CAPTCHA));
             for (String regla : List.of("verificacion", "bloqueo", "sesionVencida")) {
@@ -237,7 +241,8 @@ public final class LectorChromium implements ServicioLectura.Motor {
         page.locator("css=" + texto(login, "enviar")).click();
         paso[0] = "esperar la señal de sesión iniciada (EXITO)";
         if ("AMAZON".equals(req.fuente())) {
-            System.out.println("Ingreso AMAZON: ENVIAR completado; esperando EXITO a los " + transcurridoMs(deadline) + " ms");
+            log.info("Ingreso AMAZON: ENVIAR completado; esperando EXITO a los {} ms",
+                    transcurridoMs(deadline));
         }
         String rutaVerificacion = "AMAZON".equals(req.fuente()) ? VERIFICACION_AMAZON : "";
         esperar(page, req.reglas(), texto(login, "exito"), deadline, rutaVerificacion);
