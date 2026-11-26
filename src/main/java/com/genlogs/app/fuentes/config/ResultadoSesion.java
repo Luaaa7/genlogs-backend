@@ -12,7 +12,7 @@ public record ResultadoSesion(Resultado resultado, String sesion, LocalDateTime 
      * SIN_CONFIGURAR: faltan la cuenta de búsqueda o las reglas de ingreso. No es un fallo
      * de la tienda y no se llama al servicio de lectura.
      */
-    public enum Resultado { OK, VERIFICACION, ERROR, SIN_CONFIGURAR }
+    public enum Resultado { OK, VERIFICACION, ERROR, SIN_CONFIGURAR, OCUPADO }
 
     public static ResultadoSesion ok(String sesion, LocalDateTime validaHasta) {
         return new ResultadoSesion(Resultado.OK, sesion, validaHasta, null);
@@ -25,6 +25,10 @@ public record ResultadoSesion(Resultado resultado, String sesion, LocalDateTime 
 
     public static ResultadoSesion error(String mensaje) {
         return new ResultadoSesion(Resultado.ERROR, null, null, mensaje);
+    }
+
+    public static ResultadoSesion ocupado(String mensaje) {
+        return new ResultadoSesion(Resultado.OCUPADO, null, null, mensaje);
     }
 
     /** Faltan la cuenta de búsqueda o las reglas de ingreso de la tienda. */

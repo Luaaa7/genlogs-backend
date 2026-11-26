@@ -156,6 +156,25 @@ class SesionFuenteTest {
     }
 
     @Test
+    void probar_lectorOcupadoNoInvalidaLaSesionGuardada() throws Exception {
+        cargarCuenta(CodigoFuente.EBAY);
+        LocalDateTime hasta = LocalDateTime.now().plusDays(1).withNano(0);
+        when(lector.iniciarSesion(any(), any(), any(), any()))
+                .thenReturn(ResultadoSesion.ok(SESION, hasta), ResultadoSesion.ocupado("El lector está ocupado."));
+
+        mockMvc.perform(post("/api/fuentes/EBAY/probar").with(user(jefe).roles("JEFE_ADMINISTRATIVO")))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/fuentes/EBAY/probar").with(user(jefe).roles("JEFE_ADMINISTRATIVO")))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.message").value("El lector está ocupado."));
+
+        var fuente = fuente(CodigoFuente.EBAY);
+        assertThat(fuente.getEstado()).isEqualTo(EstadoFuente.ACTIVA);
+        assertThat(fuente.getSesionValidaHasta()).isEqualTo(hasta);
+        assertThat(credenciales.leer(CodigoFuente.EBAY, TipoCredencial.SESION)).contains(SESION);
+    }
+
+    @Test
     void probar_tiendaPideCodigoDejaRequiereVerificacion() throws Exception {
         cargarCuenta(CodigoFuente.AMAZON);
         when(lector.iniciarSesion(any(), any(), any(), any()))

@@ -7,7 +7,7 @@ import java.util.List;
  */
 public record ResultadoLectura(Tipo tipo, List<FichaFuente> fichas, String mensaje, boolean reintentable) {
 
-    public enum Tipo { OK, BLOQUEADA, VERIFICACION, ERROR, SIN_RESULTADOS, NO_CONECTADO }
+    public enum Tipo { OK, BLOQUEADA, VERIFICACION, ERROR, OCUPADO, SIN_RESULTADOS, NO_CONECTADO }
 
     public static ResultadoLectura ok(List<FichaFuente> fichas) {
         if (fichas == null || fichas.isEmpty()) {
@@ -30,6 +30,9 @@ public record ResultadoLectura(Tipo tipo, List<FichaFuente> fichas, String mensa
 
     public static ResultadoLectura error(String mensaje, boolean reintentable) {
         return new ResultadoLectura(Tipo.ERROR, List.of(), mensaje, reintentable);
+    }
+    public static ResultadoLectura ocupado(String mensaje) {
+        return new ResultadoLectura(Tipo.OCUPADO, List.of(), mensaje, false);
     }
 
     /** El servicio de lectura (P2) no está cableado. No es una caída de la tienda. */

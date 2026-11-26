@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.genlogs.app.exception.BusinessException;
+import com.genlogs.app.exception.DemasiadasSolicitudesException;
 import com.genlogs.app.exception.ResourceNotFoundException;
 import com.genlogs.app.repository.UsuarioRepository;
 
@@ -102,6 +103,10 @@ public class SesionFuenteService {
                 : lector.iniciarSesion(codigo, fuente.getUrlBase(), usuarioTienda, claveTienda);
         if (r == null) {
             r = ResultadoSesion.error("El servicio de lectura no respondió.");
+        }
+        if (r.resultado() == ResultadoSesion.Resultado.OCUPADO) {
+            if (manual) throw new DemasiadasSolicitudesException(r.mensaje());
+            return false;
         }
         return aplicar(fuente, manual, r);
     }

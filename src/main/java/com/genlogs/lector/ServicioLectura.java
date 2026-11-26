@@ -11,6 +11,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Set;
 import java.util.concurrent.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * P1: proceso Java separado; no es un bean Spring ni abre endpoints en el backend.
@@ -22,13 +24,16 @@ import java.util.concurrent.*;
  */
 public final class ServicioLectura implements AutoCloseable {
     @FunctionalInterface public interface Motor { Respuesta ejecutar(String operacion, Peticion peticion); }
+    private static final Logger log = LoggerFactory.getLogger(ServicioLectura.class);
     private static final int MAX_BODY = 512 * 1024;
+    // Cada operación abre Chromium. Dos procesos pueden agotar el plan de 512 MiB.
+    private static final int MAX_LECTURAS_SIMULTANEAS = 1;
         private static final ObjectMapper JSON = new ObjectMapper().setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL);
     private final HttpServer server;
     private final ExecutorService handlers = Executors.newFixedThreadPool(4);
-    private final ExecutorService workers = Executors.newFixedThreadPool(2);
+    private final ExecutorService workers = Executors.newFixedThreadPool(MAX_LECTURAS_SIMULTANEAS);
     private final ScheduledExecutorService deadlines = Executors.newSingleThreadScheduledExecutor();
-    private final Semaphore slots = new Semaphore(2);
+    private final Semaphore slots = new Semaphore(MAX_LECTURAS_SIMULTANEAS);
     private final byte[] tokenDigest;
     private final Motor motor;
     private final long timeoutMs;
@@ -73,21 +78,37 @@ public final class ServicioLectura implements AutoCloseable {
             catch (Exception e) { send(exchange, 400, LectorChromium.estado(Estado.SOLICITUD_INVALIDA)); return; }
             readDeadline.cancel(false);
             if (!slots.tryAcquire()) { send(exchange, 503, LectorChromium.estado(Estado.OCUPADO)); return; }
+            long inicio = System.nanoTime();
             Future<Respuesta> future;
             try {
                 future = workers.submit(() -> { try { return motor.ejecutar(operation, request); } finally { slots.release(); } });
             } catch (RejectedExecutionException e) { slots.release(); send(exchange, 503, LectorChromium.estado(Estado.OCUPADO)); return; }
             try {
                 Respuesta response = future.get(timeoutMs + margenMs(), TimeUnit.MILLISECONDS);
-                send(exchange, status(response.estado()), response);
+                responderLectura(exchange, operation, request, response, inicio);
             } catch (TimeoutException e) {
                 // The worker retains its slot until it closes Chromium, preventing resource accumulation.
                 System.out.println("Lector " + operation + " " + request.fuente() + ": el navegador no terminó dentro del plazo del servicio (" + (timeoutMs + margenMs()) + " ms)");
-                future.cancel(true); send(exchange, 504, LectorChromium.estado(Estado.TIEMPO_AGOTADO));
+                future.cancel(true);
+                responderLectura(exchange, operation, request, LectorChromium.estado(Estado.TIEMPO_AGOTADO), inicio);
             } catch (InterruptedException e) {
-                future.cancel(true); Thread.currentThread().interrupt(); send(exchange, 502, LectorChromium.estado(Estado.SIN_RESPUESTA));
-            } catch (ExecutionException e) { send(exchange, 502, LectorChromium.estado(Estado.SIN_RESPUESTA)); }
+                future.cancel(true);
+                Thread.currentThread().interrupt();
+                responderLectura(exchange, operation, request, LectorChromium.estado(Estado.SIN_RESPUESTA), inicio);
+            } catch (ExecutionException e) {
+                responderLectura(exchange, operation, request, LectorChromium.estado(Estado.SIN_RESPUESTA), inicio);
+            }
         } finally { readDeadline.cancel(false); exchange.close(); }
+    }
+    private static void responderLectura(HttpExchange exchange, String operacion, Peticion request,
+                                         Respuesta response, long inicio) throws IOException {
+        int codigo = status(response.estado());
+        if ("sesion".equals(operacion)) {
+            long ms = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - inicio);
+            log.info("Lector sesion {}: resultado={} HTTP={} duración={} ms",
+                    request.fuente(), response.estado(), codigo, ms);
+        }
+        send(exchange, codigo, response);
     }
     private static int status(Estado estado) {
         return switch (estado) {
