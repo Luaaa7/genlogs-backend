@@ -18,7 +18,8 @@ import java.util.regex.Pattern;
 
 /** P1: un Playwright y un contexto efímero por llamada, siempre en el mismo hilo. */
 public final class LectorChromium implements ServicioLectura.Motor {
-    private static final String CAPTCHA = "iframe[src*=recaptcha], iframe[src*=hcaptcha], #captchacharacters, #captcha, input[autocomplete=one-time-code]";
+    private static final String CAPTCHA = "iframe[src*=recaptcha], iframe[src*=hcaptcha], #captchacharacters, #captcha, input[autocomplete=one-time-code], #auth-mfa-otpcode, #auth-captcha-guess";
+    private static final String VERIFICACION_AMAZON = "/ap/cvf/";
     private static final ObjectMapper JSON = new ObjectMapper();
     private final long timeoutMs;
     private final Consumer<BrowserContext> fixture;
@@ -171,6 +172,9 @@ public final class LectorChromium implements ServicioLectura.Motor {
     private Respuesta iniciarSesionPaso(Page page, BrowserContext context, Peticion req, long deadline, String[] paso) throws Exception {
         Map<String, Object> login = campo(req.reglas(), "login");
         String continuar = texto(login, "continuar");
+        // Algunos formularios conservan una casilla oculta para autocompletar.
+        Locator claveVisible = page.locator("css=" + texto(login, "clave"))
+                .filter(new Locator.FilterOptions().setVisible(true));
         if (continuar != null) {
             // D-42: primera pantalla solo con el usuario. La clave aparece después de CONTINUAR.
             URI pagina = URI.create(page.url());
@@ -184,11 +188,19 @@ public final class LectorChromium implements ServicioLectura.Motor {
             context.setDefaultTimeout(restante(deadline));
             pulsarLiberando(page, texto(login, "usuario"), continuar, deadline);
             paso[0] = "esperar que aparezca la clave (CLAVE)";
-            context.setDefaultTimeout(restante(deadline));
-            page.locator("css=" + texto(login, "clave")).waitFor();
+            Locator siguiente = claveVisible.or(page.locator("css=" + CAPTCHA));
+            for (String regla : List.of("verificacion", "bloqueo", "sesionVencida")) {
+                String selector = texto(req.reglas(), regla);
+                if (selector != null) siguiente = siguiente.or(page.locator("css=" + selector));
+            }
+            siguiente.filter(new Locator.FilterOptions().setVisible(true)).first().waitFor(
+                    new Locator.WaitForOptions().setTimeout(restante(deadline)));
+            Estado estado = detectar(page, req.reglas(), 200);
+            if (estado != null) return estado(estado);
         }
         paso[0] = "ubicar la casilla de la clave (CLAVE)";
-        String action = (String) page.locator("css=" + texto(login, "clave")).evaluate("el => el.form?.action || location.href");
+        String action = (String) claveVisible.evaluate("el => el.form?.action || location.href", null,
+                new Locator.EvaluateOptions().setTimeout(restante(deadline)));
         URI form = URI.create(action), actual = URI.create(page.url());
         if (!mismaTienda(form, req.fuente()) || !mismaTienda(actual, req.fuente())
                 || !"https".equals(form.getScheme())) return estado(Estado.URL_NO_PERMITIDA);
@@ -201,13 +213,17 @@ public final class LectorChromium implements ServicioLectura.Motor {
         }
         paso[0] = "escribir la clave (CLAVE)";
         context.setDefaultTimeout(restante(deadline));
-        page.locator("css=" + texto(login, "clave")).fill(req.credenciales().clave());
+        claveVisible.fill(req.credenciales().clave());
         paso[0] = "pulsar ENVIAR";
         context.setDefaultTimeout(restante(deadline));
         page.locator("css=" + texto(login, "enviar")).click();
         paso[0] = "esperar la señal de sesión iniciada (EXITO)";
-        esperar(page, req.reglas(), texto(login, "exito"), deadline);
-        ValidacionLectura.url(page.url(), req.fuente());
+        String rutaVerificacion = "AMAZON".equals(req.fuente()) ? VERIFICACION_AMAZON : "";
+        esperar(page, req.reglas(), texto(login, "exito"), deadline, rutaVerificacion);
+        URI destino = ValidacionLectura.url(page.url(), req.fuente());
+        if (!rutaVerificacion.isEmpty() && destino.getPath().startsWith(rutaVerificacion)) {
+            return estado(Estado.VERIFICACION);
+        }
         Estado estado = detectar(page, req.reglas(), 200);
         if (estado != null) return estado(estado);
         JsonNode storage = JSON.readTree(context.storageState());
@@ -232,14 +248,22 @@ public final class LectorChromium implements ServicioLectura.Motor {
     }
 
     private static void esperar(Page page, Map<String, Object> rules, String ready, long deadline) {
+        esperar(page, rules, ready, deadline, "");
+    }
+
+    private static void esperar(Page page, Map<String, Object> rules, String ready, long deadline, String rutaVerificacion) {
         List<String> selectors = new ArrayList<>();
         if (ready != null) selectors.add(ready);
         for (String name : List.of("verificacion", "bloqueo", "sesionVencida", "sinResultados")) {
             if (texto(rules, name) != null) selectors.add(texto(rules, name));
         }
         selectors.add(CAPTCHA);
-        page.waitForFunction("selectors => selectors.some(s => { const el = document.querySelector(s); return el && el.getClientRects().length > 0; })",
-                selectors, new Page.WaitForFunctionOptions().setTimeout(restante(deadline)));
+        page.waitForFunction("""
+                ({selectors, rutaVerificacion}) =>
+                    (rutaVerificacion && location.pathname.startsWith(rutaVerificacion)) ||
+                    selectors.some(s => [...document.querySelectorAll(s)].some(el => el.getClientRects().length > 0))
+                """, Map.of("selectors", selectors, "rutaVerificacion", rutaVerificacion),
+                new Page.WaitForFunctionOptions().setTimeout(restante(deadline)));
     }
     private static Estado detectar(Page page, Map<String, Object> rules, int status) {
         if (visible(page, texto(rules, "verificacion")) || visible(page, CAPTCHA)
@@ -248,7 +272,10 @@ public final class LectorChromium implements ServicioLectura.Motor {
         if (status == 401 || visible(page, texto(rules, "sesionVencida"))) return Estado.SESION_VENCIDA;
         return status >= 400 ? Estado.SIN_RESPUESTA : null;
     }
-    private static boolean visible(Page page, String selector) { return selector != null && page.locator("css=" + selector).first().isVisible(); }
+    private static boolean visible(Page page, String selector) {
+        return selector != null && page.locator("css=" + selector)
+                .filter(new Locator.FilterOptions().setVisible(true)).first().isVisible();
+    }
 
     public static List<Resultado> extraer(String html, String url, Peticion req, boolean buscar) {
         Element document = Jsoup.parse(html, url);

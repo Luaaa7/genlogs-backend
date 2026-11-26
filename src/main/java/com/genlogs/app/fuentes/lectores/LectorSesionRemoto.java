@@ -96,6 +96,10 @@ public class LectorSesionRemoto implements LectorSesion {
             return ResultadoSesion.error(tienda + ": no tiene página de inicio de sesión.");
         }
         Map<String, String> login = reglasLogin(codigo);
+        if (codigo == CodigoFuente.AMAZON && "#ap_email".equals(login.get("usuario"))) {
+            // Amazon usa ambos identificadores según la variante de su página de ingreso.
+            login.put("usuario", ":is(#ap_email, #ap_email_login):visible");
+        }
         if (!login.keySet().containsAll(REGLAS_OBLIGATORIAS)) {
             return ResultadoSesion.sinConfigurar(tienda + ": faltan reglas de la página de inicio de sesión (casilla del"
                     + " usuario, casilla de la clave, botón para ingresar y señal de sesión iniciada) en"
