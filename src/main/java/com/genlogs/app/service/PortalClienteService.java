@@ -608,6 +608,21 @@ public class PortalClienteService {
         };
     }
 
+    /**
+     * Id de la cotización de este pedido, solo si ya se le envió al cliente. En borrador, pendiente de
+     * aprobación o aprobada por el Jefe sin enviar, el portal todavía no la muestra.
+     */
+    static Long idCotizacionVisible(SolicitudCotizacion solicitud) {
+        var cotizacion = solicitud.getCotizacion();
+        if (cotizacion == null || cotizacion.getEstadoCotizacion() == null) {
+            return null;
+        }
+        String codigo = cotizacion.getEstadoCotizacion().getCodigoEstado();
+        boolean oculta = "BORRADOR".equals(codigo) || "PENDIENTE_APROBACION".equals(codigo)
+                || "APROBADA_INTERNA".equals(codigo);
+        return oculta ? null : cotizacion.getIdCotizacion();
+    }
+
     private PedidoResponse aPedido(SolicitudCotizacion solicitud) {
         List<PedidoItemResponse> items = solicitud.getItems().stream()
                 .filter(item -> "A".equals(item.getStatus()))
@@ -629,6 +644,7 @@ public class PortalClienteService {
                 .estado(solicitud.getEstadoSolicitud())
                 .etapa(etapaCliente(solicitud.getEstadoSolicitud()))
                 .puedeCancelar(ESTADOS_CANCELABLES.contains(solicitud.getEstadoSolicitud()))
+                .idCotizacion(idCotizacionVisible(solicitud))
                 .asunto(solicitud.getAsunto())
                 .descripcion(solicitud.getDescripcion())
                 .items(items)

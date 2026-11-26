@@ -29,6 +29,8 @@ public class PedidoResponse {
     private String etapa;
     /** true mientras el cliente todavía puede cancelarlo (PENDIENTE o EN_REVISION). */
     private Boolean puedeCancelar;
+    /** Cotización ya enviada al cliente para este pedido (el portal la abre en /portal/cotizaciones/{id}). */
+    private Long idCotizacion;
     private String asunto;
     private String descripcion;
     private List<PedidoItemResponse> items;
