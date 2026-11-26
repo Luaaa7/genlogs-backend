@@ -23,6 +23,7 @@ import com.genlogs.app.dto.gestion.ReasignarSolicitudRequest;
 import com.genlogs.app.dto.gestion.ReclasificarSolicitudRequest;
 import com.genlogs.app.dto.gestion.SolicitudInternaResponse;
 import com.genlogs.app.dto.gestion.SolicitudVencimientoResponse;
+import com.genlogs.app.dto.gestion.VincularCotizacionRequest;
 import com.genlogs.app.service.GestionSolicitudService;
 import com.genlogs.app.service.IdentificacionItemService;
 import com.genlogs.app.service.VencimientoSolicitudService;
@@ -32,6 +33,8 @@ import jakarta.validation.Valid;
 /**
  * Gestión interna de solicitudes (BE-B). Solo personal interno; el cliente recibe 403.
  *
+ * GET   /api/solicitudes/{id}               detalle de una solicitud
+ * PATCH /api/solicitudes/{id}/cotizacion    {idCotizacion}; liga la cotización creada desde la solicitud
  * PATCH /api/solicitudes/{id}/iniciar       PENDIENTE → EN_REVISION
  * PATCH /api/solicitudes/{id}/pausar        {motivo, fechaEstimada?} → EN_ESPERA_TERCERO
  * PATCH /api/solicitudes/{id}/reanudar      → EN_REVISION, plazo corrido lo pausado
@@ -60,6 +63,19 @@ public class GestionSolicitudController {
         this.gestion = gestion;
         this.vencimientoService = vencimientoService;
         this.identificacion = identificacion;
+    }
+
+    @GetMapping("/{id}")
+    @PreAuthorize(VEN)
+    public ResponseEntity<SolicitudInternaResponse> detalle(@PathVariable Long id) {
+        return ResponseEntity.ok(gestion.detalle(id));
+    }
+
+    @PatchMapping("/{id}/cotizacion")
+    @PreAuthorize(GESTIONAN)
+    public ResponseEntity<SolicitudInternaResponse> vincularCotizacion(@PathVariable Long id,
+            @Valid @RequestBody VincularCotizacionRequest request) {
+        return ResponseEntity.ok(gestion.vincularCotizacion(id, request.idCotizacion()));
     }
 
     @PatchMapping("/{id}/iniciar")

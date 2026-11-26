@@ -43,6 +43,8 @@ import com.genlogs.app.service.CotizacionService;
 import com.genlogs.app.service.PermisosCotizacion;
 import com.genlogs.app.service.RespuestaClienteService;
 
+import com.genlogs.app.service.GestionSolicitudService;
+
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
@@ -53,6 +55,12 @@ public class CotizacionController {
 
     private final CotizacionService cotizacionService;
     private final RespuestaClienteService respuestaClienteService;
+
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(CotizacionController.class);
+
+    /** Pone la solicitud en COTIZADA al aprobar. Opcional para no cambiar el constructor. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private GestionSolicitudService solicitudes;
 
     /**
      * Lista blanca de campos de ordenamiento del listado.
@@ -224,7 +232,16 @@ public class CotizacionController {
     @PreAuthorize(PermisosCotizacion.APROBAR)
     @PostMapping("/{id}/aprobar")
     public ResponseEntity<CotizacionResponse> aprobar(@PathVariable Long id) {
-        return ResponseEntity.ok(cotizacionService.aprobar(id));
+        CotizacionResponse aprobada = cotizacionService.aprobar(id);
+        if (solicitudes != null) {
+            try {
+                solicitudes.marcarCotizadaPorCotizacion(id);
+            } catch (RuntimeException e) {
+                // La cotización ya quedó aprobada: no se deshace por un problema al avisar a la solicitud.
+                LOG.error("Cotización {} aprobada, pero su solicitud no pasó a COTIZADA", id, e);
+            }
+        }
+        return ResponseEntity.ok(aprobada);
     }
 
     @PreAuthorize(PermisosCotizacion.APROBAR)

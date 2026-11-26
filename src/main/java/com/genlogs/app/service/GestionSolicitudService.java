@@ -21,9 +21,11 @@ import com.genlogs.app.enums.TipoPlazo;
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.EstadoNoPermitidoException;
 import com.genlogs.app.exception.ResourceNotFoundException;
+import com.genlogs.app.model.Cotizacion;
 import com.genlogs.app.model.SolicitudCotizacion;
 import com.genlogs.app.model.SolicitudEvento;
 import com.genlogs.app.model.Usuario;
+import com.genlogs.app.repository.CotizacionRepository;
 import com.genlogs.app.repository.SolicitudCotizacionRepository;
 import com.genlogs.app.repository.SolicitudEventoRepository;
 import com.genlogs.app.repository.UsuarioRepository;
@@ -51,16 +53,18 @@ public class GestionSolicitudService {
     private final PlazoSolicitud plazo;
     private final CalendarioHabil calendario;
     private final BitacoraSolicitud bitacora;
+    private final CotizacionRepository cotizacionRepository;
 
     public GestionSolicitudService(SolicitudCotizacionRepository solicitudRepository,
             SolicitudEventoRepository eventoRepository, UsuarioRepository usuarioRepository, PlazoSolicitud plazo,
-            CalendarioHabil calendario, BitacoraSolicitud bitacora) {
+            CalendarioHabil calendario, BitacoraSolicitud bitacora, CotizacionRepository cotizacionRepository) {
         this.solicitudRepository = solicitudRepository;
         this.eventoRepository = eventoRepository;
         this.usuarioRepository = usuarioRepository;
         this.plazo = plazo;
         this.calendario = calendario;
         this.bitacora = bitacora;
+        this.cotizacionRepository = cotizacionRepository;
     }
 
     @Transactional
@@ -168,6 +172,63 @@ public class GestionSolicitudService {
                 .toList();
     }
 
+    /** Detalle de una solicitud por su id (la pantalla interna ya no depende de venir desde la lista). */
+    @Transactional(readOnly = true)
+    public SolicitudInternaResponse detalle(Long id) {
+        return aRespuesta(solicitudRepository.findById(id)
+                .filter(x -> x.getStatus() != null && x.getStatus().trim().equals("A"))
+                .orElseThrow(() -> new ResourceNotFoundException("Solicitud no encontrada")));
+    }
+
+    /**
+     * Liga la cotización recién creada con la solicitud de la que nace. La cotización debe ser del mismo
+     * cliente y la solicitud no puede tener ya otra. Si estaba pendiente, pasa a EN_REVISION con quien cotiza.
+     */
+    @Transactional
+    public SolicitudInternaResponse vincularCotizacion(Long idSolicitud, Long idCotizacion) {
+        Usuario yo = usuarioActual();
+        SolicitudCotizacion s = abierta(idSolicitud);
+        Cotizacion c = cotizacionRepository.findById(idCotizacion)
+                .filter(x -> x.getStatus() != null && x.getStatus().trim().equals("A"))
+                .orElseThrow(() -> new ResourceNotFoundException("Cotización no encontrada"));
+        if (s.getCotizacion() != null) {
+            throw new BusinessException("La solicitud ya tiene la cotización " + s.getCotizacion().getCodigoCotizacion());
+        }
+        if (c.getCliente() == null || s.getCliente() == null
+                || !s.getCliente().getIdCliente().equals(c.getCliente().getIdCliente())) {
+            throw new BusinessException("La cotización debe ser del mismo cliente que la solicitud");
+        }
+        if (EstadoSolicitud.PENDIENTE.name().equals(s.getEstadoSolicitud())) {
+            s.setEstadoSolicitud(EstadoSolicitud.EN_REVISION.name());
+            if (s.getUsuarioAsignado() == null) {
+                s.setUsuarioAsignado(yo);
+            }
+        }
+        s.setCotizacion(c);
+        guardar(s, yo, "SOLICITUD_VINCULAR_COTIZACION");
+        bitacora.registrar(idSolicitud, yo.getIdUsuario(), TipoEventoSolicitud.ESTADO,
+                "Cotización " + c.getCodigoCotizacion() + " creada desde la solicitud");
+        return aRespuesta(s);
+    }
+
+    /**
+     * Cuando el Jefe aprueba una cotización que nació de una solicitud, la solicitud pasa a COTIZADA.
+     * Si la cotización no viene de una solicitud, o ya estaba cotizada, no hace nada.
+     */
+    @Transactional
+    public void marcarCotizadaPorCotizacion(Long idCotizacion) {
+        solicitudRepository.findFirstByCotizacion_IdCotizacionAndStatus(idCotizacion, "A")
+                .filter(s -> !FINALES.contains(s.getEstadoSolicitud()))
+                .ifPresent(s -> {
+                    Usuario yo = usuarioActual();
+                    String anterior = s.getEstadoSolicitud();
+                    s.setEstadoSolicitud(EstadoSolicitud.COTIZADA.name());
+                    guardar(s, yo, "SOLICITUD_COTIZADA");
+                    bitacora.registrar(s.getIdSolicitud(), yo.getIdUsuario(), TipoEventoSolicitud.ESTADO,
+                            anterior + " → COTIZADA (cotización aprobada)");
+                });
+    }
+
     /** Vista interna de una solicitud (la usan también la lista por vencimiento y el detalle). */
     public static SolicitudInternaResponse aRespuesta(SolicitudCotizacion s) {
         Usuario a = s.getUsuarioAsignado();
@@ -177,7 +238,10 @@ public class GestionSolicitudService {
                 s.getEstadoSolicitud(), s.getTipoPlazo(), s.getDateCreate(), s.getFechaLimiteInterna(),
                 s.getPausadaDesde(), s.getMotivoPausa(), s.getFechaEstimadaTercero(), s.getReclasificaciones(),
                 a == null ? null : new SolicitudInternaResponse.UsuarioResumen(a.getIdUsuario(), a.getNombreUsuario(),
-                        a.getNombres()));
+                        a.getNombres()),
+                s.getCliente() == null ? null : s.getCliente().getIdCliente(),
+                s.getCotizacion() == null ? null : s.getCotizacion().getIdCotizacion(),
+                s.getCotizacion() == null ? null : s.getCotizacion().getCodigoCotizacion());
     }
 
     // ------------------------------------------------------------------ apoyo

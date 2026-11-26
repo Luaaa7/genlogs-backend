@@ -23,6 +23,9 @@ public interface SolicitudCotizacionRepository extends JpaRepository<SolicitudCo
 
     boolean existsByCodigoSolicitud(String codigoSolicitud);
 
+    /** La solicitud de la que nació una cotización (si nació de una). */
+    Optional<SolicitudCotizacion> findFirstByCotizacion_IdCotizacionAndStatus(Long idCotizacion, String status);
+
     /** Cotizaciones del mes que tienen solicitud ligada. La fecha límite puede ser null. */
     @Query("""
             SELECT c.idCotizacion AS idCotizacion,

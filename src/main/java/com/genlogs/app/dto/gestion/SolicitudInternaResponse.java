@@ -20,7 +20,10 @@ public record SolicitudInternaResponse(
         String motivoPausa,
         LocalDate fechaEstimadaTercero,
         Short reclasificaciones,
-        UsuarioResumen asignado) {
+        UsuarioResumen asignado,
+        Long idCliente,
+        Long idCotizacion,
+        String codigoCotizacion) {
 
     public record UsuarioResumen(Long idUsuario, String nombreUsuario, String nombres) {
     }
