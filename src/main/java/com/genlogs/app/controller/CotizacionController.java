@@ -43,6 +43,7 @@ import com.genlogs.app.service.CotizacionService;
 import com.genlogs.app.service.PermisosCotizacion;
 import com.genlogs.app.service.RespuestaClienteService;
 
+import com.genlogs.app.service.AvisoDecisionCotizacion;
 import com.genlogs.app.service.GestionSolicitudService;
 
 import jakarta.validation.Valid;
@@ -61,6 +62,10 @@ public class CotizacionController {
     /** Pone la solicitud en COTIZADA al aprobar. Opcional para no cambiar el constructor. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private GestionSolicitudService solicitudes;
+
+    /** Avisa a quien preparó la cotización cuando el Jefe decide. Opcional, igual que solicitudes. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private AvisoDecisionCotizacion avisos;
 
     /**
      * Lista blanca de campos de ordenamiento del listado.
@@ -241,6 +246,13 @@ public class CotizacionController {
                 LOG.error("Cotización {} aprobada, pero su solicitud no pasó a COTIZADA", id, e);
             }
         }
+        if (avisos != null) {
+            try {
+                avisos.aprobada(id);
+            } catch (RuntimeException e) {
+                LOG.warn("Cotización {} aprobada, pero no se pudo avisar a quien la preparó", id);
+            }
+        }
         return ResponseEntity.ok(aprobada);
     }
 
@@ -248,7 +260,15 @@ public class CotizacionController {
     @PostMapping("/{id}/devolver")
     public ResponseEntity<CotizacionResponse> devolver(
             @PathVariable Long id, @Valid @RequestBody DevolverCotizacionRequest request) {
-        return ResponseEntity.ok(cotizacionService.devolver(id, request.getMotivo()));
+        CotizacionResponse devuelta = cotizacionService.devolver(id, request.getMotivo());
+        if (avisos != null) {
+            try {
+                avisos.devuelta(id, request.getMotivo());
+            } catch (RuntimeException e) {
+                LOG.warn("Cotización {} devuelta, pero no se pudo avisar a quien la preparó", id);
+            }
+        }
+        return ResponseEntity.ok(devuelta);
     }
 
     @PreAuthorize(PermisosCotizacion.CREAR)
