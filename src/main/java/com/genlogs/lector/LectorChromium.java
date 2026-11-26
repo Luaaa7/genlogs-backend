@@ -125,8 +125,14 @@ public final class LectorChromium implements ServicioLectura.Motor {
         return timeoutMs - Math.max(0, (deadline - System.nanoTime()) / 1_000_000);
     }
 
+    /** https, sin puerto raro y dentro de los dominios de la tienda: el ingreso puede cambiar de subdominio (signin.ebay.com). */
+    private static boolean mismaTienda(URI uri, String fuente) {
+        return "https".equalsIgnoreCase(uri.getScheme()) && (uri.getPort() == -1 || uri.getPort() == 443)
+                && uri.getHost() != null && ValidacionLectura.dominio(uri.getHost().toLowerCase(java.util.Locale.ROOT), fuente);
+    }
+
     private void registrarTiempoAgotado(Page page, Peticion req, String paso, long hastaAbrir) {
-        String titulo = "?", sitio = "?";
+        String titulo = "?", sitio = "?", botones = "?";
         long visibles = -1;
         try {
             titulo = page.title();
@@ -134,12 +140,14 @@ public final class LectorChromium implements ServicioLectura.Motor {
             URI url = URI.create(page.url());
             sitio = url.getHost() + url.getPath();
             visibles = ((Number) page.evaluate("() => [...document.querySelectorAll('input')].filter(e => e.getClientRects().length > 0).length")).longValue();
+            botones = String.valueOf(page.evaluate("() => [...document.querySelectorAll('button, [role=button], input[type=submit]')].filter(e => e.getClientRects().length > 0).slice(0, 8).map(e => (e.innerText || e.value || '').trim().slice(0, 25) + '<' + e.tagName.toLowerCase() + '.' + String(e.className || '').split(' ').filter(Boolean).slice(0, 2).join('.') + '>').join(' ; ')"));
         } catch (RuntimeException ignorado) {
             // La página ya no responde: se registra lo que se alcanzó a saber.
         }
         System.out.println("Ingreso " + req.fuente() + ": se agotó el tiempo en el paso «" + paso + "»"
                 + " | abrir la página tardó " + hastaAbrir + " ms de " + timeoutMs + " ms"
-                + " | página: «" + titulo + "» " + sitio + " | casillas visibles: " + visibles);
+                + " | página: «" + titulo + "» " + sitio + " | casillas visibles: " + visibles
+                + " | botones visibles: " + botones);
     }
 
     private Respuesta iniciarSesionPaso(Page page, BrowserContext context, Peticion req, long deadline, String[] paso) throws Exception {
@@ -148,8 +156,7 @@ public final class LectorChromium implements ServicioLectura.Motor {
         if (continuar != null) {
             // D-42: primera pantalla solo con el usuario. La clave aparece después de CONTINUAR.
             URI pagina = URI.create(page.url());
-            URI pedida = URI.create(req.url());
-            if (!"https".equalsIgnoreCase(pagina.getScheme()) || !pedida.getAuthority().equals(pagina.getAuthority())) {
+            if (!"https".equalsIgnoreCase(pagina.getScheme()) || !mismaTienda(pagina, req.fuente())) {
                 return estado(Estado.URL_NO_PERMITIDA);
             }
             paso[0] = "escribir el usuario (USUARIO)";
@@ -164,8 +171,8 @@ public final class LectorChromium implements ServicioLectura.Motor {
         }
         paso[0] = "ubicar la casilla de la clave (CLAVE)";
         String action = (String) page.locator("css=" + texto(login, "clave")).evaluate("el => el.form?.action || location.href");
-        URI original = URI.create(req.url()), form = URI.create(action), actual = URI.create(page.url());
-        if (!original.getAuthority().equals(form.getAuthority()) || !original.getAuthority().equals(actual.getAuthority())
+        URI form = URI.create(action), actual = URI.create(page.url());
+        if (!mismaTienda(form, req.fuente()) || !mismaTienda(actual, req.fuente())
                 || !"https".equals(form.getScheme())) return estado(Estado.URL_NO_PERMITIDA);
         if (continuar == null) {
             // Ingreso de una sola pantalla. Con CONTINUAR el usuario ya se escribió en la primera pantalla y en la
