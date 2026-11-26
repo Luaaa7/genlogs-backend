@@ -4,32 +4,31 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.genlogs.app.exception.BusinessException;
 import com.genlogs.app.exception.ResourceNotFoundException;
+import com.genlogs.app.fuentes.lectores.SerpApiCliente;
 import com.genlogs.app.repository.UsuarioRepository;
 
 import lombok.RequiredArgsConstructor;
 
 /**
- * L1 (v3.3, BPMN 9-A) · Sesión de cada tienda con su cuenta de búsqueda (D-38).
- * «Probar sesión» deja la fuente ACTIVA (sesión cifrada hasta sesion_valida_hasta),
- * REQUIERE_VERIFICACION (la tienda pidió código o CAPTCHA) o CON_ERROR. Si al probar faltan
- * las reglas de ingreso, queda SIN_PROBAR; al renovar (D-41) queda CON_ERROR. Antes de buscar,
- * {@link #sesionVigente} renueva sola la sesión vencida; si no puede, la tienda queda fuera
- * de la búsqueda sin romperla.
+ * L1 (v3.3, BPMN 9-A) - Sesion de cada tienda con su cuenta de busqueda (D-38).
+ * eBay y Amazon, cuando SERPAPI_KEY esta configurada, no necesitan login en la tienda:
+ * la sesion se marca valida y la busqueda va por SerpApi.
  */
 @Service
 @RequiredArgsConstructor
 public class SesionFuenteService {
 
-    /** Una sesión que vence en menos de esto se renueva antes de buscar. */
     static final Duration MARGEN_RENOVACION = Duration.ofMinutes(10);
     private static final String PROCESO = "SESION_FUENTE";
     private static final int LARGO_ERROR = 500;
+    static final String SESION_SERPAPI = "{\"cookies\":[],\"origins\":[]}";
 
     private final FuenteBusquedaConfigRepository fuenteRepository;
     private final FuenteCredencialRepository credencialRepository;
@@ -39,23 +38,42 @@ public class SesionFuenteService {
     private final LectorSesion lector;
     private final UsuarioRepository usuarioRepository;
 
+    private SerpApiCliente serpApi;
+
+    @Autowired(required = false)
+    public void setSerpApi(SerpApiCliente serpApi) {
+        this.serpApi = serpApi;
+    }
+
+    /** eBay y Amazon con SerpApi configurado no usan login ni reglas de la tienda. */
+    boolean usaSerpApi(CodigoFuente codigo) {
+        return serpApi != null && serpApi.configurado()
+                && (codigo == CodigoFuente.EBAY || codigo == CodigoFuente.AMAZON);
+    }
+
     @Transactional
     public FuenteConfigResponse probar(String codigoTexto) {
         CodigoFuente codigo = FuentesConfigService.codigo(codigoTexto);
         FuenteBusquedaConfig fuente = fuente(codigo);
+        if (usaSerpApi(codigo)) {
+            aplicar(fuente, true, ResultadoSesion.ok(SESION_SERPAPI, LocalDateTime.now().plusDays(365)));
+            return config.aRespuesta(fuente);
+        }
         if (!credenciales.tiene(codigo, TipoCredencial.USUARIO) || !credenciales.tiene(codigo, TipoCredencial.CLAVE)) {
-            throw new BusinessException("Primero guarda la cuenta de búsqueda (usuario y clave) de " + fuente.getNombre());
+            throw new BusinessException("Primero guarda la cuenta de busqueda (usuario y clave) de " + fuente.getNombre());
         }
         iniciar(fuente, true);
         return config.aRespuesta(fuente);
     }
 
-    /** La sesión en claro para buscar en la tienda, renovada si venció. Vacía si la tienda no puede entrar. */
     @Transactional
     public Optional<String> sesionVigente(CodigoFuente codigo) {
         FuenteBusquedaConfig fuente = fuente(codigo);
         if (fuente.getEstado() != EstadoFuente.ACTIVA) {
             return Optional.empty();
+        }
+        if (usaSerpApi(codigo)) {
+            return Optional.of(SESION_SERPAPI);
         }
         if (!configuracionCompleta(codigo)) {
             aplicar(fuente, false, ResultadoSesion.sinConfigurar("Fuente omitida: sin configurar."));
@@ -71,42 +89,35 @@ public class SesionFuenteService {
         return iniciar(fuente, false) ? credenciales.leer(codigo, TipoCredencial.SESION) : Optional.empty();
     }
 
-    /**
-     * 9-B.1 (tarea F): la tienda pidió código o CAPTCHA mientras se leía. La fuente queda
-     * REQUIERE_VERIFICACION, sin sesión y fuera de la búsqueda hasta que se vuelva a probar (9-A).
-     */
     @Transactional
     public void marcarVerificacion(CodigoFuente codigo, String motivo) {
         aplicar(fuente(codigo), false, ResultadoSesion.verificacion(
-                motivo != null && !motivo.isBlank() ? motivo : "La tienda pidió un código o CAPTCHA."));
+                motivo != null && !motivo.isBlank() ? motivo : "La tienda pidio un codigo o CAPTCHA."));
     }
 
-    /** Comprueba cuenta y reglas mínimas antes de cuota, pausa o renovación de sesión. */
     public boolean configuracionCompleta(CodigoFuente codigo) {
+        if (usaSerpApi(codigo)) {
+            return true;
+        }
         return credenciales.tiene(codigo, TipoCredencial.USUARIO)
                 && credenciales.tiene(codigo, TipoCredencial.CLAVE)
                 && ReglasMinimas.faltantes(
                         selectorRepository.findByFuente_CodigoAndStatus(codigo, "A")).isEmpty();
     }
 
-    /**
-     * Pide al lector iniciar sesión y deja la fuente en el estado que corresponde. true si quedó ACTIVA.
-     * manual: «Probar sesión» del Jefe (9-A). false: renovación antes de buscar (D-41).
-     */
     private boolean iniciar(FuenteBusquedaConfig fuente, boolean manual) {
         CodigoFuente codigo = fuente.getCodigo();
         String usuarioTienda = credenciales.leer(codigo, TipoCredencial.USUARIO).orElse(null);
         String claveTienda = credenciales.leer(codigo, TipoCredencial.CLAVE).orElse(null);
         ResultadoSesion r = (usuarioTienda == null || claveTienda == null)
-                ? ResultadoSesion.sinConfigurar("Falta la cuenta de búsqueda de " + fuente.getNombre())
+                ? ResultadoSesion.sinConfigurar("Falta la cuenta de busqueda de " + fuente.getNombre())
                 : lector.iniciarSesion(codigo, fuente.getUrlBase(), usuarioTienda, claveTienda);
         if (r == null) {
-            r = ResultadoSesion.error("El servicio de lectura no respondió.");
+            r = ResultadoSesion.error("El servicio de lectura no respondio.");
         }
         return aplicar(fuente, manual, r);
     }
 
-    /** Deja la fuente en el estado que corresponde al resultado. true si quedó ACTIVA. */
     private boolean aplicar(FuenteBusquedaConfig fuente, boolean manual, ResultadoSesion r) {
         CodigoFuente codigo = fuente.getCodigo();
         String nombre = usuarioActual();
@@ -122,7 +133,7 @@ public class SesionFuenteService {
                     .ifPresent(credencialRepository::delete);
             fuente.setEstado(estadoSiNoOk(r, manual));
             fuente.setSesionValidaHasta(null);
-            fuente.setUltimoError(recortar(r.mensaje() != null ? r.mensaje() : "No se pudo iniciar sesión en la tienda."));
+            fuente.setUltimoError(recortar(r.mensaje() != null ? r.mensaje() : "No se pudo iniciar sesion en la tienda."));
         }
         fuente.setUltimaPrueba(LocalDateTime.now());
         fuente.setEditadoPor(idUsuario);
@@ -133,12 +144,6 @@ public class SesionFuenteService {
         return ok;
     }
 
-    /**
-     * Un fallo de conexión, un tiempo agotado o un bloqueo quedan en CON_ERROR.
-     * En «Probar sesión», faltar la cuenta o las reglas de ingreso no es un fallo de la tienda:
-     * SIN_PROBAR. También en la renovación antes de buscar (D-41): falta de configuración
-     * reemplaza la decisión anterior de CON_ERROR y no genera aviso al Jefe.
-     */
     private static EstadoFuente estadoSiNoOk(ResultadoSesion r, boolean manual) {
         return switch (r.resultado()) {
             case VERIFICACION -> EstadoFuente.REQUIERE_VERIFICACION;

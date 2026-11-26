@@ -1,0 +1,806 @@
+﻿===== C:\Users\ceron\Downloads\COOKLY NUEVO\genlogs-backend\src\main\java\com\genlogs\app\fuentes\config\FuentesConfigService.java =====
+package com.genlogs.app.fuentes.config;
+
+import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Set;
+
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.genlogs.app.exception.BusinessException;
+import com.genlogs.app.exception.EstadoNoPermitidoException;
+import com.genlogs.app.exception.ResourceNotFoundException;
+import com.genlogs.app.repository.UsuarioRepository;
+
+import lombok.RequiredArgsConstructor;
+
+/**
+ * L5 (v3.3) Â· ConfiguraciÃ³n de las tiendas de la bÃºsqueda por scraping (RF-88, RF-89).
+ * Las credenciales solo se escriben (cifradas por CredencialesFuenteService); al cambiarlas
+ * la sesiÃ³n guardada deja de valer y la fuente vuelve a SIN_PROBAR. Una fuente solo se
+ * activa con la sesiÃ³n probada y 4 o mÃ¡s aciertos en la prueba de 10 pedidos (D-37).
+ */
+@Service
+@RequiredArgsConstructor
+public class FuentesConfigService {
+
+    static final int ACIERTOS_MINIMOS = 4;
+    private static final String PROCESO = "CONFIG_FUENTE";
+
+    private final FuenteBusquedaConfigRepository fuenteRepository;
+    private final FuenteCredencialRepository credencialRepository;
+    private final FuenteSelectorRepository selectorRepository;
+    private final CredencialesFuenteService credenciales;
+    private final UsuarioRepository usuarioRepository;
+
+    @Transactional(readOnly = true)
+    public List<FuenteConfigResponse> listar() {
+        return fuenteRepository.findAll().stream()
+                .sorted((a, b) -> Integer.compare(a.getCodigo().ordinal(), b.getCodigo().ordinal()))
+                .map(this::aRespuesta)
+                .toList();
+    }
+
+    @Transactional
+    public void guardarCredenciales(String codigoTexto, CredencialesFuenteRequest req) {
+        CodigoFuente codigo = codigo(codigoTexto);
+        FuenteBusquedaConfig fuente = fuente(codigo);
+        boolean hayUsuario = req != null && req.usuario() != null && !req.usuario().isBlank();
+        boolean hayClave = req != null && req.clave() != null && !req.clave().isBlank();
+        if (!hayUsuario && !hayClave) {
+            throw new BusinessException("Indica el usuario o la clave de la tienda");
+        }
+        String nombre = usuarioActual();
+        Long idUsuario = idUsuario(nombre);
+        if (hayUsuario) {
+            credenciales.guardar(codigo, TipoCredencial.USUARIO, req.usuario().trim(), idUsuario, nombre);
+        }
+        if (hayClave) {
+            credenciales.guardar(codigo, TipoCredencial.CLAVE, req.clave(), idUsuario, nombre);
+        }
+        // Con otra cuenta, la sesiÃ³n guardada ya no sirve: hay que volver a probarla (L1).
+        credencialRepository.findByFuente_CodigoAndTipo(codigo, TipoCredencial.SESION)
+                .ifPresent(credencialRepository::delete);
+        fuente.setEstado(EstadoFuente.SIN_PROBAR);
+        fuente.setSesionValidaHasta(null);
+        auditar(fuente, nombre, idUsuario);
+    }
+
+    @Transactional
+    public FuenteConfigResponse activar(String codigoTexto, boolean activa) {
+        FuenteBusquedaConfig fuente = fuente(codigo(codigoTexto));
+        if (activa) {
+            if (fuente.getEstado() != EstadoFuente.ACTIVA) {
+                throw new EstadoNoPermitidoException(
+                        "Primero prueba la sesiÃ³n de " + fuente.getNombre() + ": hoy estÃ¡ " + fuente.getEstado());
+            }
+            Short aciertos = fuente.getAciertosPrueba();
+            if (aciertos == null || aciertos < ACIERTOS_MINIMOS) {
+                throw new EstadoNoPermitidoException(fuente.getNombre()
+                        + " necesita 4 o mÃ¡s aciertos en la prueba de 10 pedidos para activarse (D-37)");
+            }
+        }
+        fuente.setActiva(activa);
+        String nombre = usuarioActual();
+        auditar(fuente, nombre, idUsuario(nombre));
+        return aRespuesta(fuente);
+    }
+
+    @Transactional
+    public FuenteConfigResponse cambiarParametros(String codigoTexto, ParametrosFuenteRequest req) {
+        FuenteBusquedaConfig fuente = fuente(codigo(codigoTexto));
+        fuente.setPausaSegundos(req.pausaSegundos());
+        fuente.setLimiteDiario(req.limiteDiario());
+        String nombre = usuarioActual();
+        auditar(fuente, nombre, idUsuario(nombre));
+        return aRespuesta(fuente);
+    }
+
+    @Transactional(readOnly = true)
+    public List<SelectorFuenteDto> listarSelectores(String codigoTexto) {
+        CodigoFuente codigo = codigo(codigoTexto);
+        fuente(codigo);
+        return selectorRepository.findByFuente_CodigoAndStatus(codigo, "A").stream()
+                .map(s -> new SelectorFuenteDto(s.getPagina(), s.getCampo(), s.getRegla()))
+                .toList();
+    }
+
+    /** Crea o reemplaza las reglas enviadas; las que no vienen se quedan como estÃ¡n. */
+    @Transactional
+    public void guardarSelectores(String codigoTexto, List<SelectorFuenteDto> reglas) {
+        CodigoFuente codigo = codigo(codigoTexto);
+        FuenteBusquedaConfig fuente = fuente(codigo);
+        if (reglas == null || reglas.isEmpty()) {
+            throw new BusinessException("EnvÃ­a al menos una regla");
+        }
+        // Todas se revisan antes de guardar: un lote con una regla invÃ¡lida no deja nada a medias.
+        reglas.forEach(FuentesConfigService::exigirCampoDeLaPagina);
+        String nombre = usuarioActual();
+        Long idUsuario = idUsuario(nombre);
+        List<FuenteSelector> actuales = selectorRepository.findByFuente_CodigoAndStatus(codigo, "A");
+        for (SelectorFuenteDto r : reglas) {
+            FuenteSelector selector = actuales.stream()
+                    .filter(s -> s.getPagina() == r.pagina() && s.getCampo() == r.campo())
+                    .findFirst()
+                    .orElseGet(() -> {
+                        FuenteSelector nuevo = new FuenteSelector();
+                        nuevo.setFuente(fuente);
+                        nuevo.setPagina(r.pagina());
+                        nuevo.setCampo(r.campo());
+                        nuevo.setUserCreate(nombre);
+                        nuevo.setProcessCreate(PROCESO);
+                        return nuevo;
+                    });
+            selector.setRegla(r.regla().trim());
+            selector.setEditadoPor(idUsuario);
+            if (selector.getIdSelector() != null) {
+                selector.setUserUpdate(nombre);
+                selector.setProcessUpdate(PROCESO);
+                selector.setDateUpdate(LocalDateTime.now());
+            }
+            selectorRepository.save(selector);
+        }
+    }
+
+    // ---------------------------------------------------------------- apoyo
+
+    /** Campos de la pÃ¡gina LOGIN. CONTINUAR es opcional (ingreso en dos pantallas, D-42). */
+    private static final Set<CampoSelector> CAMPOS_LOGIN =
+            EnumSet.of(CampoSelector.USUARIO, CampoSelector.CLAVE, CampoSelector.ENVIAR, CampoSelector.EXITO,
+                    CampoSelector.CONTINUAR);
+
+    /** LOGIN solo lleva sus campos; BUSQUEDA y FICHA nunca los llevan. */
+    private static void exigirCampoDeLaPagina(SelectorFuenteDto r) {
+        if (r == null || r.pagina() == null || r.campo() == null) {
+            return; // la validaciÃ³n del DTO ya responde 400 por estos casos
+        }
+        boolean campoDeLogin = CAMPOS_LOGIN.contains(r.campo());
+        if (r.pagina() == PaginaSelector.LOGIN && !campoDeLogin) {
+            throw new BusinessException("La pÃ¡gina LOGIN solo admite USUARIO, CLAVE, ENVIAR, EXITO y CONTINUAR; "
+                    + r.campo() + " va en BUSQUEDA o FICHA");
+        }
+        if (r.pagina() != PaginaSelector.LOGIN && campoDeLogin) {
+            throw new BusinessException(r.campo() + " solo va en la pÃ¡gina LOGIN, no en " + r.pagina());
+        }
+    }
+
+    FuenteConfigResponse aRespuesta(FuenteBusquedaConfig f) {
+        return new FuenteConfigResponse(
+                f.getCodigo().name(), f.getNombre(), f.getUrlBase(),
+                Boolean.TRUE.equals(f.getActiva()), f.getEstado().name(),
+                f.getSesionValidaHasta(), f.getUltimaPrueba(), f.getUltimoError(),
+                f.getPausaSegundos(), f.getLimiteDiario(), f.getAciertosPrueba(),
+                credenciales.tiene(f.getCodigo(), TipoCredencial.USUARIO),
+                credenciales.tiene(f.getCodigo(), TipoCredencial.CLAVE),
+                // EF2 (v3.4): quÃ© reglas mÃ­nimas faltan, calculado; no se guarda.
+                ReglasMinimas.faltantes(selectorRepository.findByFuente_CodigoAndStatus(f.getCodigo(), "A")));
+    }
+
+    static CodigoFuente codigo(String texto) {
+        return Arrays.stream(CodigoFuente.values())
+                .filter(c -> c.name().equalsIgnoreCase(texto))
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("No existe la fuente " + texto));
+    }
+
+    private FuenteBusquedaConfig fuente(CodigoFuente codigo) {
+        return fuenteRepository.findByCodigo(codigo)
+                .orElseThrow(() -> new ResourceNotFoundException("No existe la fuente " + codigo));
+    }
+
+    private void auditar(FuenteBusquedaConfig fuente, String nombre, Long idUsuario) {
+        fuente.setEditadoPor(idUsuario);
+        fuente.setUserUpdate(nombre);
+        fuente.setProcessUpdate(PROCESO);
+        fuente.setDateUpdate(LocalDateTime.now());
+        fuenteRepository.save(fuente);
+    }
+
+    private static String usuarioActual() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null ? auth.getName() : "SISTEMA";
+    }
+
+    private Long idUsuario(String nombre) {
+        return usuarioRepository.findByNombreUsuario(nombre).map(u -> u.getIdUsuario()).orElse(null);
+    }
+}
+===== C:\Users\ceron\Downloads\COOKLY NUEVO\genlogs-backend\src\main\java\com\genlogs\app\fuentes\config\SesionFuenteService.java =====
+package com.genlogs.app.fuentes.config;
+
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.Optional;
+
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.genlogs.app.exception.BusinessException;
+import com.genlogs.app.exception.ResourceNotFoundException;
+import com.genlogs.app.repository.UsuarioRepository;
+
+import lombok.RequiredArgsConstructor;
+
+/**
+ * L1 (v3.3, BPMN 9-A) Â· SesiÃ³n de cada tienda con su cuenta de bÃºsqueda (D-38).
+ * Â«Probar sesiÃ³nÂ» deja la fuente ACTIVA (sesiÃ³n cifrada hasta sesion_valida_hasta),
+ * REQUIERE_VERIFICACION (la tienda pidiÃ³ cÃ³digo o CAPTCHA) o CON_ERROR. Si al probar faltan
+ * las reglas de ingreso, queda SIN_PROBAR; al renovar (D-41) queda CON_ERROR. Antes de buscar,
+ * {@link #sesionVigente} renueva sola la sesiÃ³n vencida; si no puede, la tienda queda fuera
+ * de la bÃºsqueda sin romperla.
+ */
+@Service
+@RequiredArgsConstructor
+public class SesionFuenteService {
+
+    /** Una sesiÃ³n que vence en menos de esto se renueva antes de buscar. */
+    static final Duration MARGEN_RENOVACION = Duration.ofMinutes(10);
+    private static final String PROCESO = "SESION_FUENTE";
+    private static final int LARGO_ERROR = 500;
+
+    private final FuenteBusquedaConfigRepository fuenteRepository;
+    private final FuenteCredencialRepository credencialRepository;
+    private final CredencialesFuenteService credenciales;
+    private final FuenteSelectorRepository selectorRepository;
+    private final FuentesConfigService config;
+    private final LectorSesion lector;
+    private final UsuarioRepository usuarioRepository;
+
+    @Transactional
+    public FuenteConfigResponse probar(String codigoTexto) {
+        CodigoFuente codigo = FuentesConfigService.codigo(codigoTexto);
+        FuenteBusquedaConfig fuente = fuente(codigo);
+        if (!credenciales.tiene(codigo, TipoCredencial.USUARIO) || !credenciales.tiene(codigo, TipoCredencial.CLAVE)) {
+            throw new BusinessException("Primero guarda la cuenta de bÃºsqueda (usuario y clave) de " + fuente.getNombre());
+        }
+        iniciar(fuente, true);
+        return config.aRespuesta(fuente);
+    }
+
+    /** La sesiÃ³n en claro para buscar en la tienda, renovada si venciÃ³. VacÃ­a si la tienda no puede entrar. */
+    @Transactional
+    public Optional<String> sesionVigente(CodigoFuente codigo) {
+        FuenteBusquedaConfig fuente = fuente(codigo);
+        if (fuente.getEstado() != EstadoFuente.ACTIVA) {
+            return Optional.empty();
+        }
+        if (!configuracionCompleta(codigo)) {
+            aplicar(fuente, false, ResultadoSesion.sinConfigurar("Fuente omitida: sin configurar."));
+            return Optional.empty();
+        }
+        LocalDateTime hasta = fuente.getSesionValidaHasta();
+        if (hasta != null && hasta.isAfter(LocalDateTime.now().plus(MARGEN_RENOVACION))) {
+            Optional<String> guardada = credenciales.leer(codigo, TipoCredencial.SESION);
+            if (guardada.isPresent()) {
+                return guardada;
+            }
+        }
+        return iniciar(fuente, false) ? credenciales.leer(codigo, TipoCredencial.SESION) : Optional.empty();
+    }
+
+    /**
+     * 9-B.1 (tarea F): la tienda pidiÃ³ cÃ³digo o CAPTCHA mientras se leÃ­a. La fuente queda
+     * REQUIERE_VERIFICACION, sin sesiÃ³n y fuera de la bÃºsqueda hasta que se vuelva a probar (9-A).
+     */
+    @Transactional
+    public void marcarVerificacion(CodigoFuente codigo, String motivo) {
+        aplicar(fuente(codigo), false, ResultadoSesion.verificacion(
+                motivo != null && !motivo.isBlank() ? motivo : "La tienda pidiÃ³ un cÃ³digo o CAPTCHA."));
+    }
+
+    /** Comprueba cuenta y reglas mÃ­nimas antes de cuota, pausa o renovaciÃ³n de sesiÃ³n. */
+    public boolean configuracionCompleta(CodigoFuente codigo) {
+        return credenciales.tiene(codigo, TipoCredencial.USUARIO)
+                && credenciales.tiene(codigo, TipoCredencial.CLAVE)
+                && ReglasMinimas.faltantes(
+                        selectorRepository.findByFuente_CodigoAndStatus(codigo, "A")).isEmpty();
+    }
+
+    /**
+     * Pide al lector iniciar sesiÃ³n y deja la fuente en el estado que corresponde. true si quedÃ³ ACTIVA.
+     * manual: Â«Probar sesiÃ³nÂ» del Jefe (9-A). false: renovaciÃ³n antes de buscar (D-41).
+     */
+    private boolean iniciar(FuenteBusquedaConfig fuente, boolean manual) {
+        CodigoFuente codigo = fuente.getCodigo();
+        String usuarioTienda = credenciales.leer(codigo, TipoCredencial.USUARIO).orElse(null);
+        String claveTienda = credenciales.leer(codigo, TipoCredencial.CLAVE).orElse(null);
+        ResultadoSesion r = (usuarioTienda == null || claveTienda == null)
+                ? ResultadoSesion.sinConfigurar("Falta la cuenta de bÃºsqueda de " + fuente.getNombre())
+                : lector.iniciarSesion(codigo, fuente.getUrlBase(), usuarioTienda, claveTienda);
+        if (r == null) {
+            r = ResultadoSesion.error("El servicio de lectura no respondiÃ³.");
+        }
+        return aplicar(fuente, manual, r);
+    }
+
+    /** Deja la fuente en el estado que corresponde al resultado. true si quedÃ³ ACTIVA. */
+    private boolean aplicar(FuenteBusquedaConfig fuente, boolean manual, ResultadoSesion r) {
+        CodigoFuente codigo = fuente.getCodigo();
+        String nombre = usuarioActual();
+        Long idUsuario = idUsuario(nombre);
+        boolean ok = r.resultado() == ResultadoSesion.Resultado.OK && r.sesion() != null && r.validaHasta() != null;
+        if (ok) {
+            credenciales.guardar(codigo, TipoCredencial.SESION, r.sesion(), idUsuario, nombre);
+            fuente.setEstado(EstadoFuente.ACTIVA);
+            fuente.setSesionValidaHasta(r.validaHasta());
+            fuente.setUltimoError(null);
+        } else {
+            credencialRepository.findByFuente_CodigoAndTipo(codigo, TipoCredencial.SESION)
+                    .ifPresent(credencialRepository::delete);
+            fuente.setEstado(estadoSiNoOk(r, manual));
+            fuente.setSesionValidaHasta(null);
+            fuente.setUltimoError(recortar(r.mensaje() != null ? r.mensaje() : "No se pudo iniciar sesiÃ³n en la tienda."));
+        }
+        fuente.setUltimaPrueba(LocalDateTime.now());
+        fuente.setEditadoPor(idUsuario);
+        fuente.setUserUpdate(nombre);
+        fuente.setProcessUpdate(PROCESO);
+        fuente.setDateUpdate(LocalDateTime.now());
+        fuenteRepository.save(fuente);
+        return ok;
+    }
+
+    /**
+     * Un fallo de conexiÃ³n, un tiempo agotado o un bloqueo quedan en CON_ERROR.
+     * En Â«Probar sesiÃ³nÂ», faltar la cuenta o las reglas de ingreso no es un fallo de la tienda:
+     * SIN_PROBAR. TambiÃ©n en la renovaciÃ³n antes de buscar (D-41): falta de configuraciÃ³n
+     * reemplaza la decisiÃ³n anterior de CON_ERROR y no genera aviso al Jefe.
+     */
+    private static EstadoFuente estadoSiNoOk(ResultadoSesion r, boolean manual) {
+        return switch (r.resultado()) {
+            case VERIFICACION -> EstadoFuente.REQUIERE_VERIFICACION;
+            case SIN_CONFIGURAR -> EstadoFuente.SIN_PROBAR;
+            default -> EstadoFuente.CON_ERROR;
+        };
+    }
+
+    private FuenteBusquedaConfig fuente(CodigoFuente codigo) {
+        return fuenteRepository.findByCodigo(codigo)
+                .orElseThrow(() -> new ResourceNotFoundException("No existe la fuente " + codigo));
+    }
+
+    private static String recortar(String texto) {
+        return texto.length() <= LARGO_ERROR ? texto : texto.substring(0, LARGO_ERROR);
+    }
+
+    private static String usuarioActual() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null ? auth.getName() : "SISTEMA";
+    }
+
+    private Long idUsuario(String nombre) {
+        return usuarioRepository.findByNombreUsuario(nombre).map(u -> u.getIdUsuario()).orElse(null);
+    }
+}
+===== C:\Users\ceron\Downloads\COOKLY NUEVO\genlogs-backend\src\main\java\com\genlogs\app\fuentes\lectores\PuenteLector.java =====
+package com.genlogs.app.fuentes.lectores;
+
+import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Function;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.genlogs.app.fuentes.config.FichaFuente;
+import com.genlogs.app.fuentes.config.ResultadoLectura;
+import com.genlogs.app.sourcing.ConsultaBusqueda;
+import com.genlogs.app.sourcing.lector.ContratoLector;
+import com.genlogs.app.sourcing.lector.LectorRemotoException;
+
+/**
+ * ME (v3.3) Â· Traduce entre el despachador (9-B.1) y el servicio de lectura (P1/P2).
+ * Sirve para los 5 lectores: ninguno pide sesiÃ³n ni marca estados, solo traduce.
+ */
+public final class PuenteLector {
+
+    /** Si la sesiÃ³n guardada no trae su vencimiento, se manda con este margen (SesionFuenteService ya la validÃ³). */
+    static final Duration VIGENCIA_SIN_FECHA = Duration.ofMinutes(30);
+    private static final int LARGO_CONSULTA = 200;
+
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    private PuenteLector() {
+    }
+
+    /**
+     * La sesiÃ³n que manda el despachador, en el formato del servicio de lectura.
+     * Acepta {"validaHasta": "...", "storageState": {...}} o el storageState solo
+     * ({"cookies": [...], "origins": [...]}). VacÃ­a â†’ null (se lee sin sesiÃ³n).
+     *
+     * @throws IllegalArgumentException si no es ninguno de los dos formatos
+     */
+    public static ContratoLector.Sesion sesion(String sesion, Clock reloj) {
+        if (sesion == null || sesion.isBlank()) {
+            return null;
+        }
+        JsonNode nodo;
+        try {
+            nodo = JSON.readTree(sesion);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("La sesiÃ³n no es JSON.");
+        }
+        if (nodo == null || !nodo.isObject()) {
+            throw new IllegalArgumentException("La sesiÃ³n no es un objeto JSON.");
+        }
+        String porDefecto = Instant.now(reloj).plus(VIGENCIA_SIN_FECHA).toString();
+        if (nodo.has("storageState")) {
+            return new ContratoLector.Sesion(instante(nodo.path("validaHasta").asText(null), porDefecto),
+                    nodo.get("storageState"));
+        }
+        if (nodo.has("cookies")) {
+            return new ContratoLector.Sesion(porDefecto, nodo);
+        }
+        throw new IllegalArgumentException("La sesiÃ³n no trae cookies.");
+    }
+
+    /** Las fichas que leyÃ³ el servicio de lectura. Sin fichas â†’ SIN_RESULTADOS. */
+    public static ResultadoLectura aResultado(ContratoLector.Respuesta respuesta) {
+        if (respuesta == null || respuesta.resultados() == null) {
+            return ResultadoLectura.sinResultados();
+        }
+        List<FichaFuente> fichas = new ArrayList<>();
+        for (ContratoLector.Resultado r : respuesta.resultados()) {
+            if (r != null) {
+                fichas.add(aFicha(r));
+            }
+        }
+        return ResultadoLectura.ok(fichas);
+    }
+
+    /** El precio va en texto plano ("1234.50") y la moneda en ISO, como los espera NormalizadorFicha. */
+    static FichaFuente aFicha(ContratoLector.Resultado r) {
+        return new FichaFuente(r.nombre(), r.descripcion(), texto(r.precio()), r.codigoMoneda(),
+                r.imagen(), r.enlace());
+    }
+
+    /**
+     * Lo que respondiÃ³ mal el servicio de lectura, en el tipo que espera el despachador.
+     * El mensaje de LectorRemotoException ya es seguro (sin URLs, tokens ni cookies).
+     */
+    public static ResultadoLectura deError(String tienda, LectorRemotoException e) {
+        String mensaje = tienda + ": " + e.getMessage();
+        ContratoLector.Estado estado = e.getEstado();
+        if (estado == null) {
+            return ResultadoLectura.error(mensaje, false);
+        }
+        return switch (estado) {
+            case VERIFICACION -> ResultadoLectura.verificacion(mensaje);
+            case BLOQUEO -> ResultadoLectura.bloqueada(mensaje);
+            case NO_CONFIGURADO -> ResultadoLectura.noConectado(mensaje);
+            case TIEMPO_AGOTADO, SIN_RESPUESTA, OCUPADO, INTERRUMPIDO -> ResultadoLectura.error(mensaje, true);
+            default -> ResultadoLectura.error(mensaje, false);
+        };
+    }
+
+    /**
+     * Llama al servicio de lectura con la sesiÃ³n y traduce la respuesta o el error.
+     * El nombre de la tienda llega como argumento para que el mensaje diga Amazon, AliExpress o eBay.
+     */
+    public static ResultadoLectura leer(String tienda, String sesion, Clock reloj,
+                                        Function<ContratoLector.Sesion, ContratoLector.Respuesta> llamada) {
+        ContratoLector.Sesion s;
+        try {
+            s = sesion(sesion, reloj);
+        } catch (IllegalArgumentException e) {
+            return ResultadoLectura.error("La sesiÃ³n guardada de " + tienda
+                    + " no se puede usar; vuelve a probar la sesiÃ³n.", false);
+        }
+        try {
+            return aResultado(llamada.apply(s));
+        } catch (LectorRemotoException e) {
+            return deError(tienda, e);
+        }
+    }
+
+    /** QuÃ© se escribe en el buscador; null si no hay nada que buscar (o es bÃºsqueda por imagen). */
+    public static String textoDeBusqueda(ConsultaBusqueda consulta) {
+        if (consulta == null || consulta.metodo() == null) {
+            return null;
+        }
+        String texto = switch (consulta.metodo()) {
+            case NUMERO_PARTE -> unir(consulta.marca(), consulta.numeroParte());
+            case GTIN -> consulta.gtin();
+            case PALABRAS -> unir(consulta.marca(), consulta.palabras());
+            default -> null;
+        };
+        if (texto == null) {
+            return null;
+        }
+        texto = texto.replaceAll("\\s+", " ").trim();
+        if (texto.isEmpty()) {
+            return null;
+        }
+        return texto.length() <= LARGO_CONSULTA ? texto : texto.substring(0, LARGO_CONSULTA).trim();
+    }
+
+    private static String unir(String a, String b) {
+        String x = a == null ? "" : a.trim();
+        String y = b == null ? "" : b.trim();
+        return (x + " " + y).trim();
+    }
+
+    private static String instante(String texto, String porDefecto) {
+        if (texto == null || texto.isBlank()) {
+            return porDefecto;
+        }
+        try {
+            return Instant.parse(texto.trim()).toString();
+        } catch (DateTimeParseException e) {
+            return porDefecto;
+        }
+    }
+
+    private static String texto(BigDecimal valor) {
+        return valor == null ? null : valor.toPlainString();
+    }
+}
+===== C:\Users\ceron\Downloads\COOKLY NUEVO\genlogs-backend\src\main\java\com\genlogs\app\sourcing\ConsultaFuenteService.java =====
+package com.genlogs.app.sourcing;
+
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Service;
+
+import com.genlogs.app.fuentes.ControlCuota;
+import com.genlogs.app.fuentes.FuenteNoDisponibleException;
+import com.genlogs.app.fuentes.config.CodigoFuente;
+import com.genlogs.app.fuentes.config.EstadoFuente;
+import com.genlogs.app.fuentes.config.FuenteBusquedaConfig;
+import com.genlogs.app.fuentes.config.FuenteBusquedaConfigRepository;
+import com.genlogs.app.fuentes.config.FuenteSelectorRepository;
+import com.genlogs.app.fuentes.config.LectorFuente;
+import com.genlogs.app.fuentes.config.LectorFuenteDespachador;
+import com.genlogs.app.fuentes.config.LectorFuenteNoConectado;
+import com.genlogs.app.fuentes.config.ResultadoLectura;
+import com.genlogs.app.fuentes.config.SelectorFuenteDto;
+import com.genlogs.app.fuentes.config.SesionFuenteService;
+
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * BPMN 9-B.1 Â· Consultar una fuente. No escribe en historial_sourcing.
+ * La sesiÃ³n sale solo de {@link SesionFuenteService}. P2 no conectado no es CON_ERROR.
+ */
+@Slf4j
+@Service
+public class ConsultaFuenteService {
+
+    private static final String PROCESO = "CONSULTA_FUENTE";
+    private static final int LARGO_ERROR = 500;
+
+    private final FuenteBusquedaConfigRepository fuenteRepository;
+    private final FuenteSelectorRepository selectorRepository;
+    private final SesionFuenteService sesiones;
+    private final LectorFuente lector;
+    private final PausaFuente pausa;
+    private final AvisoFuenteConError avisos;
+    private final ConcurrentHashMap<CodigoFuente, ControlCuota> cuotas = new ConcurrentHashMap<>();
+    private Clock clock = Clock.systemDefaultZone();
+
+    public ConsultaFuenteService(FuenteBusquedaConfigRepository fuenteRepository,
+                                 FuenteSelectorRepository selectorRepository,
+                                 SesionFuenteService sesiones,
+                                 @Qualifier(LectorFuenteDespachador.BEAN) LectorFuente lector,
+                                 PausaFuente pausa,
+                                 AvisoFuenteConError avisos) {
+        this.fuenteRepository = fuenteRepository;
+        this.selectorRepository = selectorRepository;
+        this.sesiones = sesiones;
+        this.lector = lector;
+        this.pausa = pausa;
+        this.avisos = avisos;
+    }
+
+    void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
+    public ConsultaFuente consultar(FuenteBusquedaConfig fuente, ConsultaBusqueda consulta) {
+        CodigoFuente codigo = fuente.getCodigo();
+        String nombre = codigo.name();
+        if (!sesiones.configuracionCompleta(codigo)) {
+            return ConsultaFuente.de(nombre, EstadoConsultaFuente.OMITIDA_SESION,
+                    "Fuente omitida: sin configurar.", List.of());
+        }
+        int limite = limiteDe(fuente);
+        ControlCuota cuota = cuotaDe(codigo);
+        if (cuota.usadasHoy() >= limite) {
+            return ConsultaFuente.de(nombre, EstadoConsultaFuente.OMITIDA_CUOTA,
+                    fuente.getNombre() + " se omitiÃ³: sin cuota diaria.", List.of());
+        }
+
+        pausa.esperar(fuente.getPausaSegundos() == null ? 0 : fuente.getPausaSegundos());
+
+        Optional<String> sesion = pedirSesion(codigo);
+        if (sesion.isEmpty()) {
+            avisarSesionNoRenovada(codigo);
+            return ConsultaFuente.de(nombre, EstadoConsultaFuente.OMITIDA_SESION,
+                    fuente.getNombre() + " se omitiÃ³: sin sesiÃ³n vigente.", List.of());
+        }
+
+        List<SelectorFuenteDto> selectores = selectoresDe(codigo);
+        ResultadoLectura lectura = invocarBuscar(codigo, fuente.getUrlBase(), sesion.get(), consulta, selectores);
+        if (lectura.tipo() == ResultadoLectura.Tipo.NO_CONECTADO) {
+            return ConsultaFuente.de(nombre, EstadoConsultaFuente.NO_CONECTADO,
+                    lectura.mensaje() != null ? lectura.mensaje() : LectorFuenteNoConectado.MENSAJE, List.of());
+        }
+
+        try {
+            cuota.reservar(limite);
+        } catch (FuenteNoDisponibleException e) {
+            return ConsultaFuente.de(nombre, EstadoConsultaFuente.OMITIDA_CUOTA,
+                    fuente.getNombre() + " se omitiÃ³: sin cuota diaria.", List.of());
+        }
+
+        if (lectura.tipo() == ResultadoLectura.Tipo.ERROR && lectura.reintentable()) {
+            lectura = invocarBuscar(codigo, fuente.getUrlBase(), sesion.get(), consulta, selectores);
+        }
+        return aplicar(fuente, consulta, lectura);
+    }
+
+    /**
+     * Lectura de una ficha con sesiÃ³n (9-B tarea 5). No aplica C2 cuando P2 no estÃ¡ conectado.
+     * El llamador decide el fallback a {@link LectorUrl}.
+     */
+    public ConsultaFuente consultarUrl(FuenteBusquedaConfig fuente, String url, ConsultaBusqueda consulta) {
+        CodigoFuente codigo = fuente.getCodigo();
+        Optional<String> sesion = pedirSesion(codigo);
+        if (sesion.isEmpty()) {
+            avisarSesionNoRenovada(codigo);
+            return ConsultaFuente.de(codigo.name(), EstadoConsultaFuente.OMITIDA_SESION,
+                    fuente.getNombre() + " se omitiÃ³: sin sesiÃ³n vigente.", List.of());
+        }
+        ResultadoLectura lectura;
+        try {
+            lectura = lector.leerUrl(codigo, url, sesion.get(), selectoresDe(codigo));
+        } catch (RuntimeException e) {
+            log.warn("FallÃ³ la lectura de URL en {}: {}", codigo, recortar(e.getMessage()));
+            lectura = ResultadoLectura.error("No se pudo leer la pÃ¡gina de la tienda.", true);
+        }
+        if (lectura == null) {
+            lectura = ResultadoLectura.error("El servicio de lectura no respondiÃ³.", true);
+        }
+        if (lectura.tipo() == ResultadoLectura.Tipo.NO_CONECTADO) {
+            return ConsultaFuente.de(codigo.name(), EstadoConsultaFuente.NO_CONECTADO,
+                    lectura.mensaje() != null ? lectura.mensaje() : LectorFuenteNoConectado.MENSAJE, List.of());
+        }
+        return aplicar(fuente, consulta, lectura);
+    }
+
+    private Optional<String> pedirSesion(CodigoFuente codigo) {
+        try {
+            return sesiones.sesionVigente(codigo);
+        } catch (RuntimeException e) {
+            log.warn("No se pudo pedir la sesiÃ³n de {}: {}", codigo, recortar(e.getMessage()));
+            return Optional.empty();
+        }
+    }
+
+    private List<SelectorFuenteDto> selectoresDe(CodigoFuente codigo) {
+        return selectorRepository.findByFuente_CodigoAndStatus(codigo, "A").stream()
+                .map(s -> new SelectorFuenteDto(s.getPagina(), s.getCampo(), s.getRegla()))
+                .toList();
+    }
+
+    private ResultadoLectura invocarBuscar(CodigoFuente codigo, String urlBase, String sesion,
+                                           ConsultaBusqueda consulta, List<SelectorFuenteDto> selectores) {
+        try {
+            ResultadoLectura r = lector.buscar(codigo, urlBase, sesion, consulta, selectores);
+            return r == null ? ResultadoLectura.error("El servicio de lectura no respondiÃ³.", true) : r;
+        } catch (RuntimeException e) {
+            log.warn("FallÃ³ la lectura de {}: {}", codigo, recortar(e.getMessage()));
+            return ResultadoLectura.error("No se pudo leer la tienda.", true);
+        }
+    }
+
+    private ConsultaFuente aplicar(FuenteBusquedaConfig fuente, ConsultaBusqueda consulta,
+                                   ResultadoLectura lectura) {
+        String nombre = fuente.getCodigo().name();
+        return switch (lectura.tipo()) {
+            case NO_CONECTADO -> ConsultaFuente.de(nombre, EstadoConsultaFuente.NO_CONECTADO,
+                    lectura.mensaje() != null ? lectura.mensaje() : LectorFuenteNoConectado.MENSAJE, List.of());
+            case BLOQUEADA -> ConsultaFuente.de(nombre, EstadoConsultaFuente.BLOQUEADA,
+                    lectura.mensaje() != null ? lectura.mensaje() : "La tienda bloqueÃ³ la consulta.", List.of());
+            case VERIFICACION -> {
+                String motivo = lectura.mensaje() != null ? lectura.mensaje()
+                        : "La tienda pidiÃ³ un cÃ³digo o CAPTCHA al buscar.";
+                sesiones.marcarVerificacion(fuente.getCodigo(), motivo);
+                avisos.avisarSiCorresponde(nombre, EstadoFuente.REQUIERE_VERIFICACION.name(), motivo);
+                yield ConsultaFuente.de(nombre, EstadoConsultaFuente.REQUIERE_VERIFICACION,
+                        lectura.mensaje(), List.of());
+            }
+            case ERROR -> {
+                marcarError(fuente, lectura.mensaje());
+                avisos.avisarSiCorresponde(nombre, EstadoFuente.CON_ERROR.name(), fuente.getUltimoError());
+                yield ConsultaFuente.de(nombre, EstadoConsultaFuente.CON_ERROR,
+                        lectura.mensaje() != null ? lectura.mensaje() : "La tienda no respondiÃ³.", List.of());
+            }
+            case SIN_RESULTADOS -> ConsultaFuente.de(nombre, EstadoConsultaFuente.SIN_RESULTADOS, null, List.of());
+            case OK -> {
+                List<ResultadoBusqueda> fichas = NormalizadorFicha.normalizar(lectura.fichas(), consulta);
+                if (fichas.isEmpty()) {
+                    yield ConsultaFuente.de(nombre, EstadoConsultaFuente.SIN_RESULTADOS, null, List.of());
+                }
+                yield ConsultaFuente.de(nombre, EstadoConsultaFuente.OK, null, fichas);
+            }
+        };
+    }
+
+    private void marcarError(FuenteBusquedaConfig fuente, String mensaje) {
+        fuente.setEstado(EstadoFuente.CON_ERROR);
+        fuente.setUltimoError(recortar(mensaje != null ? mensaje : "No se pudo leer la tienda."));
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String nombre = auth != null && auth.getName() != null ? auth.getName() : "SISTEMA";
+        fuente.setUserUpdate(nombre);
+        fuente.setProcessUpdate(PROCESO);
+        fuente.setDateUpdate(LocalDateTime.now(clock));
+        fuenteRepository.save(fuente);
+    }
+
+    /**
+     * 9-B (evento de error): la sesiÃ³n no se pudo renovar en plena bÃºsqueda. {@link SesionFuenteService}
+     * ya dejÃ³ la fuente en CON_ERROR o REQUIERE_VERIFICACION; se lee ese estado y se avisa al Jefe.
+     * Si la fuente sigue ACTIVA (p. ej. fallÃ³ la lectura de la sesiÃ³n) no hay nada que avisar, y el
+     * aviso no se repite mÃ¡s de una vez al dÃ­a por fuente. Nunca corta la bÃºsqueda.
+     */
+    private void avisarSesionNoRenovada(CodigoFuente codigo) {
+        try {
+            fuenteRepository.findByCodigo(codigo).ifPresent(actual -> {
+                if (actual.getEstado() != null) {
+                    avisos.avisarSiCorresponde(codigo.name(), actual.getEstado().name(), actual.getUltimoError());
+                }
+            });
+        } catch (RuntimeException e) {
+            log.warn("No se pudo avisar la sesiÃ³n no renovada de {}: {}", codigo, recortar(e.getMessage()));
+        }
+    }
+
+    private ControlCuota cuotaDe(CodigoFuente codigo) {
+        return cuotas.computeIfAbsent(codigo, c -> new ControlCuota(c.name(), clock));
+    }
+
+    /** El mismo criterio de siempre: un lÃ­mite ausente o menor que 1 cuenta como 1. */
+    private static int limiteDe(FuenteBusquedaConfig fuente) {
+        Integer configurado = fuente.getLimiteDiario();
+        return configurado == null || configurado < 1 ? 1 : configurado;
+    }
+
+    /**
+     * {@code historial_sourcing.fuente} solo admite los cÃ³digos de v3_2.sql.
+     * AliExpress se persiste como ALIBABA y el cÃ³digo real queda en {@code consulta}.
+     */
+    static String codigoHistorial(CodigoFuente codigo) {
+        return codigo == CodigoFuente.ALIEXPRESS ? "ALIBABA" : codigo.name();
+    }
+
+    static String consultaConFuente(CodigoFuente codigo, String texto) {
+        if (codigo == CodigoFuente.ALIEXPRESS) {
+            return "ALIEXPRESS | " + texto;
+        }
+        return texto;
+    }
+
+    private static String recortar(String s) {
+        if (s == null) {
+            return null;
+        }
+        return s.length() <= LARGO_ERROR ? s : s.substring(0, LARGO_ERROR);
+    }
+}
