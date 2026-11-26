@@ -134,6 +134,24 @@ class LectorSesionRemotoTest {
     }
 
     @Test
+    void amazonConSelectorAnteriorAceptaElCampoNuevoSinCambiarLasDemasReglas() {
+        when(selectores.findByFuente_CodigoAndStatus(CodigoFuente.AMAZON, "A")).thenReturn(List.of(
+                regla(PaginaSelector.LOGIN, CampoSelector.USUARIO, "#ap_email"),
+                regla(PaginaSelector.LOGIN, CampoSelector.CONTINUAR, "#continue"),
+                regla(PaginaSelector.LOGIN, CampoSelector.CLAVE, "#ap_password"),
+                regla(PaginaSelector.LOGIN, CampoSelector.ENVIAR, "#signInSubmit"),
+                regla(PaginaSelector.LOGIN, CampoSelector.EXITO, "#sesion")));
+
+        lector.iniciarSesion(CodigoFuente.AMAZON, "https://www.amazon.com", USUARIO, CLAVE);
+
+        ArgumentCaptor<ContratoLector.Peticion> captor = ArgumentCaptor.forClass(ContratoLector.Peticion.class);
+        verify(cliente).iniciarSesion(captor.capture());
+        assertThat(captor.getValue().reglas()).isEqualTo(Map.of("login", Map.of(
+                "usuario", ":is(#ap_email, #ap_email_login):visible", "continuar", "#continue",
+                "clave", "#ap_password", "enviar", "#signInSubmit", "exito", "#sesion")));
+    }
+
+    @Test
     void conSesionQuedaOkConLaSesionGuardableYSuVencimiento() throws Exception {
         conLasCuatroReglasLogin();
         when(cliente.iniciarSesion(any())).thenReturn(conSesion("2026-11-17T06:00:00Z"));

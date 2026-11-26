@@ -70,7 +70,8 @@ class LectorChromiumIntegracionTest {
                     ? """
                     <form onsubmit="event.preventDefault(); document.cookie='session=fixture; Secure; SameSite=Lax';
                     document.body.innerHTML='<h1 id=ok>Sesión lista</h1>'">
-                    <input id=pass type=password><button>Entrar</button></form>
+                    <input name=password type=password hidden>
+                    <input id=pass name=password type=password><button>Entrar</button></form>
                     """
                     : """
                     <form action="https://www.ebay.com/paso2"><input id=user><button id=next>Continuar</button></form>
@@ -78,10 +79,46 @@ class LectorChromiumIntegracionTest {
             route.fulfill(new FulfillOptions().setContentType("text/html").setBody(html));
         }));
         var req = new Peticion("EBAY", "https://www.ebay.com/login", Map.of("login", Map.of(
-                "usuario", "#user", "continuar", "#next", "clave", "#pass", "enviar", "button", "exito", "#ok")),
+                "usuario", "#user", "continuar", "#next", "clave", "input[name=password]", "enviar", "button", "exito", "#ok")),
                 null, new Credenciales("test-user", "test-secret"), null);
         var response = motor.ejecutar("sesion", req);
         assertEquals(Estado.OK, response.estado());
         assertFalse(response.sesion().storageState().toString().contains("test-secret"));
+    }
+    @Test void amazonPideVerificacionTrasEnviarLaClaveSinMarcadorDeCodigo() {
+        var motor = new LectorChromium(10000, context -> context.route("**/*", route -> {
+            String html = switch (URI.create(route.request().url()).getPath()) {
+                case "/ap/cvf/request" -> "<title>Authentication required</title><input type='text'>";
+                case "/ap/password" -> "<form action='/ap/cvf/request' method='post'>"
+                        + "<input id='ap_password' type='password'><button id='signInSubmit'>Entrar</button></form>";
+                default -> "<form action='/ap/password' method='post'><input id='ap_email_login'>"
+                        + "<button id='continue'>Continuar</button></form>";
+            };
+            route.fulfill(new FulfillOptions().setContentType("text/html").setBody(html));
+        }));
+        var req = new Peticion("AMAZON", "https://www.amazon.com/ap/signin", Map.of("login", Map.of(
+                "usuario", "#ap_email_login", "continuar", "#continue", "clave", "#ap_password",
+                "enviar", "#signInSubmit", "exito", "#sesion")),
+                null, new Credenciales("cuenta-de-prueba", "clave-de-prueba"), null);
+        var response = motor.ejecutar("sesion", req);
+        assertEquals(Estado.VERIFICACION, response.estado());
+        assertNull(response.sesion());
+    }
+
+    @Test void amazonPideVerificacionAntesDeMostrarLaClave() {
+        var motor = new LectorChromium(10000, context -> context.route("**/*", route -> {
+            String html = URI.create(route.request().url()).getPath().equals("/verificar")
+                    ? "<div id='captcha' hidden></div><input id='auth-mfa-otpcode'>"
+                    : "<form action='/verificar' method='post'><input id='ap_email' hidden>"
+                            + "<input id='ap_email_login'><button id='continue'>Continuar</button></form>";
+            route.fulfill(new FulfillOptions().setContentType("text/html").setBody(html));
+        }));
+        var req = new Peticion("AMAZON", "https://www.amazon.com/ap/signin", Map.of("login", Map.of(
+                "usuario", ":is(#ap_email, #ap_email_login):visible", "continuar", "#continue",
+                "clave", "#ap_password", "enviar", "#signInSubmit", "exito", "#sesion")),
+                null, new Credenciales("cuenta-de-prueba", "clave-de-prueba"), null);
+        var response = motor.ejecutar("sesion", req);
+        assertEquals(Estado.VERIFICACION, response.estado());
+        assertNull(response.sesion());
     }
 }
