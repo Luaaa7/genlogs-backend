@@ -46,9 +46,8 @@
  * <p>Alelhy/Mell/Nicole (A1/A2/A3/M1) construyen las URLs de cada tienda y aportan
  * reglas reales. Los fixtures P4 son sintéticos, no capturas verificadas de las tiendas.
  * nombre se mapea a ResultadoBusqueda.titulo, enlace a urlReferencia e imagen a
- * urlImagen; marca y numeroParte provienen de ConsultaBusqueda. El contrato actual
- * ResultadoBusqueda no tiene descripcion: los responsables de adaptadores/N3 deben
- * acordar su propagación antes de guardar en historial. Persona 6 no modifica ese DTO.</p>
+ * urlImagen; marca y numeroParte provienen de ConsultaBusqueda. La descripcion llega
+ * hasta el historial: ResultadoBusqueda y HistorialSourcing ya la llevan.</p>
  *
  * <p>Nicole conserva N1/N2/N3 y P3: fuentes activas, pausa, historial, captura por URL
  * y despliegue. El cliente no se conecta automáticamente a SourcingService ni a
